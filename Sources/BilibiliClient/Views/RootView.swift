@@ -9,6 +9,9 @@ struct RootView: View {
         case home = "推荐"
         case dynamics = "动态"
         case profile = "我的"
+        case favorites = "收藏"
+        case history = "历史"
+        case watchLater = "稍后再看"
 
         var id: String { rawValue }
 
@@ -17,6 +20,9 @@ struct RootView: View {
             case .home: return "house.fill"
             case .dynamics: return "sparkles"
             case .profile: return "person.crop.circle.fill"
+            case .favorites: return "bookmark.fill"
+            case .history: return "clock.arrow.circlepath"
+            case .watchLater: return "clock.badge.checkmark"
             }
         }
     }
@@ -35,6 +41,12 @@ struct RootView: View {
                         DynamicFeedView()
                     case .profile:
                         ProfileView()
+                    case .favorites:
+                        FavoritesView()
+                    case .history:
+                        HistoryView()
+                    case .watchLater:
+                        WatchLaterView()
                     case nil:
                         HomeFeedView()
                     }
@@ -52,7 +64,13 @@ struct RootView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("浏览") {
-                ForEach(SidebarItem.allCases) { item in
+                ForEach([SidebarItem.home, .dynamics, .profile]) { item in
+                    Label(item.rawValue, systemImage: item.icon)
+                        .tag(item)
+                }
+            }
+            Section("我的") {
+                ForEach([SidebarItem.favorites, .history, .watchLater]) { item in
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }

@@ -372,3 +372,140 @@ struct CommentItem: Decodable, Identifiable {
         let like: Bool?
     }
 }
+
+// MARK: - 收藏夹
+
+struct FavFolderData: Decodable {
+    let count: Int?
+    let list: [FavFolder]?
+}
+
+struct FavFolder: Decodable, Identifiable {
+    let id: Int
+    let title: String?
+    let mediaCount: Int?
+}
+
+struct FavResourceData: Decodable {
+    let medias: [FavMedia]
+    let hasMore: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case medias
+        case hasMore = "has_more"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        medias = (try? container.decode([Lossy<FavMedia>].self, forKey: .medias))?
+            .compactMap { $0.value } ?? []
+        hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore)
+    }
+}
+
+struct FavMedia: Decodable, Identifiable {
+    let id: Int
+    let type: Int?
+    let title: String?
+    let cover: String?
+    let intro: String?
+    let duration: Int?
+    let upper: Owner?
+    let cntInfo: CntInfo?
+    let bvid: String?
+    let favTime: Int?
+    let attr: Int?
+
+    struct CntInfo: Decodable {
+        let collect: Int?
+        let play: Int?
+        let danmaku: Int?
+    }
+
+    /// 0 = 正常；1/9 = 已失效
+    var isUsable: Bool {
+        (attr ?? 0) == 0
+    }
+}
+
+// MARK: - 历史记录
+
+struct HistoryData: Decodable {
+    let cursor: HistoryCursor?
+    let list: [HistoryItem]
+
+    enum CodingKeys: String, CodingKey {
+        case cursor
+        case list
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cursor = try container.decodeIfPresent(HistoryCursor.self, forKey: .cursor)
+        list = (try? container.decode([Lossy<HistoryItem>].self, forKey: .list))?
+            .compactMap { $0.value } ?? []
+    }
+}
+
+struct HistoryCursor: Decodable {
+    let max: Int?
+    let viewAt: Int?
+    let business: String?
+    let ps: Int?
+}
+
+struct HistoryItem: Decodable, Identifiable {
+    let title: String?
+    let cover: String?
+    let authorName: String?
+    let viewAt: Int?
+    let progress: Int?
+    let duration: Int?
+    let badge: String?
+    let showTitle: String?
+    let tagName: String?
+    let history: Detail?
+
+    var id: Int { history?.oid ?? 0 }
+
+    struct Detail: Decodable {
+        let oid: Int?
+        let bvid: String?
+        let page: Int?
+        let cid: Int?
+    }
+}
+
+// MARK: - 稍后再看
+
+struct ToViewData: Decodable {
+    let count: Int?
+    let list: [ToViewItem]
+
+    enum CodingKeys: String, CodingKey {
+        case count
+        case list
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        count = try container.decodeIfPresent(Int.self, forKey: .count)
+        list = (try? container.decode([Lossy<ToViewItem>].self, forKey: .list))?
+            .compactMap { $0.value } ?? []
+    }
+}
+
+struct ToViewItem: Decodable, Identifiable {
+    let aid: Int
+    let bvid: String?
+    let pic: String?
+    let title: String?
+    let duration: Int?
+    let owner: Owner?
+    let stat: Stat?
+    let progress: Int?
+    let addAt: Int?
+    let cid: Int?
+
+    var id: Int { aid }
+}
