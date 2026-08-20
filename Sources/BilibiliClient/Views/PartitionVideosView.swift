@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 分区排行榜页
+/// 分区排行榜页（卡片流 + 排行序号）
 struct PartitionVideosView: View {
     let zone: BiliZone
 
@@ -14,7 +14,7 @@ struct PartitionVideosView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 if isLoading {
                     ProgressView("加载中…")
                         .frame(maxWidth: .infinity, minHeight: 200)
@@ -34,32 +34,30 @@ struct PartitionVideosView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(usableVideos) { video in
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+                              spacing: 16) {
+                        ForEach(usableVideos.indices, id: \.self) { index in
+                            let video = usableVideos[index]
                             NavigationLink(value: video.bvid ?? "") {
-                                row(video)
+                                VideoCardView(
+                                    bvid: video.bvid ?? "",
+                                    title: video.title ?? "未知标题",
+                                    pic: video.pic ?? "",
+                                    duration: video.duration ?? 0,
+                                    ownerName: video.owner?.name ?? "",
+                                    viewCount: video.stat?.view ?? 0,
+                                    rank: index + 1
+                                )
                             }
                             .buttonStyle(.plain)
                         }
                     }
                 }
             }
-            .frame(maxWidth: 760)
-            .frame(maxWidth: .infinity)
             .padding(20)
         }
         .navigationTitle("\(zone.name) 排行榜")
         .task { await load() }
-    }
-
-    private func row(_ video: PopularVideo) -> some View {
-        MediaListRow(
-            coverURL: video.pic ?? "",
-            title: video.title ?? "未知标题",
-            line2: "\(video.owner?.name ?? "未知UP主") · \(video.tname ?? "")",
-            line3: "播放 \(Formatters.count(video.stat?.view ?? 0)) · 弹幕 \(Formatters.count(video.stat?.danmaku ?? 0)) · \(Formatters.timeAgo(video.pubdate ?? 0))",
-            durationText: Formatters.duration(video.duration ?? 0)
-        )
     }
 
     private func load() async {

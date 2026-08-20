@@ -17,7 +17,9 @@ struct RootView: View {
     @State private var submittedQuery = ""
 
     enum SidebarItem: String, CaseIterable, Identifiable {
-        case home = "首页"
+        case home = "推荐"
+        case zones = "分区"
+        case popular = "热门"
         case search = "搜索"
         case dynamics = "动态"
         case profile = "我的"
@@ -30,6 +32,8 @@ struct RootView: View {
         var icon: String {
             switch self {
             case .home: return "house.fill"
+            case .zones: return "square.grid.2x2"
+            case .popular: return "flame.fill"
             case .search: return "magnifyingglass"
             case .dynamics: return "sparkles"
             case .profile: return "person.crop.circle.fill"
@@ -49,7 +53,11 @@ struct RootView: View {
                 Group {
                     switch selection {
                     case .home:
-                        HomeFeedView(onSearch: handleSearch)
+                        RecommendView()
+                    case .zones:
+                        ZonesView()
+                    case .popular:
+                        PopularView()
                     case .search:
                         SearchView(query: submittedQuery)
                     case .dynamics:
@@ -63,7 +71,7 @@ struct RootView: View {
                     case .watchLater:
                         WatchLaterView()
                     case nil:
-                        HomeFeedView(onSearch: handleSearch)
+                        RecommendView()
                     }
                 }
                 .navigationDestination(for: String.self) { bvid in
@@ -85,7 +93,7 @@ struct RootView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("浏览") {
-                ForEach([SidebarItem.home, .dynamics, .profile]) { item in
+                ForEach([SidebarItem.home, .zones, .popular, .dynamics, .profile]) { item in
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }
@@ -150,12 +158,6 @@ struct RootView: View {
                 .padding(10)
             }
         }
-    }
-
-    private func handleSearch(_ query: String) {
-        searchText = query
-        submittedQuery = query
-        selection = .search
     }
 
     private func submitSearch() {

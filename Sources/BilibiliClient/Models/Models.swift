@@ -196,8 +196,8 @@ struct DynamicFeedData: Decodable {
     enum CodingKeys: String, CodingKey {
         case items
         case offset
-        case updateBaseline = "update_baseline"
-        case hasMore = "has_more"
+        case updateBaseline = "updateBaseline"
+        case hasMore = "hasMore"
     }
 
     init(from decoder: Decoder) throws {
@@ -393,7 +393,7 @@ struct FavResourceData: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case medias
-        case hasMore = "has_more"
+        case hasMore = "hasMore"
     }
 
     init(from decoder: Decoder) throws {
@@ -593,7 +593,7 @@ struct PopularData: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case list
-        case noMore = "no_more"
+        case noMore = "noMore"
     }
 
     init(from decoder: Decoder) throws {
@@ -676,20 +676,40 @@ struct FollowedUser: Decodable, Identifiable, Hashable {
 
 // MARK: - UP 主页
 
-struct UpInfo: Decodable {
-    let mid: Int?
-    let name: String?
-    let face: String?
-    let sign: String?
-    let level: Int?
-    let coins: Double?
-    let fans: Int?
-    let attention: Int?
-    let official: Official?
+/// 用户名片（/x/web-interface/card），不需要 WBI 和特殊 Cookie
+struct UpCardData: Decodable {
+    let card: Card?
+    let follower: Int?
 
-    struct Official: Decodable {
-        let title: String?
-        let role: Int?
+    struct Card: Decodable {
+        let mid: String?
+        let name: String?
+        let face: String?
+        let sign: String?
+        let fans: Int?
+        let attention: Int?
+        let levelInfo: LevelInfo?
+        let official: Official?
+
+        struct LevelInfo: Decodable {
+            let currentLevel: Int?
+        }
+
+        struct Official: Decodable {
+            let title: String?
+            let role: Int?
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case mid
+            case name
+            case face
+            case sign
+            case fans
+            case attention
+            case levelInfo = "levelInfo"
+            case official = "Official"
+        }
     }
 }
 
