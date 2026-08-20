@@ -98,9 +98,11 @@ final class PlayerController: ObservableObject {
     }
 
     /// 播放：优先 MP4 直链（已验证稳定），拿不到再走 DASH 本地代理。
+    /// 注意：html5 平台 MP4 最高只有 1080P，4K/HDR/1080P60 必须走 DASH。
     private func play(bvid: String, cid: Int, qn: Int, dashFallback: PlayURLData) async {
-        // 1. MP4
-        if let mp4 = try? await service.playURLMP4(bvid: bvid, cid: cid, qn: qn),
+        // 1. MP4（仅 1080P 及以下）
+        if qn <= 80,
+           let mp4 = try? await service.playURLMP4(bvid: bvid, cid: cid, qn: qn),
            let first = mp4.durl?.first,
            let url = URL(string: first.url.replacingOccurrences(of: "http://", with: "https://")) {
             let asset = AVURLAsset(url: url, options: httpAssetOptions())
@@ -127,6 +129,8 @@ final class PlayerController: ObservableObject {
               let audio = dash.audio?.first else {
             return "缺少音视频流"
         }
+        // 以实际拉到的视频流为准（服务器降级时如实显示清晰度）
+        currentQualityId = video.id
         do {
             let videoMedia = try await Self.makeMedia(from: video)
             let audioMedia = try await Self.makeMedia(from: audio)
@@ -190,8 +194,10 @@ final class PlayerController: ObservableObject {
             if let match = candidates.first(where: { $0.id == preferred }) {
                 return match
             }
-            if let granted = candidates.first(where: { $0.id <= preferred }) {
-                return granted
+            // 降级：取不高于目标清晰度的最高档（避免挑到最低档）
+            let lower = candidates.filter { $0.id <= preferred }.sorted { $0.id > $1.id }
+            if let fallback = lower.first {
+                return fallback
             }
         }
         return candidates.sorted { $0.id > $1.id }.first
