@@ -292,3 +292,64 @@ struct Lossy<T: Decodable>: Decodable {
         value = try? T(from: decoder)
     }
 }
+
+// MARK: - 评论
+
+struct CommentData: Decodable {
+    let replies: [CommentItem]
+    let hots: [CommentItem]
+    let page: Page?
+
+    struct Page: Decodable {
+        let count: Int?
+        let acount: Int?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case replies
+        case hots
+        case page
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // 逐条容错：个别评论结构异常不影响整页
+        replies = (try? container.decode([Lossy<CommentItem>].self, forKey: .replies))?
+            .compactMap { $0.value } ?? []
+        hots = (try? container.decode([Lossy<CommentItem>].self, forKey: .hots))?
+            .compactMap { $0.value } ?? []
+        page = try container.decodeIfPresent(Page.self, forKey: .page)
+    }
+}
+
+struct CommentItem: Decodable, Identifiable {
+    let rpid: Int
+    let rcount: Int?
+    let ctime: Int?
+    let like: Int?
+    let member: Member?
+    let content: Content?
+    let replies: [CommentItem]?
+    let upAction: UpAction?
+
+    var id: Int { rpid }
+
+    struct Member: Decodable {
+        let mid: String
+        let uname: String
+        let avatar: String
+        let levelInfo: LevelInfo?
+
+        struct LevelInfo: Decodable {
+            let currentLevel: Int?
+        }
+    }
+
+    struct Content: Decodable {
+        let message: String
+    }
+
+    struct UpAction: Decodable {
+        let like: Bool?
+    }
+}

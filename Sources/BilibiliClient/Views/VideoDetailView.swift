@@ -7,6 +7,12 @@ struct VideoDetailView: View {
     @State private var detail: VideoDetailData?
     @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var comments: [CommentItem] = []
+    @State private var commentPage = 0
+    @State private var isLoadingComments = false
+    @State private var hasMoreComments = true
+    @State private var commentError: String?
+    @State private var commentTotal: Int?
 
     var body: some View {
         ScrollView {
@@ -50,7 +56,11 @@ struct VideoDetailView: View {
         do {
             let data = try await VideoService().detail(bvid: bvid)
             detail = data
-            await player.load(bvid: data.view.bvid, cid: data.view.cid)
+            isLoading = false
+            async let commentsTask: Void = loadComments(aid: data.view.aid)
+            async let playerTask: Void = player.load(bvid: data.view.bvid, cid: data.view.cid)
+            _ = await (commentsTask, playerTask)
+            return
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -81,6 +91,11 @@ struct VideoDetailView: View {
                 .foregroundStyle(.secondary)
                 .lineSpacing(4)
                 .textSelection(.enabled)
+
+            Divider()
+
+            commentHeader
+            commentSection(view)
 
             Spacer(minLength: 40)
         }
@@ -151,6 +166,86 @@ struct VideoDetailView: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+    }
+
+    private var commentHeader: some View {
+        HStack {
+            Text("评论").font(.headline)
+            if let commentTotal, commentTotal > 0 {
+                Text(Formatters.count(commentTotal))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+    }
+
+    private func commentSection(_ view: VideoDetailData.VideoView) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(comments) { comment in
+                CommentCardView(comment: comment)
+                Divider().opacity(0.4)
+            }
+
+            if isLoadingComments {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            } else if let commentError, comments.isEmpty {
+                Text(commentError)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else if comments.isEmpty {
+                Text("暂无评论")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else if hasMoreComments {
+                Button {
+                    Task { await loadMoreComments(aid: view.aid) }
+                } label: {
+                    Text("加载更多评论")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func loadComments(aid: Int) async {
+        guard !isLoadingComments else { return }
+        isLoadingComments = true
+        commentError = nil
+        do {
+            let data = try await CommentService().videoComments(aid: aid, page: 1)
+            comments = data.replies
+            commentPage = 1
+            hasMoreComments = !data.replies.isEmpty
+            commentTotal = data.page?.acount ?? data.page?.count
+        } catch {
+            commentError = error.localizedDescription
+        }
+        isLoadingComments = false
+    }
+
+    private func loadMoreComments(aid: Int) async {
+        guard !isLoadingComments, hasMoreComments else { return }
+        isLoadingComments = true
+        do {
+            let data = try await CommentService().videoComments(aid: aid, page: commentPage + 1)
+            let seen = Set(comments.map(\.id))
+            comments.append(contentsOf: data.replies.filter { !seen.contains($0.id) })
+            commentPage += 1
+            hasMoreComments = !data.replies.isEmpty
+        } catch {
+            commentError = error.localizedDescription
+        }
+        isLoadingComments = false
     }
 
     private func retryPlayer() async {
