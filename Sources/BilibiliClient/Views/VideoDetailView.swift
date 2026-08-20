@@ -7,6 +7,8 @@ struct VideoDetailView: View {
     @StateObject private var player = PlayerController()
     @StateObject private var danmaku = DanmakuEngine()
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
+    @State private var fullscreen = FullscreenPlayerWindow()
+    @State private var isFullscreen = false
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
@@ -52,6 +54,7 @@ struct VideoDetailView: View {
         .navigationTitle(detail?.view.title ?? "视频详情")
         .task { await load() }
         .onDisappear {
+            fullscreen.forceClose()
             player.stop()
             danmaku.reset()
         }
@@ -200,7 +203,8 @@ struct VideoDetailView: View {
                         .overlay {
                             DanmakuOverlayView(engine: danmaku,
                                                player: player,
-                                               enabled: danmakuEnabled)
+                                               enabled: danmakuEnabled,
+                                               suspended: isFullscreen)
                         }
                 }
             }
@@ -213,8 +217,13 @@ struct VideoDetailView: View {
         )
         .overlay(alignment: .topTrailing) {
             if player.state == .ready {
-                DanmakuToggleButton(isOn: $danmakuEnabled)
-                    .padding(10)
+                HStack(spacing: 8) {
+                    FullscreenEntryButton {
+                        enterFullscreen()
+                    }
+                    DanmakuToggleButton(isOn: $danmakuEnabled)
+                }
+                .padding(10)
             }
         }
     }
@@ -453,6 +462,15 @@ struct VideoDetailView: View {
             commentError = error.localizedDescription
         }
         isLoadingComments = false
+    }
+
+    private func enterFullscreen() {
+        guard let player = player.player, !isFullscreen else { return }
+        isFullscreen = true
+        fullscreen.open(player: player,
+                        engine: danmaku,
+                        danmakuEnabled: $danmakuEnabled,
+                        onClosed: { isFullscreen = false })
     }
 
     private func loadDanmaku(cid: Int) async {

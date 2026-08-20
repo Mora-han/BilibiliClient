@@ -6,13 +6,15 @@ struct DanmakuOverlayView: View {
     @ObservedObject var engine: DanmakuEngine
     let player: AVPlayer
     let enabled: Bool
+    /// 全屏窗口打开时，内嵌层的驱动挂起，只由全屏层驱动引擎
+    var suspended: Bool = false
 
     @State private var size: CGSize = .zero
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if enabled {
+                if enabled && !suspended {
                     ForEach(engine.active) { item in
                         Text(item.text)
                             .font(.system(size: 20 * item.scale, weight: .bold))
@@ -27,10 +29,12 @@ struct DanmakuOverlayView: View {
             .onAppear { size = geo.size }
             .onChange(of: geo.size) { _, newSize in size = newSize }
         }
-        .task(id: enabled) {
-            guard enabled else {
-                // 关闭开关：立即清掉屏幕上已有的弹幕
-                engine.clear()
+        .task(id: enabled && !suspended) {
+            guard enabled, !suspended else {
+                if !enabled {
+                    // 关闭开关：立即清掉屏幕上已有的弹幕
+                    engine.clear()
+                }
                 return
             }
             // 播放暂停时 playerTime 不变，弹幕自然冻结

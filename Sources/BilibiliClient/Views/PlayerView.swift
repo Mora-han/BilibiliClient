@@ -12,7 +12,8 @@ struct PlayerView: NSViewRepresentable {
         view.player = player
         view.controlsStyle = .floating
         view.videoGravity = .resizeAspect
-        view.showsFullScreenToggleButton = true
+        // 用自定义全屏窗口承载弹幕层，禁用系统自带全屏按钮
+        view.showsFullScreenToggleButton = false
         return view
     }
 
