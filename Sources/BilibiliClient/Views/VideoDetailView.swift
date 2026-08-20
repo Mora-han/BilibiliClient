@@ -1,4 +1,3 @@
-import AVKit
 import SwiftUI
 
 struct VideoDetailView: View {
@@ -117,7 +116,7 @@ struct VideoDetailView: View {
                 .padding()
             case .ready:
                 if let player = player.player {
-                    VideoPlayer(player: player)
+                    PlayerView(player: player)
                 }
             }
         }
