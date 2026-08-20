@@ -225,6 +225,7 @@ struct DynamicItem: Decodable, Identifiable {
     }
 
     struct ModuleAuthor: Decodable {
+        let mid: Int?
         let name: String?
         let face: String?
         let pubTime: String?
@@ -552,4 +553,164 @@ struct SearchVideo: Decodable, Identifiable {
         guard let title else { return "" }
         return title.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
     }
+}
+
+// MARK: - 分区（官方主分区，tid 来自视频分区一览文档）
+
+struct BiliZone: Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let icon: String
+}
+
+enum BiliZones {
+    static let main: [BiliZone] = [
+        BiliZone(id: 1, name: "动画", icon: "tv"),
+        BiliZone(id: 13, name: "番剧", icon: "play.tv"),
+        BiliZone(id: 167, name: "国创", icon: "flag"),
+        BiliZone(id: 3, name: "音乐", icon: "music.note"),
+        BiliZone(id: 129, name: "舞蹈", icon: "figure.dance"),
+        BiliZone(id: 4, name: "游戏", icon: "gamecontroller"),
+        BiliZone(id: 36, name: "知识", icon: "books.vertical"),
+        BiliZone(id: 188, name: "科技", icon: "gearshape.2"),
+        BiliZone(id: 234, name: "运动", icon: "figure.run"),
+        BiliZone(id: 223, name: "汽车", icon: "car"),
+        BiliZone(id: 160, name: "生活", icon: "house"),
+        BiliZone(id: 211, name: "美食", icon: "fork.knife"),
+        BiliZone(id: 217, name: "动物", icon: "pawprint"),
+        BiliZone(id: 119, name: "鬼畜", icon: "face.smiling.inverse"),
+        BiliZone(id: 5, name: "娱乐", icon: "star"),
+        BiliZone(id: 181, name: "影视", icon: "film"),
+        BiliZone(id: 177, name: "纪录片", icon: "camera"),
+    ]
+}
+
+// MARK: - 热门视频 / 排行榜
+
+struct PopularData: Decodable {
+    let list: [PopularVideo]
+    let noMore: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case list
+        case noMore = "no_more"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        list = (try? container.decode([Lossy<PopularVideo>].self, forKey: .list))?
+            .compactMap { $0.value } ?? []
+        noMore = try container.decodeIfPresent(Bool.self, forKey: .noMore)
+    }
+}
+
+struct RankingData: Decodable {
+    let list: [PopularVideo]
+
+    enum CodingKeys: String, CodingKey {
+        case list
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        list = (try? container.decode([Lossy<PopularVideo>].self, forKey: .list))?
+            .compactMap { $0.value } ?? []
+    }
+}
+
+struct PopularVideo: Decodable, Identifiable, Hashable {
+    let aid: Int?
+    let bvid: String?
+    let cid: Int?
+    let title: String?
+    let pic: String?
+    let duration: Int?
+    let pubdate: Int?
+    let owner: Owner?
+    let stat: Stat?
+    let tname: String?
+
+    var id: Int { aid ?? 0 }
+}
+
+// MARK: - 热门搜索（首页热门标签）
+
+struct HotSearchData: Decodable {
+    let trending: Trending?
+
+    struct Trending: Decodable {
+        let list: [HotItem]?
+    }
+
+    struct HotItem: Decodable, Hashable {
+        let keyword: String?
+    }
+}
+
+// MARK: - 关注列表
+
+struct FollowingsData: Decodable {
+    let list: [FollowedUser]
+    let total: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case list
+        case total
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        list = (try? container.decode([Lossy<FollowedUser>].self, forKey: .list))?
+            .compactMap { $0.value } ?? []
+        total = try container.decodeIfPresent(Int.self, forKey: .total)
+    }
+}
+
+struct FollowedUser: Decodable, Identifiable, Hashable {
+    let mid: Int
+    let uname: String?
+    let face: String?
+
+    var id: Int { mid }
+}
+
+// MARK: - UP 主页
+
+struct UpInfo: Decodable {
+    let mid: Int?
+    let name: String?
+    let face: String?
+    let sign: String?
+    let level: Int?
+    let coins: Double?
+    let fans: Int?
+    let attention: Int?
+    let official: Official?
+
+    struct Official: Decodable {
+        let title: String?
+        let role: Int?
+    }
+}
+
+struct UpVideosData: Decodable {
+    let list: UpList?
+
+    struct UpList: Decodable {
+        let vlist: [UpVideo]?
+    }
+}
+
+struct UpVideo: Decodable, Identifiable, Hashable {
+    let aid: Int?
+    let bvid: String?
+    let pic: String?
+    let title: String?
+    let description: String?
+    let play: Int?
+    let duration: Int?
+    let created: Int?
+    let length: String?
+
+    var id: Int { aid ?? 0 }
 }

@@ -1,47 +1,143 @@
 import SwiftUI
 
 struct HomeFeedView: View {
+    var onSearch: (String) -> Void = { _ in }
+
     @State private var items: [RecommendItem] = []
+    @State private var popular: [PopularVideo] = []
+    @State private var hotTags: [String] = []
     @State private var page = 0
     @State private var isLoading = false
     @State private var isLoadingMore = false
+    @State private var isLoadingPopular = false
+    @State private var isLoadingTags = false
     @State private var errorMessage: String?
     @State private var hasLoaded = false
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                      spacing: 16) {
-                ForEach(items) { item in
-                    NavigationLink(value: item.bvid) {
-                        VideoCardView(item: item)
-                    }
-                    .buttonStyle(.plain)
-                }
+            VStack(alignment: .leading, spacing: 22) {
+                partitionSection
+                hotTagsSection
+                popularSection
+                Divider()
+                recommendSection
             }
             .padding(20)
+        }
+        .navigationTitle("首页")
+        .task {
+            guard !hasLoaded else { return }
+            await loadAll()
+        }
+    }
 
-            if !items.isEmpty {
-                Button {
-                    Task { await loadMore() }
-                } label: {
-                    if isLoadingMore {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("加载更多")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+    // MARK: - 分区
+
+    private var partitionSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("分区")
+                .font(.title3.bold())
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(BiliZones.main) { zone in
+                        NavigationLink(value: PartitionRoute(tid: zone.id, name: zone.name)) {
+                            VStack(spacing: 6) {
+                                Image(systemName: zone.icon)
+                                    .font(.title3)
+                                Text(zone.name)
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.primary)
+                            .frame(width: 66, height: 66)
+                            .glassCard(cornerRadius: 14)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                .buttonStyle(.plain)
-                .disabled(isLoadingMore)
-                .padding(.bottom, 24)
+                .padding(.vertical, 2)
             }
         }
-        .navigationTitle("推荐")
-        .overlay {
+    }
+
+    // MARK: - 热门标签
+
+    @ViewBuilder
+    private var hotTagsSection: some View {
+        if !hotTags.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("热门标签")
+                    .font(.title3.bold())
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(hotTags, id: \.self) { tag in
+                            Button {
+                                onSearch(tag)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "flame.fill")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                    Text(tag)
+                                        .font(.callout)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .glassCard(cornerRadius: 16)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    // MARK: - 热门视频
+
+    @ViewBuilder
+    private var popularSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("热门视频")
+                .font(.title3.bold())
+
+            if isLoadingPopular {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(popular.prefix(6)) { video in
+                        if let bvid = video.bvid, !bvid.isEmpty {
+                            NavigationLink(value: bvid) {
+                                MediaListRow(
+                                    coverURL: video.pic ?? "",
+                                    title: video.title ?? "",
+                                    line2: "\(video.owner?.name ?? "未知UP主") · \(video.tname ?? "")",
+                                    line3: "播放 \(Formatters.count(video.stat?.view ?? 0)) · 弹幕 \(Formatters.count(video.stat?.danmaku ?? 0)) · \(Formatters.timeAgo(video.pubdate ?? 0))",
+                                    durationText: Formatters.duration(video.duration ?? 0)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - 推荐
+
+    private var recommendSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("推荐")
+                .font(.title3.bold())
+
             if isLoading && items.isEmpty {
                 ProgressView("加载中…")
+                    .frame(maxWidth: .infinity, minHeight: 120)
             } else if let errorMessage, items.isEmpty {
                 ContentUnavailableView {
                     Label("加载失败", systemImage: "wifi.exclamationmark")
@@ -49,29 +145,85 @@ struct HomeFeedView: View {
                     Text(errorMessage)
                 } actions: {
                     Button("重试") {
-                        Task { await load() }
+                        Task { await loadAll() }
                     }
+                }
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+                          spacing: 16) {
+                    ForEach(items) { item in
+                        NavigationLink(value: item.bvid) {
+                            VideoCardView(item: item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if !items.isEmpty {
+                    Button {
+                        Task { await loadMore() }
+                    } label: {
+                        if isLoadingMore {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("加载更多")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
                 }
             }
         }
-        .task {
-            guard !hasLoaded else { return }
-            await load()
-        }
     }
 
-    private func load() async {
+    // MARK: - 数据
+
+    private func loadAll() async {
+        async let recommendTask: Void = loadRecommend()
+        async let popularTask: Void = loadPopular()
+        async let tagsTask: Void = loadHotTags()
+        _ = await (recommendTask, popularTask, tagsTask)
+        hasLoaded = true
+    }
+
+    private func loadRecommend() async {
         isLoading = true
         errorMessage = nil
         do {
             let newItems = try await FeedService().recommend(page: 1)
             items = newItems
             page = 1
-            hasLoaded = true
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func loadPopular() async {
+        guard !isLoadingPopular else { return }
+        isLoadingPopular = true
+        do {
+            let data = try await HomeService().popular(page: 1, pageSize: 10)
+            popular = data.list
+        } catch {
+            // 热门视频失败不影响首页其他部分
+        }
+        isLoadingPopular = false
+    }
+
+    private func loadHotTags() async {
+        guard !isLoadingTags else { return }
+        isLoadingTags = true
+        do {
+            let data = try await HomeService().hotTags(limit: 16)
+            hotTags = (data.trending?.list ?? []).compactMap { $0.keyword }.filter { !$0.isEmpty }
+        } catch {
+            // 失败静默
+        }
+        isLoadingTags = false
     }
 
     private func loadMore() async {
@@ -83,7 +235,7 @@ struct HomeFeedView: View {
             items.append(contentsOf: newItems.filter { !seen.contains($0.id) })
             page += 1
         } catch {
-            // 翻页失败静默，用户可再点一次
+            // 静默失败
         }
         isLoadingMore = false
     }

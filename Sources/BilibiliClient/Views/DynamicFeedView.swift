@@ -1,7 +1,10 @@
 import SwiftUI
 
 struct DynamicFeedView: View {
+    @EnvironmentObject private var session: SessionStore
     @State private var items: [DynamicItem] = []
+    @State private var followedUPs: [FollowedUser] = []
+    @State private var selectedUP: Int?
     @State private var offset: String?
     @State private var hasMore = true
     @State private var isLoading = false
@@ -10,11 +13,14 @@ struct DynamicFeedView: View {
     @State private var hasLoaded = false
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(items) { item in
-                    DynamicCardView(item: item)
-                }
+        VStack(spacing: 0) {
+            upBar
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(displayItems) { item in
+                        DynamicCardView(item: item)
+                    }
 
                 if hasMore && !items.isEmpty {
                     ProgressView()
@@ -26,9 +32,10 @@ struct DynamicFeedView: View {
                         }
                 }
             }
-            .frame(maxWidth: 780)
-            .frame(maxWidth: .infinity)
-            .padding(20)
+                .frame(maxWidth: 780)
+                .frame(maxWidth: .infinity)
+                .padding(20)
+            }
         }
         .navigationTitle("动态")
         .overlay {
@@ -48,8 +55,80 @@ struct DynamicFeedView: View {
         }
         .task {
             guard !hasLoaded else { return }
-            await load()
+            await prepare()
         }
+    }
+
+    private var displayItems: [DynamicItem] {
+        guard selectedUP != nil else { return items }
+        return items.filter {
+            $0.modules.moduleDynamic?.major?.type == "MAJOR_TYPE_ARCHIVE"
+        }
+    }
+
+    private var upBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chip(title: "全部", isSelected: selectedUP == nil) {
+                    selectUP(nil)
+                }
+                ForEach(followedUPs) { up in
+                    chip(title: up.uname ?? "UP", isSelected: selectedUP == up.mid, avatar: up.face ?? "") {
+                        selectUP(up.mid)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func chip(title: String, isSelected: Bool, avatar: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let avatar, !avatar.isEmpty {
+                    RemoteImage(url: Formatters.https(avatar))
+                        .frame(width: 20, height: 20)
+                        .clipShape(Circle())
+                }
+                Text(title)
+                    .font(.callout)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                isSelected ? AnyShapeStyle(.tint.opacity(0.2)) : AnyShapeStyle(.quaternary.opacity(0.4)),
+                in: Capsule()
+            )
+            .foregroundStyle(isSelected ? Color.accentColor : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func selectUP(_ mid: Int?) {
+        selectedUP = mid
+        items = []
+        offset = nil
+        hasMore = true
+        Task { await load() }
+    }
+
+    private func prepare() async {
+        if session.loggedIn {
+            if session.user == nil {
+                await session.refreshUser()
+            }
+            if let mid = session.user?.mid {
+                do {
+                    let data = try await RelationService().followings(mid: mid, page: 1, pageSize: 50)
+                    followedUPs = data.list
+                } catch {
+                    // 关注栏失败不影响动态流
+                }
+            }
+        }
+        await load()
     }
 
     private func load() async {
@@ -57,7 +136,7 @@ struct DynamicFeedView: View {
         isLoading = true
         errorMessage = nil
         do {
-            let data = try await DynamicService().feed()
+            let data = try await DynamicService().feed(hostMid: selectedUP)
             items = data.items
             offset = data.offset
             hasMore = data.hasMore ?? false
@@ -72,7 +151,7 @@ struct DynamicFeedView: View {
         guard !isLoadingMore, let offset, hasMore else { return }
         isLoadingMore = true
         do {
-            let data = try await DynamicService().feed(offset: offset)
+            let data = try await DynamicService().feed(offset: offset, hostMid: selectedUP)
             let seen = Set(items.map(\.id))
             items.append(contentsOf: data.items.filter { !seen.contains($0.id) })
             self.offset = data.offset
@@ -108,9 +187,20 @@ struct DynamicCardView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            RemoteImage(url: Formatters.https(item.modules.moduleAuthor?.face ?? ""))
-                .frame(width: 36, height: 36)
-                .clipShape(Circle())
+            Group {
+                if let mid = item.modules.moduleAuthor?.mid {
+                    NavigationLink(value: UpRoute(mid: mid)) {
+                        RemoteImage(url: Formatters.https(item.modules.moduleAuthor?.face ?? ""))
+                            .frame(width: 36, height: 36)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    RemoteImage(url: Formatters.https(item.modules.moduleAuthor?.face ?? ""))
+                        .frame(width: 36, height: 36)
+                        .clipShape(Circle())
+                }
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.modules.moduleAuthor?.name ?? "未知用户")
                     .font(.callout.weight(.semibold))

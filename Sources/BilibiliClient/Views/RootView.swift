@@ -1,5 +1,14 @@
 import SwiftUI
 
+struct UpRoute: Hashable {
+    let mid: Int
+}
+
+struct PartitionRoute: Hashable {
+    let tid: Int
+    let name: String
+}
+
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
     @State private var selection: SidebarItem? = .home
@@ -8,7 +17,7 @@ struct RootView: View {
     @State private var submittedQuery = ""
 
     enum SidebarItem: String, CaseIterable, Identifiable {
-        case home = "推荐"
+        case home = "首页"
         case search = "搜索"
         case dynamics = "动态"
         case profile = "我的"
@@ -40,7 +49,7 @@ struct RootView: View {
                 Group {
                     switch selection {
                     case .home:
-                        HomeFeedView()
+                        HomeFeedView(onSearch: handleSearch)
                     case .search:
                         SearchView(query: submittedQuery)
                     case .dynamics:
@@ -54,11 +63,17 @@ struct RootView: View {
                     case .watchLater:
                         WatchLaterView()
                     case nil:
-                        HomeFeedView()
+                        HomeFeedView(onSearch: handleSearch)
                     }
                 }
                 .navigationDestination(for: String.self) { bvid in
                     VideoDetailView(bvid: bvid)
+                }
+                .navigationDestination(for: UpRoute.self) { route in
+                    UpProfileView(mid: route.mid)
+                }
+                .navigationDestination(for: PartitionRoute.self) { route in
+                    PartitionVideosView(zone: BiliZone(id: route.tid, name: route.name, icon: "play.rectangle"))
                 }
             }
         }
@@ -135,6 +150,12 @@ struct RootView: View {
                 .padding(10)
             }
         }
+    }
+
+    private func handleSearch(_ query: String) {
+        searchText = query
+        submittedQuery = query
+        selection = .search
     }
 
     private func submitSearch() {

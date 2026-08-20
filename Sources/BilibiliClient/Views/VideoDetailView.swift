@@ -3,7 +3,16 @@ import SwiftUI
 struct VideoDetailView: View {
     let bvid: String
 
+    @EnvironmentObject private var session: SessionStore
     @StateObject private var player = PlayerController()
+    @State private var liked = false
+    @State private var coined = false
+    @State private var faved = false
+    @State private var likeCount = 0
+    @State private var coinCount = 0
+    @State private var favCount = 0
+    @State private var actionError: String?
+    @State private var showLogin = false
     @State private var detail: VideoDetailData?
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -41,6 +50,15 @@ struct VideoDetailView: View {
         .navigationTitle(detail?.view.title ?? "视频详情")
         .task { await load() }
         .onDisappear { player.stop() }
+        .sheet(isPresented: $showLogin) { LoginView() }
+        .alert("操作失败", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "")
+        }
     }
 
     private func load() async {
@@ -57,6 +75,16 @@ struct VideoDetailView: View {
             let data = try await VideoService().detail(bvid: bvid)
             detail = data
             isLoading = false
+            likeCount = data.view.stat.like
+            coinCount = data.view.stat.coin ?? 0
+            favCount = data.view.stat.favorite ?? 0
+            if session.loggedIn {
+                async let likedTask = try? UserActionService().hasLiked(aid: data.view.aid)
+                async let coinedTask = try? UserActionService().coinCount(aid: data.view.aid)
+                let (likedResult, coinedResult) = await (likedTask, coinedTask)
+                liked = likedResult ?? false
+                coined = (coinedResult ?? 0) > 0
+            }
             async let commentsTask: Void = loadComments(aid: data.view.aid)
             async let playerTask: Void = player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
             _ = await (commentsTask, playerTask)
@@ -105,6 +133,8 @@ struct VideoDetailView: View {
                 .textSelection(.enabled)
 
             infoRow(view)
+
+            actionBar(view)
 
             if let pages = view.pages, pages.count > 1 {
                 Label("共 \(pages.count) 个分P", systemImage: "list.number")
@@ -174,18 +204,149 @@ struct VideoDetailView: View {
 
     private func infoRow(_ view: VideoDetailData.VideoView) -> some View {
         HStack(spacing: 14) {
-            HStack(spacing: 8) {
-                RemoteImage(url: Formatters.https(view.owner.face ?? ""))
-                    .frame(width: 30, height: 30)
-                    .clipShape(Circle())
-                Text(view.owner.name)
-                    .font(.callout.weight(.medium))
+            NavigationLink(value: UpRoute(mid: view.owner.mid)) {
+                HStack(spacing: 8) {
+                    RemoteImage(url: Formatters.https(view.owner.face ?? ""))
+                        .frame(width: 30, height: 30)
+                        .clipShape(Circle())
+                    Text(view.owner.name)
+                        .font(.callout.weight(.medium))
+                }
             }
+            .buttonStyle(.plain)
             Spacer()
             stat(view.stat.view, "play.fill")
             stat(view.stat.danmaku, "text.bubble.fill")
             stat(view.stat.like, "hand.thumbsup.fill")
         }
+    }
+
+    // MARK: - 点赞 / 投币 / 收藏 / 分享
+
+    private func actionBar(_ view: VideoDetailData.VideoView) -> some View {
+        HStack(spacing: 28) {
+            Button {
+                Task { await toggleLike() }
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: liked ? "hand.thumbsup.fill" : "hand.thumbsup")
+                    Text(Formatters.count(likeCount))
+                        .font(.caption2)
+                }
+                .foregroundStyle(liked ? Color.pink : Color.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                Button("投 1 枚硬币") {
+                    Task { await coin(multiply: 1) }
+                }
+                Button("投 2 枚硬币") {
+                    Task { await coin(multiply: 2) }
+                }
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: coined ? "dollarsign.circle.fill" : "dollarsign.circle")
+                    Text(Formatters.count(coinCount))
+                        .font(.caption2)
+                }
+                .foregroundStyle(coined ? Color.orange : Color.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(coined)
+
+            Button {
+                Task { await toggleFavorite() }
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: faved ? "bookmark.fill" : "bookmark")
+                    Text(Formatters.count(favCount))
+                        .font(.caption2)
+                }
+                .foregroundStyle(faved ? Color.blue : Color.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                Button("复制链接") {
+                    copyLink()
+                }
+                Button("在浏览器打开") {
+                    openInBrowser()
+                }
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: "arrowshape.turn.up.right")
+                    Text("分享")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Spacer()
+        }
+        .font(.title3)
+        .padding(.vertical, 4)
+    }
+
+    private func toggleLike() async {
+        guard requireLogin() else { return }
+        guard let view = detail?.view else { return }
+        do {
+            try await UserActionService().like(aid: view.aid, liked: !liked)
+            liked.toggle()
+            likeCount += liked ? 1 : -1
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func coin(multiply: Int) async {
+        guard requireLogin() else { return }
+        guard let view = detail?.view else { return }
+        do {
+            try await UserActionService().coin(aid: view.aid, multiply: multiply)
+            coined = true
+            coinCount += multiply
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func toggleFavorite() async {
+        guard requireLogin() else { return }
+        guard let view = detail?.view else { return }
+        do {
+            try await UserActionService().favorite(aid: view.aid, faved: !faved)
+            faved.toggle()
+            favCount += faved ? 1 : -1
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func requireLogin() -> Bool {
+        guard session.loggedIn else {
+            showLogin = true
+            return false
+        }
+        return true
+    }
+
+    private func copyLink() {
+        guard let bvid = detail?.view.bvid else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString("https://www.bilibili.com/video/\(bvid)", forType: .string)
+    }
+
+    private func openInBrowser() {
+        guard let bvid = detail?.view.bvid,
+              let url = URL(string: "https://www.bilibili.com/video/\(bvid)") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func stat(_ value: Int, _ icon: String) -> some View {

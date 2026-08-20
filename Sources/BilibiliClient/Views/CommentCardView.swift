@@ -14,9 +14,20 @@ struct CommentCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .top, spacing: 10) {
-                RemoteImage(url: Formatters.https(comment.member?.avatar ?? ""))
-                    .frame(width: 32, height: 32)
-                    .clipShape(Circle())
+                Group {
+                    if let mid = Int(comment.member?.mid ?? "") {
+                        NavigationLink(value: UpRoute(mid: mid)) {
+                            RemoteImage(url: Formatters.https(comment.member?.avatar ?? ""))
+                                .frame(width: 32, height: 32)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        RemoteImage(url: Formatters.https(comment.member?.avatar ?? ""))
+                            .frame(width: 32, height: 32)
+                            .clipShape(Circle())
+                    }
+                }
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
