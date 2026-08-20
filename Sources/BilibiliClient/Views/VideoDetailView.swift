@@ -71,6 +71,35 @@ struct VideoDetailView: View {
         VStack(alignment: .leading, spacing: 18) {
             playerSection
 
+            if !player.qualities.isEmpty {
+                HStack {
+                    Spacer()
+                    Menu {
+                        ForEach(player.qualities) { quality in
+                            Button {
+                                Task { await player.selectQuality(quality) }
+                            } label: {
+                                if quality.id == player.currentQualityId {
+                                    Label(quality.name, systemImage: "checkmark")
+                                } else {
+                                    Text(quality.name)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gear")
+                            Text(player.currentQualityName ?? "清晰度")
+                            Image(systemName: "chevron.up.chevron.down")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+            }
+
             Text(view.title)
                 .font(.title2.bold())
                 .textSelection(.enabled)

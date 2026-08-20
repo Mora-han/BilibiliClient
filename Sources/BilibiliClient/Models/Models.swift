@@ -150,6 +150,8 @@ struct PlayURLData: Decodable {
     let timelength: Int?
     let durl: [DURL]?
     let dash: Dash?
+    let acceptQuality: [Int]?
+    let acceptDescription: [String]?
 
     struct DURL: Decodable {
         let url: String

@@ -6,6 +6,8 @@ final class PlayerController: ObservableObject {
     @Published var player: AVPlayer?
     @Published var state: LoadState = .idle
     @Published var errorMessage: String?
+    @Published var qualities: [Quality] = []
+    @Published var currentQualityId: Int?
 
     enum LoadState {
         case idle
@@ -14,47 +16,47 @@ final class PlayerController: ObservableObject {
         case failed
     }
 
+    struct Quality: Identifiable, Hashable {
+        let id: Int
+        let name: String
+    }
+
     private let proxy = HLSProxy.shared
+    private let service = VideoService()
+    private var bvid = ""
+    private var cid = 0
     private var loadedKey: String?
+
+    var currentQualityName: String? {
+        guard let currentQualityId else { return nil }
+        return qualities.first { $0.id == currentQualityId }?.name
+    }
 
     func load(bvid: String, cid: Int) async {
         let key = "\(bvid):\(cid)"
         guard loadedKey != key else { return }
         loadedKey = key
+        self.bvid = bvid
+        self.cid = cid
+        await resetAndLoad(qn: 80)
+    }
 
-        player?.pause()
-        player = nil
+    func retry(bvid: String, cid: Int) async {
+        loadedKey = nil
+        await load(bvid: bvid, cid: cid)
+    }
+
+    func selectQuality(_ quality: Quality) async {
+        guard !bvid.isEmpty else { return }
         state = .loading
         errorMessage = nil
-
+        player?.pause()
+        player = nil
+        proxy.stop()
         do {
-            let service = VideoService()
-
-            // 1. 优先 MP4 直链（html5 平台无 Referer 防盗链）
-            let mp4 = try await service.playURLMP4(bvid: bvid, cid: cid)
-            if let first = mp4.durl?.first,
-               let url = URL(string: first.url.replacingOccurrences(of: "http://", with: "https://")) {
-                let asset = AVURLAsset(url: url, options: httpAssetOptions())
-                player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
-                player?.automaticallyWaitsToMinimizeStalling = true
-                state = .ready
-                return
-            }
-
-            // 2. 降级 DASH：本地代理转 HLS
-            let dash = try await service.playURLDASH(bvid: bvid, cid: cid)
-            guard let dashData = dash.dash,
-                  let videoStream = Self.pickVideo(dashData.video ?? []),
-                  let audioStream = dashData.audio?.first else {
-                throw APIError.biz(code: -1, message: "该视频暂不支持在此客户端播放")
-            }
-
-            let videoMedia = try await Self.makeMedia(from: videoStream)
-            let audioMedia = try await Self.makeMedia(from: audioStream)
-            let url = try proxy.start(video: videoMedia, audio: audioMedia)
-            player = AVPlayer(url: url)
-            player?.automaticallyWaitsToMinimizeStalling = true
-            state = .ready
+            let data = try await service.playURLDASH(bvid: bvid, cid: cid, qn: quality.id)
+            currentQualityId = data.quality ?? quality.id
+            await startPlayback(data, preferredQuality: currentQualityId)
         } catch {
             state = .failed
             errorMessage = error.localizedDescription
@@ -67,12 +69,86 @@ final class PlayerController: ObservableObject {
         proxy.stop()
     }
 
-    func retry(bvid: String, cid: Int) async {
-        loadedKey = nil
-        await load(bvid: bvid, cid: cid)
+    // MARK: - Private
+
+    private func resetAndLoad(qn: Int) async {
+        state = .loading
+        errorMessage = nil
+        player?.pause()
+        player = nil
+        proxy.stop()
+        do {
+            let data = try await service.playURLDASH(bvid: bvid, cid: cid, qn: qn)
+            qualities = Self.qualityOptions(from: data)
+            currentQualityId = data.quality ?? qualities.last?.id ?? qn
+            await startPlayback(data, preferredQuality: currentQualityId)
+        } catch {
+            state = .failed
+            errorMessage = error.localizedDescription
+        }
     }
 
-    // MARK: - Helpers
+    private func startPlayback(_ data: PlayURLData, preferredQuality: Int?) async {
+        // 优先 DASH：选中目标清晰度对应的视频流，本地代理转 HLS
+        if let dash = data.dash {
+            let streams = dash.video ?? []
+            if let video = Self.pickVideo(streams, preferredQuality: preferredQuality ?? data.quality),
+               let audio = dash.audio?.first {
+                do {
+                    let videoMedia = try await Self.makeMedia(from: video)
+                    let audioMedia = try await Self.makeMedia(from: audio)
+                    let url = try proxy.start(video: videoMedia, audio: audioMedia)
+                    player = AVPlayer(url: url)
+                    player?.automaticallyWaitsToMinimizeStalling = true
+                    state = .ready
+                    return
+                } catch {
+                    // 代理失败时降级 MP4
+                }
+            }
+        }
+
+        // 降级：MP4 直链
+        if let first = data.durl?.first,
+           let url = URL(string: first.url.replacingOccurrences(of: "http://", with: "https://")) {
+            let asset = AVURLAsset(url: url, options: httpAssetOptions())
+            player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+            player?.automaticallyWaitsToMinimizeStalling = true
+            state = .ready
+            return
+        }
+
+        state = .failed
+        errorMessage = "该视频暂不支持在此客户端播放"
+    }
+
+    private static func qualityOptions(from data: PlayURLData) -> [Quality] {
+        let ids = data.acceptQuality ?? []
+        let names = data.acceptDescription ?? []
+        var seen = Set<Int>()
+        return zip(ids, names)
+            .compactMap { id, name in
+                guard seen.insert(id).inserted else { return nil }
+                return Quality(id: id, name: name)
+            }
+            .sorted { $0.id > $1.id }
+    }
+
+    /// 优先取指定清晰度；拿不到时取不高于它的最高档；再不行取 AVC 编码流。
+    private static func pickVideo(_ streams: [PlayURLData.DashStream],
+                                  preferredQuality: Int?) -> PlayURLData.DashStream? {
+        let avc = streams.filter { $0.codecs?.hasPrefix("avc1") ?? false }
+        let candidates = avc.isEmpty ? streams : avc
+        if let preferred = preferredQuality {
+            if let match = candidates.first(where: { $0.id == preferred }) {
+                return match
+            }
+            if let granted = candidates.first(where: { $0.id <= preferred }) {
+                return granted
+            }
+        }
+        return candidates.sorted { $0.id > $1.id }.first
+    }
 
     private func httpAssetOptions() -> [String: Any] {
         var cookies: [HTTPCookie] = []
@@ -94,14 +170,6 @@ final class PlayerController: ObservableObject {
         addCookie("bili_jct", stored.biliJct)
         addCookie("DedeUserID", stored.dedeUserID)
         return [AVURLAssetHTTPCookiesKey: cookies]
-    }
-
-    private static func pickVideo(_ streams: [PlayURLData.DashStream]) -> PlayURLData.DashStream? {
-        let avc = streams.filter { $0.codecs?.hasPrefix("avc1") ?? false }
-        let candidates = avc.isEmpty ? streams : avc
-        return candidates
-            .sorted { $0.id > $1.id }
-            .first { $0.id <= 80 } ?? candidates.first
     }
 
     private static func makeMedia(from stream: PlayURLData.DashStream) async throws -> HLSProxy.Media {

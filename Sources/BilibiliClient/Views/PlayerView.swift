@@ -12,6 +12,7 @@ struct PlayerView: NSViewRepresentable {
         view.player = player
         view.controlsStyle = .floating
         view.videoGravity = .resizeAspect
+        view.showsFullScreenToggleButton = true
         return view
     }
 
