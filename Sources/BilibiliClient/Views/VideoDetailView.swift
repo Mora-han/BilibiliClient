@@ -5,6 +5,8 @@ struct VideoDetailView: View {
 
     @EnvironmentObject private var session: SessionStore
     @StateObject private var player = PlayerController()
+    @StateObject private var danmaku = DanmakuEngine()
+    @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
@@ -49,7 +51,10 @@ struct VideoDetailView: View {
         }
         .navigationTitle(detail?.view.title ?? "视频详情")
         .task { await load() }
-        .onDisappear { player.stop() }
+        .onDisappear {
+            player.stop()
+            danmaku.reset()
+        }
         .sheet(isPresented: $showLogin) { LoginView() }
         .alert("操作失败", isPresented: Binding(
             get: { actionError != nil },
@@ -88,6 +93,7 @@ struct VideoDetailView: View {
             async let commentsTask: Void = loadComments(aid: data.view.aid)
             async let playerTask: Void = player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
             _ = await (commentsTask, playerTask)
+            await loadDanmaku(cid: data.view.cid)
             return
         } catch {
             errorMessage = error.localizedDescription
@@ -191,6 +197,11 @@ struct VideoDetailView: View {
             case .ready:
                 if let player = player.player {
                     PlayerView(player: player)
+                        .overlay {
+                            DanmakuOverlayView(engine: danmaku,
+                                               player: player,
+                                               enabled: danmakuEnabled)
+                        }
                 }
             }
         }
@@ -200,6 +211,12 @@ struct VideoDetailView: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         )
+        .overlay(alignment: .topTrailing) {
+            if player.state == .ready {
+                DanmakuToggleButton(isOn: $danmakuEnabled)
+                    .padding(10)
+            }
+        }
     }
 
     private func infoRow(_ view: VideoDetailData.VideoView) -> some View {
@@ -436,6 +453,15 @@ struct VideoDetailView: View {
             commentError = error.localizedDescription
         }
         isLoadingComments = false
+    }
+
+    private func loadDanmaku(cid: Int) async {
+        do {
+            let items = try await DanmakuService.fetch(cid: cid)
+            danmaku.load(items)
+        } catch {
+            // 弹幕拉取失败不影响播放，静默忽略
+        }
     }
 
     private func retryPlayer() async {
