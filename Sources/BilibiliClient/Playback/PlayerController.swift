@@ -225,6 +225,23 @@ final class PlayerController: ObservableObject {
         return [AVURLAssetHTTPCookiesKey: cookies]
     }
 
+    /// 在整个数据里搜索 "sidx" 特征字节并尝试解析，避开盒子跳转被截断的问题。
+    private static func parseSIDXBySearching(_ data: Data, absoluteRangeStart: Int) -> [MediaSegment]? {
+        let pattern = Data("sidx".utf8)
+        var searchFrom = 0
+        while let found = data.range(of: pattern, options: [], in: searchFrom..<data.count) {
+            let offset = found.lowerBound
+            // 四字节对齐才可能是盒子类型
+            if offset % 4 == 0,
+               let segments = SIDXParser.parse(data.subdata(in: offset..<data.count),
+                                               absoluteRangeStart: absoluteRangeStart + offset) {
+                return segments
+            }
+            searchFrom = found.lowerBound + 1
+        }
+        return nil
+    }
+
     private static func makeMedia(from stream: PlayURLData.DashStream) async throws -> HLSProxy.Media {
         guard let segmentBase = stream.segmentBase,
               let url = URL(string: stream.baseUrl.replacingOccurrences(of: "http://", with: "https://")) else {
@@ -241,27 +258,45 @@ final class PlayerController: ObservableObject {
             throw APIError.invalidResponse
         }
 
+        // 部分流的分片自带 ftyp/styp 前缀，index_range 只是分片起点，
+        // sidx 可能在小范围之外，因此用小范围 + 大窗口两种方式尝试。
         let (sidxData, _) = try await APIClient.shared.streamData(
             from: url,
             range: "\(indexStart)-\(indexEnd)"
         )
         var segments = SIDXParser.parse(sidxData, absoluteRangeStart: indexStart)
+        var extraData: Data?
 
-        // 兜底：Range 可能被忽略或范围存在偏移，改从文件头拉宽范围再扫一次
-        var wideData: Data?
         if segments == nil {
-            if let (wide, _) = try? await APIClient.shared.streamData(from: url, range: "0-\(indexEnd)") {
-                wideData = wide
-                segments = SIDXParser.parse(wide, absoluteRangeStart: 0)
+            // 从分片起点拉 2MB 大窗口
+            let windowEnd = indexStart + 2 * 1024 * 1024 - 1
+            if let (wide, _) = try? await APIClient.shared.streamData(from: url, range: "\(indexStart)-\(windowEnd)") {
+                extraData = wide
+                segments = Self.parseSIDXBySearching(wide, absoluteRangeStart: indexStart)
+                if segments == nil {
+                    segments = SIDXParser.parse(wide, absoluteRangeStart: indexStart)
+                }
+            }
+        }
+
+        if segments == nil {
+            // Range 可能被忽略：从文件头拉大窗口
+            let windowEnd = indexStart + 2 * 1024 * 1024 - 1
+            if let (fromZero, _) = try? await APIClient.shared.streamData(from: url, range: "0-\(windowEnd)") {
+                extraData = fromZero
+                segments = Self.parseSIDXBySearching(fromZero, absoluteRangeStart: 0)
+                if segments == nil {
+                    segments = SIDXParser.parse(fromZero, absoluteRangeStart: 0)
+                }
             }
         }
 
         guard let segments else {
-            let preview = (wideData ?? sidxData).prefix(24).map { byte -> String in
+            let preview = (extraData ?? sidxData).prefix(24).map { byte -> String in
                 let hex = String(byte, radix: 16)
                 return hex.count == 1 ? "0" + hex : hex
             }.joined(separator: " ")
-            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH，窄 \(sidxData.count) 字节 / 宽 \(wideData?.count ?? 0) 字节，头部 [\(preview)]）")
+            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH，窄 \(sidxData.count) 字节 / 宽 \(extraData?.count ?? 0) 字节，头部 [\(preview)]）")
         }
 
         return HLSProxy.Media(
