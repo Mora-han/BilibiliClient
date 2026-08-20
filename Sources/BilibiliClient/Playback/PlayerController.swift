@@ -115,8 +115,8 @@ final class PlayerController: ObservableObject {
 
         // 2. DASH 降级
         if let dashError = await startDASH(dashFallback, preferredQuality: qn) {
-            // 3. 终极兜底：整文件下载后作为本地 MP4 播放（无需 sidx）
-            if await tryProgressiveFallback(dashFallback, preferredQuality: qn) {
+            // 3. 在线流式兜底：本地代理直接转发 CDN 字节流（无需 sidx）
+            if await tryProgressiveStreaming(dashFallback, preferredQuality: qn) {
                 state = .ready
             } else {
                 state = .failed
@@ -175,35 +175,19 @@ final class PlayerController: ObservableObject {
         player?.pause()
         player = nil
         proxy.stop()
-        if let progressiveTempURL {
-            try? FileManager.default.removeItem(at: progressiveTempURL)
-            self.progressiveTempURL = nil
-        }
     }
 
-    /// 整文件下载兜底：流是 moov 在前的 fMP4，可直接作为本地 MP4 播放。
-    private var progressiveTempURL: URL?
-
-    private func tryProgressiveFallback(_ data: PlayURLData, preferredQuality: Int?) async -> Bool {
+    /// 在线流式兜底：通过本地代理把 CDN 字节流持续转发给 AVPlayer，
+    /// 边下边播，不需要 sidx，也不需要整文件下载。
+    private func tryProgressiveStreaming(_ data: PlayURLData, preferredQuality: Int?) async -> Bool {
         guard let dash = data.dash,
               let stream = Self.pickVideo(dash.video ?? [], preferredQuality: preferredQuality ?? data.quality),
               let url = URL(string: stream.baseUrl.replacingOccurrences(of: "http://", with: "https://")) else {
             return false
         }
         do {
-            var request = URLRequest(url: url)
-            request.setValue(APIConstants.referer, forHTTPHeaderField: "Referer")
-            request.setValue(APIConstants.userAgent, forHTTPHeaderField: "User-Agent")
-            if !APIClient.shared.cookieHeader.isEmpty {
-                request.setValue(APIClient.shared.cookieHeader, forHTTPHeaderField: "Cookie")
-            }
-            let (tempURL, response) = try await URLSession.shared.download(for: request)
-            guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                throw APIError.http((response as? HTTPURLResponse)?.statusCode ?? -1)
-            }
-            progressiveTempURL = tempURL
-            player = AVPlayer(url: tempURL)
+            let streamURL = try await proxy.startProgressive(baseURL: url)
+            player = AVPlayer(url: streamURL)
             player?.automaticallyWaitsToMinimizeStalling = true
             return true
         } catch {

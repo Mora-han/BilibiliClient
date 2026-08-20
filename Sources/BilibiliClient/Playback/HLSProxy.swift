@@ -23,13 +23,34 @@ final class HLSProxy {
 
     private var listener: NWListener?
     private var session: Session?
+    private var progressiveBaseURL: URL?
     private let queue = DispatchQueue(label: "com.codex.bilibili.hls", qos: .userInitiated)
 
     @discardableResult
     func start(video: Media, audio: Media) async throws -> URL {
         stop()
         session = Session(video: video, audio: audio)
+        let port = try await startListener()
+        return URL(string: "http://127.0.0.1:\(port)/master.m3u8")!
+    }
 
+    /// 在线流式模式：直接把 CDN 字节流转发（Range/分块），不依赖 sidx。
+    @discardableResult
+    func startProgressive(baseURL: URL) async throws -> URL {
+        stop()
+        progressiveBaseURL = baseURL
+        let port = try await startListener()
+        return URL(string: "http://127.0.0.1:\(port)/mp4")!
+    }
+
+    func stop() {
+        listener?.cancel()
+        listener = nil
+        session = nil
+        progressiveBaseURL = nil
+    }
+
+    private func startListener() async throws -> UInt16 {
         let listener = try NWListener(using: .tcp, on: .any)
         listener.newConnectionHandler = { [weak self] connection in
             guard let self else {
@@ -55,13 +76,7 @@ final class HLSProxy {
             stop()
             throw APIError.invalidResponse
         }
-        return URL(string: "http://127.0.0.1:\(port)/master.m3u8")!
-    }
-
-    func stop() {
-        listener?.cancel()
-        listener = nil
-        session = nil
+        return port
     }
 
     // MARK: - 请求处理
@@ -120,7 +135,21 @@ final class HLSProxy {
     }
 
     private func respond(to header: String, connection: NWConnection) {
-        guard let request = parse(header), request.method == "GET", let session else {
+        guard let request = parse(header), request.method == "GET" else {
+            send(status: "404 Not Found", contentType: "text/plain", body: "", to: connection)
+            return
+        }
+
+        if request.path == "/mp4" {
+            if progressiveBaseURL != nil {
+                serveProgressive(request: request, connection: connection)
+            } else {
+                send(status: "404 Not Found", contentType: "text/plain", body: "", to: connection)
+            }
+            return
+        }
+
+        guard let session else {
             send(status: "404 Not Found", contentType: "text/plain", body: "", to: connection)
             return
         }
@@ -197,6 +226,91 @@ final class HLSProxy {
     private static func timeString(_ value: Double) -> String {
         let rounded = (value * 1_000_000).rounded() / 1_000_000
         return String(rounded)
+    }
+
+    // MARK: - 在线流式转发
+
+    /// 把 CDN 视频流按 Range/分块持续转发给 AVPlayer，实现边下边播。
+    private func serveProgressive(request: HTTPRequest, connection: NWConnection) {
+        guard let baseURL = progressiveBaseURL else {
+            send(status: "404 Not Found", contentType: "text/plain", body: "", to: connection)
+            return
+        }
+        let chunkSize = 4 * 1024 * 1024
+
+        Task {
+            var start = 0
+            var end: Int?
+            if let rangeHeader = request.headers["range"], rangeHeader.hasPrefix("bytes=") {
+                let parts = rangeHeader.dropFirst("bytes=".count).split(separator: "-")
+                start = Int(parts.first ?? "") ?? 0
+                if parts.count == 2, let e = Int(parts[1]) {
+                    end = e
+                }
+            }
+
+            var position = start
+            var headerSent = false
+            var totalLength: Int?
+            var finished = false
+
+            while !finished {
+                let chunkEnd = min(position + chunkSize - 1, end ?? (position + chunkSize - 1))
+                do {
+                    let (data, response) = try await APIClient.shared.streamData(
+                        from: baseURL,
+                        range: "\(position)-\(chunkEnd)"
+                    )
+                    guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+
+                    if totalLength == nil, let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
+                       let totalText = contentRange.split(separator: "/").last,
+                       let total = Int(totalText) {
+                        totalLength = total
+                    }
+
+                    if !headerSent {
+                        headerSent = true
+                        var head = "HTTP/1.1 206 Partial Content\r\n"
+                        head += "Content-Type: video/mp4\r\n"
+                        head += "Transfer-Encoding: chunked\r\n"
+                        head += "Connection: close\r\n"
+                        if let total = totalLength {
+                            let rangeEnd = min(end ?? total - 1, total - 1)
+                            head += "Content-Range: bytes \(position)-\(rangeEnd)/\(total)\r\n"
+                        } else {
+                            head += "Content-Range: bytes \(position)-\(position + max(data.count, 1) - 1)/*\r\n"
+                        }
+                        head += "\r\n"
+                        connection.send(content: Data(head.utf8),
+                                        completion: .contentProcessed { _ in })
+                    }
+
+                    if data.isEmpty {
+                        finished = true
+                        break
+                    }
+
+                    let frame = Data("\(String(data.count, radix: 16))\r\n".utf8) + data + Data("\r\n".utf8)
+                    connection.send(content: frame, completion: .contentProcessed { _ in })
+
+                    let requested = chunkEnd - position + 1
+                    position += data.count
+
+                    if let end, position > end {
+                        finished = true
+                    } else if data.count < requested {
+                        // CDN 已返回文件末尾
+                        finished = true
+                    }
+                } catch {
+                    finished = true
+                }
+            }
+
+            connection.send(content: Data("0\r\n\r\n".utf8),
+                            completion: .contentProcessed { _ in connection.cancel() })
+        }
     }
 
     // MARK: - 二进制转发
