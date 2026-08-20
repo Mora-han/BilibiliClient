@@ -12,13 +12,15 @@ struct DanmakuOverlayView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                ForEach(engine.active) { item in
-                    Text(item.text)
-                        .font(.system(size: 20 * item.scale, weight: .bold))
-                        .foregroundStyle(item.color)
-                        .shadow(color: .black.opacity(0.85), radius: 2, x: 0, y: 1)
-                        .position(item.position(in: geo.size,
-                                               at: player.currentTime().seconds))
+                if enabled {
+                    ForEach(engine.active) { item in
+                        Text(item.text)
+                            .font(.system(size: 20 * item.scale, weight: .bold))
+                            .foregroundStyle(item.color)
+                            .shadow(color: .black.opacity(0.85), radius: 2, x: 0, y: 1)
+                            .position(item.position(in: geo.size,
+                                                   at: player.currentTime().seconds))
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -26,7 +28,11 @@ struct DanmakuOverlayView: View {
             .onChange(of: geo.size) { _, newSize in size = newSize }
         }
         .task(id: enabled) {
-            guard enabled else { return }
+            guard enabled else {
+                // 关闭开关：立即清掉屏幕上已有的弹幕
+                engine.clear()
+                return
+            }
             // 播放暂停时 playerTime 不变，弹幕自然冻结
             while !Task.isCancelled {
                 engine.tick(playerTime: player.currentTime().seconds, size: size)

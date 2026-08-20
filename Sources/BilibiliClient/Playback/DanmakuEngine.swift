@@ -88,6 +88,11 @@ final class DanmakuEngine: ObservableObject {
         configuredSize = .zero
     }
 
+    /// 清空当前屏幕上的弹幕（关闭开关时调用）。
+    func clear() {
+        active = []
+    }
+
     // MARK: - 每帧更新
 
     func tick(playerTime: Double, size: CGSize) {
