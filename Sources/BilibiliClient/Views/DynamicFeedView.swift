@@ -150,18 +150,18 @@ struct DynamicCardView: View {
     }
 
     private func archiveCard(_ archive: DynamicItem.ModuleDynamic.Major.Archive) -> some View {
-        NavigationLink(value: archive.bvid) {
+        NavigationLink(value: archive.bvid ?? "") {
             HStack(spacing: 10) {
-                RemoteImage(url: Formatters.https(archive.cover))
+                RemoteImage(url: Formatters.https(archive.cover ?? ""))
                     .frame(width: 128, height: 76)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(archive.title)
+                    Text(archive.title ?? "")
                         .font(.callout.weight(.medium))
                         .lineLimit(2)
-                    if !archive.desc.isEmpty {
-                        Text(archive.desc)
+                    if let desc = archive.desc, !desc.isEmpty {
+                        Text(desc)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -185,7 +185,7 @@ struct DynamicCardView: View {
                             count: min(max(items.count, 1), 3))
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(items.indices, id: \.self) { index in
-                RemoteImage(url: Formatters.https(items[index].src))
+                RemoteImage(url: Formatters.https(items[index].src ?? ""))
                     .aspectRatio(1, contentMode: .fill)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
@@ -194,9 +194,9 @@ struct DynamicCardView: View {
 
     private var footer: some View {
         HStack(spacing: 18) {
-            Label(Formatters.count(stat?.like ?? 0), systemImage: "heart")
-            Label(Formatters.count(stat?.comment ?? 0), systemImage: "bubble.right")
-            Label(Formatters.count(stat?.forward ?? 0), systemImage: "arrowshape.turn.up.right")
+            Label(Formatters.count(stat?.like?.count ?? 0), systemImage: "heart")
+            Label(Formatters.count(stat?.comment?.count ?? 0), systemImage: "bubble.right")
+            Label(Formatters.count(stat?.forward?.count ?? 0), systemImage: "arrowshape.turn.up.right")
             Spacer()
         }
         .font(.caption)

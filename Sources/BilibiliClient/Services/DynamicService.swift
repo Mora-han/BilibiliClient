@@ -2,7 +2,10 @@ import Foundation
 
 struct DynamicService {
     func feed(offset: String? = nil) async throws -> DynamicFeedData {
-        var query = ["timezone_offset": "-480"]
+        var query: [String: String] = [
+            "platform": "web",
+            "features": "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete",
+        ]
         if let offset {
             query["offset"] = offset
         }

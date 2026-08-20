@@ -45,7 +45,7 @@ enum AuthService {
 
         guard let envelope = try? decoder.decode(Envelope.self, from: data),
               let payload = envelope.data else {
-            throw APIError.decoding
+            throw APIError.decoding("二维码响应解析失败")
         }
 
         switch payload.code {

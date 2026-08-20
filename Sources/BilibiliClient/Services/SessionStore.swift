@@ -40,16 +40,23 @@ final class SessionStore: ObservableObject {
 
     func refreshUser() async {
         do {
-            let nav: NavData = try await APIClient.shared.get("/x/web-interface/nav")
+            struct NavStat: Decodable {
+                let following: Int
+                let follower: Int
+            }
+
+            async let navResult: NavData = APIClient.shared.get("/x/web-interface/nav")
+            async let statResult: NavStat = APIClient.shared.get("/x/web-interface/nav/stat")
+            let (nav, stat) = try await (navResult, statResult)
             guard let mid = nav.mid, let name = nav.uname else { return }
             user = UserProfile(
                 mid: mid,
                 name: name,
                 face: nav.face ?? "",
                 level: nav.levelInfo?.currentLevel ?? 0,
-                following: nav.following ?? 0,
-                follower: nav.follower ?? 0,
-                coin: nav.coin ?? 0
+                following: stat.following,
+                follower: stat.follower,
+                coin: nav.money ?? 0
             )
         } catch {
             // 保持已有用户信息，静默失败

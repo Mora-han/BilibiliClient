@@ -73,7 +73,7 @@ final class APIClient {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.decoding
+            throw APIError.decoding("\\(error)")
         }
     }
 

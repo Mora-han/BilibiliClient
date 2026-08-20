@@ -15,7 +15,7 @@ enum APIError: LocalizedError {
     case invalidResponse
     case http(Int)
     case biz(code: Int, message: String)
-    case decoding
+    case decoding(String)
 
     var errorDescription: String? {
         switch self {
@@ -25,8 +25,8 @@ enum APIError: LocalizedError {
             return "网络请求失败（HTTP \(code)）"
         case .biz(let code, let message):
             return "接口错误 \(code)：\(message)"
-        case .decoding:
-            return "数据解析失败"
+        case .decoding(let detail):
+            return detail.isEmpty ? "数据解析失败" : "数据解析失败：\(detail)"
         }
     }
 }
@@ -39,7 +39,8 @@ struct NavData: Decodable {
     let uname: String?
     let face: String?
     let levelInfo: LevelInfo?
-    let coin: Double?
+    /// nav 接口的硬币字段名是 money
+    let money: Double?
     let following: Int?
     let follower: Int?
     let wbiImg: WbiImg?
@@ -93,6 +94,19 @@ struct VideoDetailData: Decodable {
     let view: VideoView
     let related: [RelatedVideo]?
 
+    // 接口返回键是 "View" / "Related"，convertFromSnakeCase 对无下划线的单词不做大小写转换
+    enum CodingKeys: String, CodingKey {
+        case view = "View"
+        case related = "Related"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        view = try container.decode(VideoView.self, forKey: .view)
+        related = (try? container.decode([Lossy<RelatedVideo>].self, forKey: .related))?
+            .compactMap { $0.value }
+    }
+
     struct VideoView: Decodable {
         let bvid: String
         let aid: Int
@@ -108,13 +122,15 @@ struct VideoDetailData: Decodable {
     }
 
     struct RelatedVideo: Decodable, Identifiable, Hashable {
-        let id: Int
+        let aid: Int
         let bvid: String
         let title: String
         let pic: String
         let duration: Int
         let owner: Owner?
         let stat: Stat?
+
+        var id: Int { aid }
     }
 
     struct VideoPage: Decodable, Identifiable {
@@ -174,6 +190,23 @@ struct DynamicFeedData: Decodable {
     let offset: String?
     let updateBaseline: String?
     let hasMore: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case offset
+        case updateBaseline = "update_baseline"
+        case hasMore = "has_more"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // 逐条容错：个别动态结构异常不影响整页
+        items = (try? container.decode([Lossy<DynamicItem>].self, forKey: .items))?
+            .compactMap { $0.value } ?? []
+        offset = try container.decodeIfPresent(String.self, forKey: .offset)
+        updateBaseline = try container.decodeIfPresent(String.self, forKey: .updateBaseline)
+        hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore)
+    }
 }
 
 struct DynamicItem: Decodable, Identifiable {
@@ -190,8 +223,8 @@ struct DynamicItem: Decodable, Identifiable {
     }
 
     struct ModuleAuthor: Decodable {
-        let name: String
-        let face: String
+        let name: String?
+        let face: String?
         let pubTime: String?
     }
 
@@ -200,7 +233,7 @@ struct DynamicItem: Decodable, Identifiable {
         let major: Major?
 
         struct Desc: Decodable {
-            let text: String
+            let text: String?
         }
 
         struct Major: Decodable {
@@ -210,11 +243,11 @@ struct DynamicItem: Decodable, Identifiable {
             let opus: Opus?
 
             struct Archive: Decodable {
-                let aid: String
-                let bvid: String
-                let title: String
-                let cover: String
-                let desc: String
+                let aid: String?
+                let bvid: String?
+                let title: String?
+                let cover: String?
+                let desc: String?
                 let durationText: String?
             }
 
@@ -222,7 +255,7 @@ struct DynamicItem: Decodable, Identifiable {
                 let items: [DrawItem]?
 
                 struct DrawItem: Decodable, Hashable {
-                    let src: String
+                    let src: String?
                     let width: Int?
                     let height: Int?
                 }
@@ -232,15 +265,30 @@ struct DynamicItem: Decodable, Identifiable {
                 let summary: OpusSummary?
 
                 struct OpusSummary: Decodable {
-                    let text: String
+                    let text: String?
                 }
             }
         }
     }
 
     struct ModuleStat: Decodable {
-        let like: Int
-        let comment: Int
-        let forward: Int
+        let like: StatValue?
+        let comment: StatValue?
+        let forward: StatValue?
+
+        struct StatValue: Decodable {
+            let count: Int?
+            let forbidden: Bool?
+            let status: Bool?
+        }
+    }
+}
+
+/// 容错解码包装：单个元素解析失败时返回 nil，而不是让整个数组解码失败。
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?
+
+    init(from decoder: Decoder) throws {
+        value = try? T(from: decoder)
     }
 }
