@@ -6,7 +6,7 @@ struct UpProfileView: View {
 
     @State private var card: UpCardData.Card?
     @State private var followerCount = 0
-    @State private var videos: [UpVideo] = []
+    @State private var videos: [SeriesArchive] = []
     @State private var page = 0
     @State private var hasMore = true
     @State private var isLoadingInfo = true
@@ -15,7 +15,7 @@ struct UpProfileView: View {
     @State private var infoError: String?
     @State private var videoError: String?
 
-    private var usableVideos: [UpVideo] {
+    private var usableVideos: [SeriesArchive] {
         videos.filter { !($0.bvid ?? "").isEmpty }
     }
 
@@ -88,7 +88,7 @@ struct UpProfileView: View {
                                 pic: video.pic ?? "",
                                 duration: video.duration ?? 0,
                                 ownerName: "",
-                                viewCount: video.play ?? 0,
+                                viewCount: video.stat?.view ?? 0,
                                 badgeText: nil
                             )
                         }
@@ -185,7 +185,7 @@ struct UpProfileView: View {
         videoError = nil
         do {
             let data = try await UpService().videos(mid: mid, page: 1)
-            videos = data.list?.vlist ?? []
+            videos = data.archives
             page = 1
             hasMore = !videos.isEmpty
         } catch {
@@ -200,9 +200,9 @@ struct UpProfileView: View {
         do {
             let data = try await UpService().videos(mid: mid, page: page + 1)
             let seen = Set(videos.map(\.id))
-            videos.append(contentsOf: (data.list?.vlist ?? []).filter { !seen.contains($0.id) })
+            videos.append(contentsOf: data.archives.filter { !seen.contains($0.id) })
             page += 1
-            hasMore = !(data.list?.vlist ?? []).isEmpty
+            hasMore = !data.archives.isEmpty
         } catch {
             // 静默失败
         }

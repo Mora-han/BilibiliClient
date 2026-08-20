@@ -10,14 +10,15 @@ struct UpService {
         ])
     }
 
-    /// UP 主投稿视频
-    func videos(mid: Int, page: Int = 1, pageSize: Int = 30) async throws -> UpVideosData {
+    /// UP 主投稿视频（关键词接口，空关键词=全部投稿，无风控）
+    func videos(mid: Int, page: Int = 1, pageSize: Int = 30) async throws -> RecArchivesData {
         await APIClient.shared.ensureBuvid()
-        return try await APIClient.shared.get("/x/space/wbi/arc/search", query: [
+        return try await APIClient.shared.get("/x/series/recArchivesByKeywords", query: [
             "mid": "\(mid)",
-            "pn": "\(page)",
+            "keywords": "",
             "ps": "\(pageSize)",
-            "order": "pubdate",
-        ], wbi: true)
+            "pn": "\(page)",
+            "orderby": "pubdate",
+        ])
     }
 }

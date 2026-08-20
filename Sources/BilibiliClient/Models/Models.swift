@@ -713,6 +713,37 @@ struct UpCardData: Decodable {
     }
 }
 
+/// 按关键词查 UP 投稿（空关键词 = 全部），无风控校验
+struct RecArchivesData: Decodable {
+    let archives: [SeriesArchive]
+
+    enum CodingKeys: String, CodingKey {
+        case archives
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        archives = (try? container.decode([Lossy<SeriesArchive>].self, forKey: .archives))?
+            .compactMap { $0.value } ?? []
+    }
+}
+
+struct SeriesArchive: Decodable, Identifiable, Hashable {
+    let aid: Int?
+    let bvid: String?
+    let title: String?
+    let pic: String?
+    let duration: Int?
+    let pubdate: Int?
+    let stat: StatView?
+
+    var id: Int { aid ?? 0 }
+
+    struct StatView: Decodable, Hashable {
+        let view: Int?
+    }
+}
+
 struct UpVideosData: Decodable {
     let list: UpList?
 
