@@ -1,0 +1,114 @@
+import SwiftUI
+
+struct RootView: View {
+    @EnvironmentObject private var session: SessionStore
+    @State private var selection: SidebarItem? = .home
+    @State private var showLogin = false
+
+    enum SidebarItem: String, CaseIterable, Identifiable {
+        case home = "推荐"
+        case dynamics = "动态"
+        case profile = "我的"
+
+        var id: String { rawValue }
+
+        var icon: String {
+            switch self {
+            case .home: return "house.fill"
+            case .dynamics: return "sparkles"
+            case .profile: return "person.crop.circle.fill"
+            }
+        }
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 270)
+        } detail: {
+            NavigationStack {
+                Group {
+                    switch selection {
+                    case .home:
+                        HomeFeedView()
+                    case .dynamics:
+                        DynamicFeedView()
+                    case .profile:
+                        ProfileView()
+                    case nil:
+                        HomeFeedView()
+                    }
+                }
+                .navigationDestination(for: String.self) { bvid in
+                    VideoDetailView(bvid: bvid)
+                }
+            }
+        }
+        .sheet(isPresented: $showLogin) {
+            LoginView()
+        }
+    }
+
+    private var sidebar: some View {
+        List(selection: $selection) {
+            Section("浏览") {
+                ForEach(SidebarItem.allCases) { item in
+                    Label(item.rawValue, systemImage: item.icon)
+                        .tag(item)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .safeAreaInset(edge: .bottom) { accountBar }
+    }
+
+    private var accountBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            if session.loggedIn {
+                if let user = session.user {
+                    HStack(spacing: 10) {
+                        avatar(url: user.face, size: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(user.name)
+                                .font(.callout.weight(.medium))
+                                .lineLimit(1)
+                            Text("Lv.\(user.level)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(10)
+                    .contentShape(Rectangle())
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("同步中…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(10)
+                }
+            } else {
+                Button {
+                    showLogin = true
+                } label: {
+                    Label("扫码登录", systemImage: "qrcode")
+                        .font(.callout.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(10)
+            }
+        }
+    }
+
+    private func avatar(url: String, size: CGFloat) -> some View {
+        RemoteImage(url: Formatters.https(url))
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+    }
+}
