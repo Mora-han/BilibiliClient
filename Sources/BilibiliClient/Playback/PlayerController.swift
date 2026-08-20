@@ -115,8 +115,13 @@ final class PlayerController: ObservableObject {
 
         // 2. DASH 降级
         if let dashError = await startDASH(dashFallback, preferredQuality: qn) {
-            state = .failed
-            errorMessage = "该视频暂不支持在此客户端播放（DASH：\(dashError)）"
+            // 3. 终极兜底：整文件下载后作为本地 MP4 播放（无需 sidx）
+            if await tryProgressiveFallback(dashFallback, preferredQuality: qn) {
+                state = .ready
+            } else {
+                state = .failed
+                errorMessage = "该视频暂不支持在此客户端播放（DASH：\(dashError)）"
+            }
         } else {
             state = .ready
         }
@@ -170,6 +175,40 @@ final class PlayerController: ObservableObject {
         player?.pause()
         player = nil
         proxy.stop()
+        if let progressiveTempURL {
+            try? FileManager.default.removeItem(at: progressiveTempURL)
+            self.progressiveTempURL = nil
+        }
+    }
+
+    /// 整文件下载兜底：流是 moov 在前的 fMP4，可直接作为本地 MP4 播放。
+    private var progressiveTempURL: URL?
+
+    private func tryProgressiveFallback(_ data: PlayURLData, preferredQuality: Int?) async -> Bool {
+        guard let dash = data.dash,
+              let stream = Self.pickVideo(dash.video ?? [], preferredQuality: preferredQuality ?? data.quality),
+              let url = URL(string: stream.baseUrl.replacingOccurrences(of: "http://", with: "https://")) else {
+            return false
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.setValue(APIConstants.referer, forHTTPHeaderField: "Referer")
+            request.setValue(APIConstants.userAgent, forHTTPHeaderField: "User-Agent")
+            if !APIClient.shared.cookieHeader.isEmpty {
+                request.setValue(APIClient.shared.cookieHeader, forHTTPHeaderField: "Cookie")
+            }
+            let (tempURL, response) = try await URLSession.shared.download(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                throw APIError.http((response as? HTTPURLResponse)?.statusCode ?? -1)
+            }
+            progressiveTempURL = tempURL
+            player = AVPlayer(url: tempURL)
+            player?.automaticallyWaitsToMinimizeStalling = true
+            return true
+        } catch {
+            return false
+        }
     }
 
     private static func qualityOptions(from data: PlayURLData) -> [Quality] {
@@ -269,7 +308,7 @@ final class PlayerController: ObservableObject {
 
         if segments == nil {
             // 从分片起点拉 2MB 大窗口
-            let windowEnd = indexStart + 2 * 1024 * 1024 - 1
+            let windowEnd = indexStart + 8 * 1024 * 1024 - 1
             if let (wide, _) = try? await APIClient.shared.streamData(from: url, range: "\(indexStart)-\(windowEnd)") {
                 extraData = wide
                 segments = Self.parseSIDXBySearching(wide, absoluteRangeStart: indexStart)
@@ -281,7 +320,7 @@ final class PlayerController: ObservableObject {
 
         if segments == nil {
             // Range 可能被忽略：从文件头拉大窗口
-            let windowEnd = indexStart + 2 * 1024 * 1024 - 1
+            let windowEnd = indexStart + 8 * 1024 * 1024 - 1
             if let (fromZero, _) = try? await APIClient.shared.streamData(from: url, range: "0-\(windowEnd)") {
                 extraData = fromZero
                 segments = Self.parseSIDXBySearching(fromZero, absoluteRangeStart: 0)
