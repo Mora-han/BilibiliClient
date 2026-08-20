@@ -52,28 +52,27 @@ enum SIDXParser {
         var timescale: Double = 0
         var firstOffset = 0
 
+        // reference_ID(4) 与版本无关；版本 1 的 ept/first_offset 才是 64 位
+        guard let _ = reader.readUInt32(),
+              let ts = reader.readUInt32() else { return nil }
+        timescale = Double(ts)
+
         switch version {
         case 0:
-            // reference_ID(4) + timescale(4) + earliest_presentation_time(4) + first_offset(4)
             guard let _ = reader.readUInt32(),
-                  let ts = reader.readUInt32(),
-                  let _ = reader.readUInt32(),
                   let fo = reader.readUInt32() else { return nil }
-            timescale = Double(ts)
             firstOffset = Int(fo)
         case 1:
-            // reference_ID(8) + timescale(4) + earliest_presentation_time(8) + first_offset(8)
             guard let _ = reader.readUInt64(),
-                  let ts = reader.readUInt32(),
-                  let _ = reader.readUInt64(),
                   let fo = reader.readUInt64() else { return nil }
-            timescale = Double(ts)
             firstOffset = Int(fo)
         default:
             return nil
         }
 
         guard timescale > 0,
+              // reserved(2) + reference_count(2)：先消费 reserved 再读数量
+              let _ = reader.readUInt16(),
               let countRaw = reader.readUInt16() else { return nil }
         let referenceCount = Int(countRaw & 0x7FFF)
 

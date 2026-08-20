@@ -281,45 +281,26 @@ final class PlayerController: ObservableObject {
             throw APIError.invalidResponse
         }
 
-        // 部分流的分片自带 ftyp/styp 前缀，index_range 只是分片起点，
-        // sidx 可能在小范围之外，因此用小范围 + 大窗口两种方式尝试。
-        let (sidxData, _) = try await APIClient.shared.streamData(
-            from: url,
-            range: "\(indexStart)-\(indexEnd)"
-        )
-        var segments = SIDXParser.parse(sidxData, absoluteRangeStart: indexStart)
-        var extraData: Data?
+        let (initData, _) = try await APIClient.shared.streamData(from: url, range: "\(initStart)-\(initEnd)")
+        let timescale = MP4FragmentParser.timescale(inInit: initData)
 
-        if segments == nil {
-            // 从分片起点拉 2MB 大窗口
-            let windowEnd = indexStart + 8 * 1024 * 1024 - 1
-            if let (wide, _) = try? await APIClient.shared.streamData(from: url, range: "\(indexStart)-\(windowEnd)") {
-                extraData = wide
-                segments = Self.parseSIDXBySearching(wide, absoluteRangeStart: indexStart)
-                if segments == nil {
-                    segments = SIDXParser.parse(wide, absoluteRangeStart: indexStart)
-                }
-            }
-        }
+        // 方案 1：sidx（小范围 + 大窗口 + 从头扫，兼容 ftyp/styp 前缀）
+        var segments = try await Self.parseSIDX(url: url,
+                                                indexStart: indexStart,
+                                                indexEnd: indexEnd)
 
-        if segments == nil {
-            // Range 可能被忽略：从文件头拉大窗口
-            let windowEnd = indexStart + 8 * 1024 * 1024 - 1
-            if let (fromZero, _) = try? await APIClient.shared.streamData(from: url, range: "0-\(windowEnd)") {
-                extraData = fromZero
-                segments = Self.parseSIDXBySearching(fromZero, absoluteRangeStart: 0)
-                if segments == nil {
-                    segments = SIDXParser.parse(fromZero, absoluteRangeStart: 0)
-                }
+        // 方案 2：没有 sidx 时，直接枚举 moof/mdat 分片（不依赖 sidx）
+        if segments == nil, let timescale {
+            let ts = Double(timescale)
+            segments = try await Self.enumerateFragments(url: url, start: indexStart, timescale: ts)
+            if segments == nil {
+                // index_range 可能指向错误位置（例如服务器忽略 Range 返回了文件头），从头扫
+                segments = try await Self.enumerateFragments(url: url, start: 0, timescale: ts)
             }
         }
 
         guard let segments else {
-            let preview = (extraData ?? sidxData).prefix(24).map { byte -> String in
-                let hex = String(byte, radix: 16)
-                return hex.count == 1 ? "0" + hex : hex
-            }.joined(separator: " ")
-            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH，窄 \(sidxData.count) 字节 / 宽 \(extraData?.count ?? 0) 字节，头部 [\(preview)]）")
+            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH：sidx 与 moof 枚举均失败，index_range \(indexStart)-\(indexEnd)）")
         }
 
         return HLSProxy.Media(
@@ -331,5 +312,93 @@ final class PlayerController: ObservableObject {
             width: stream.width,
             height: stream.height
         )
+    }
+
+    /// 尝试从 index_range 与多个窗口里解析 sidx。
+    private static func parseSIDX(url: URL, indexStart: Int, indexEnd: Int) async throws -> [MediaSegment]? {
+        // 部分流的分片自带 ftyp/styp 前缀，index_range 只是分片起点，
+        // sidx 可能在小范围之外，因此用小范围 + 大窗口两种方式尝试。
+        if let (sidxData, _) = try? await APIClient.shared.streamData(from: url, range: "\(indexStart)-\(indexEnd)"),
+           let segments = SIDXParser.parse(sidxData, absoluteRangeStart: indexStart) {
+            return segments
+        }
+
+        // 从分片起点拉 8MB 大窗口
+        let windowEnd = indexStart + 8 * 1024 * 1024 - 1
+        if let (wide, _) = try? await APIClient.shared.streamData(from: url, range: "\(indexStart)-\(windowEnd)") {
+            if let segments = Self.parseSIDXBySearching(wide, absoluteRangeStart: indexStart) {
+                return segments
+            }
+            if let segments = SIDXParser.parse(wide, absoluteRangeStart: indexStart) {
+                return segments
+            }
+        }
+
+        // Range 可能被忽略：从文件头拉大窗口
+        if let (fromZero, _) = try? await APIClient.shared.streamData(from: url, range: "0-\(windowEnd)") {
+            if let segments = Self.parseSIDXBySearching(fromZero, absoluteRangeStart: 0) {
+                return segments
+            }
+            if let segments = SIDXParser.parse(fromZero, absoluteRangeStart: 0) {
+                return segments
+            }
+        }
+        return nil
+    }
+
+    /// 不依赖 sidx 的分片枚举：每次只拉一个分片的 moof/mdat 头（小窗口），
+    /// 依边界顺序跳跃前进；416 表示已到文件末尾。
+    private static func enumerateFragments(url: URL,
+                                           start: Int,
+                                           timescale: Double) async throws -> [MediaSegment]? {
+        var fragments: [MP4Fragment] = []
+        var next = start
+        var window = 1 * 1024 * 1024
+        var fetches = 0
+        var hitCap = false
+        let maxFetches = 2000
+
+        while fetches < maxFetches {
+            let chunk: Data
+            do {
+                (chunk, _) = try await APIClient.shared.streamData(from: url, range: "\(next)-\(next + window - 1)")
+            } catch let error as APIError {
+                if case .http(416) = error { break }
+                throw error
+            }
+            if chunk.isEmpty { break }
+            fetches += 1
+
+            let result = MP4FragmentParser.parseFragments(buffer: chunk,
+                                                          start: 0,
+                                                          timescale: timescale,
+                                                          baseOffset: next)
+            if let last = result.fragments.last {
+                // 只保留时长合理（>0 且 <= 120s）的分片，异常结构直接判定失败
+                for f in result.fragments where !(f.duration > 0 && f.duration <= 120) {
+                    return nil
+                }
+                fragments += result.fragments
+                next = last.moofOffset + last.size
+                window = 1 * 1024 * 1024
+                continue
+            }
+            if result.needsMore, window < 8 * 1024 * 1024 {
+                window *= 2
+                continue
+            }
+            break
+        }
+        hitCap = fetches >= maxFetches
+
+        guard !fragments.isEmpty else { return nil }
+        if hitCap {
+            // 枚举到上限仍未到文件尾，避免播放中途截断，直接报错
+            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH：分片数量超过枚举上限）")
+        }
+        return fragments.map {
+            MediaSegment(range: "\($0.moofOffset)-\($0.moofOffset + $0.size - 1)",
+                         duration: $0.duration)
+        }
     }
 }

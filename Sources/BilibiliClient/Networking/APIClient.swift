@@ -170,6 +170,12 @@ final class APIClient {
 
     /// 拉取 CDN 媒体分片（自动带上 Referer / Cookie / Range），供本地播放代理使用。
     func streamData(from url: URL, range: String? = nil) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await streamBytes(from: url, range: range)
+        return (try await data.reduce(into: Data()) { $0.append($1) }, response)
+    }
+
+    /// 流式拉取 CDN 媒体分片：返回可逐块读取的字节流，供代理边下边转。
+    func streamBytes(from url: URL, range: String? = nil) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
         var request = URLRequest(url: url)
         request.setValue(APIConstants.referer, forHTTPHeaderField: "Referer")
         request.setValue(APIConstants.userAgent, forHTTPHeaderField: "User-Agent")
@@ -179,11 +185,12 @@ final class APIClient {
         if let range {
             request.setValue("bytes=\(range)", forHTTPHeaderField: "Range")
         }
-        let (data, response) = try await session.data(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else {
             throw APIError.http((response as? HTTPURLResponse)?.statusCode ?? -1)
         }
-        return (data, http)
+        return (bytes, http)
     }
+
 }

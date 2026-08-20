@@ -230,8 +230,8 @@ final class HLSProxy {
 
     // MARK: - 在线流式转发
 
-    /// 像普通文件服务器一样响应 Range 请求（带 Content-Length / Content-Range），
-    /// 让 AVPlayer 像播放 MP4 直链一样秒开、可拖动。
+    /// 像普通文件服务器一样响应 Range 请求，并把 CDN 的字节流逐块转发给 AVPlayer
+    /// （不再整段缓冲到内存，保证大文件也能秒开、可拖动）。
     private func serveProgressive(request: HTTPRequest, connection: NWConnection) {
         guard let baseURL = progressiveBaseURL else {
             send(status: "404 Not Found", contentType: "text/plain", body: "", to: connection)
@@ -239,58 +239,62 @@ final class HLSProxy {
         }
 
         Task {
-            let api = APIClient.shared
-
-            // 解析 AVPlayer 的 Range 请求
-            var requestedStart = 0
-            var requestedEnd: Int?
-            if let rangeHeader = request.headers["range"], rangeHeader.hasPrefix("bytes=") {
-                let parts = rangeHeader.dropFirst("bytes=".count).split(separator: "-")
-                requestedStart = Int(parts.first ?? "") ?? 0
-                if parts.count == 2, let e = Int(parts[1]) {
-                    requestedEnd = e
-                }
-            }
-
             do {
-                // 先探测一次文件总长度（CDN 的 Content-Range 会带 total）
-                var total: Int?
-                var probe: Data?
-                if let (probeData, probeResponse) = try? await api.streamData(from: baseURL, range: "0-1"),
-                   let http = probeResponse as? HTTPURLResponse,
-                   let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
-                   let totalText = contentRange.split(separator: "/").last {
-                    total = Int(totalText)
-                    probe = probeData
-                }
-                guard let total else { throw APIError.invalidResponse }
+                let (bytes, response) = try await APIClient.shared.streamBytes(from: baseURL,
+                                                                               range: request.headers["range"])
+                let status = response.statusCode
+                let contentRange = response.value(forHTTPHeaderField: "Content-Range") ?? ""
+                let contentType = response.value(forHTTPHeaderField: "Content-Type") ?? "video/mp4"
+                let contentLength = response.value(forHTTPHeaderField: "Content-Length") ?? ""
+                let acceptRanges = response.value(forHTTPHeaderField: "Accept-Ranges") ?? "bytes"
 
-                // 取实际区间：有 end 用 end，无 end 按 4MB 一块
-                let fetchEnd = min(requestedEnd ?? (requestedStart + 4 * 1024 * 1024 - 1), total - 1)
-                guard requestedStart <= fetchEnd else { throw APIError.invalidResponse }
-
-                // AVPlayer 的 0-1 探测请求直接复用探测数据
-                let data: Data
-                if requestedStart == 0, requestedEnd == 1, let probe {
-                    data = probe
-                } else {
-                    let (fetched, _) = try await api.streamData(from: baseURL, range: "\(requestedStart)-\(fetchEnd)")
-                    data = fetched
-                }
-                let length = data.count
-
-                var head = "HTTP/1.1 206 Partial Content\r\n"
-                head += "Content-Type: video/mp4\r\n"
-                head += "Accept-Ranges: bytes\r\n"
-                head += "Content-Range: bytes \(requestedStart)-\(requestedStart + max(length, 1) - 1)/\(total)\r\n"
-                head += "Content-Length: \(length)\r\n"
+                var head = "HTTP/1.1 \(status)\r\n"
+                head += "Content-Type: \(contentType)\r\n"
+                head += "Accept-Ranges: \(acceptRanges)\r\n"
+                if !contentRange.isEmpty { head += "Content-Range: \(contentRange)\r\n" }
+                if !contentLength.isEmpty { head += "Content-Length: \(contentLength)\r\n" }
                 head += "Connection: close\r\n\r\n"
 
-                connection.send(content: Data(head.utf8) + data,
-                                completion: .contentProcessed { _ in connection.cancel() })
+                connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in
+                    Self.streamBody(bytes, to: connection)
+                })
             } catch {
                 send(status: "500 Internal Server Error", contentType: "text/plain", body: "", to: connection)
             }
+        }
+    }
+
+    /// 把 URLSession 字节流逐块发送到 NWConnection，全部发完后关闭连接。
+    private static func streamBody(_ bytes: URLSession.AsyncBytes, to connection: NWConnection) {
+        Task {
+            var buffer = Data()
+            buffer.reserveCapacity(128 * 1024)
+            var iterator = bytes.makeAsyncIterator()
+            while let byte = try? await iterator.next() {
+                buffer.append(byte)
+                if buffer.count >= 128 * 1024 {
+                    let chunk = buffer
+                    buffer.removeAll(keepingCapacity: true)
+                    let ok = await withCheckedContinuation { continuation in
+                        connection.send(content: chunk, completion: .contentProcessed { error in
+                            continuation.resume(returning: error == nil)
+                        })
+                    }
+                    if !ok { return }
+                }
+            }
+            if !buffer.isEmpty {
+                let chunk = buffer
+                let ok = await withCheckedContinuation { continuation in
+                    connection.send(content: chunk, completion: .contentProcessed { error in
+                        continuation.resume(returning: error == nil)
+                    })
+                }
+                if !ok { return }
+            }
+            connection.send(content: Data(), completion: .contentProcessed { _ in
+                connection.cancel()
+            })
         }
     }
 
