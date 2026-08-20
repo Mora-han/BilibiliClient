@@ -50,13 +50,12 @@ final class PlayerController: ObservableObject {
         guard !bvid.isEmpty else { return }
         state = .loading
         errorMessage = nil
-        player?.pause()
-        player = nil
-        proxy.stop()
+        teardownPlayer()
         do {
             let data = try await service.playURLDASH(bvid: bvid, cid: cid, qn: quality.id)
-            currentQualityId = data.quality ?? quality.id
-            await startPlayback(data, preferredQuality: currentQualityId)
+            let granted = data.quality ?? quality.id
+            currentQualityId = granted
+            await play(bvid: bvid, cid: cid, qn: granted, dashFallback: data)
         } catch {
             state = .failed
             errorMessage = error.localizedDescription
@@ -64,9 +63,7 @@ final class PlayerController: ObservableObject {
     }
 
     func stop() {
-        player?.pause()
-        player = nil
-        proxy.stop()
+        teardownPlayer()
     }
 
     // MARK: - Private
@@ -74,42 +71,24 @@ final class PlayerController: ObservableObject {
     private func resetAndLoad(qn: Int) async {
         state = .loading
         errorMessage = nil
-        player?.pause()
-        player = nil
-        proxy.stop()
+        teardownPlayer()
         do {
             let data = try await service.playURLDASH(bvid: bvid, cid: cid, qn: qn)
             qualities = Self.qualityOptions(from: data)
-            currentQualityId = data.quality ?? qualities.last?.id ?? qn
-            await startPlayback(data, preferredQuality: currentQualityId)
+            let granted = data.quality ?? qualities.last?.id ?? qn
+            currentQualityId = granted
+            await play(bvid: bvid, cid: cid, qn: granted, dashFallback: data)
         } catch {
             state = .failed
             errorMessage = error.localizedDescription
         }
     }
 
-    private func startPlayback(_ data: PlayURLData, preferredQuality: Int?) async {
-        // 优先 DASH：选中目标清晰度对应的视频流，本地代理转 HLS
-        if let dash = data.dash {
-            let streams = dash.video ?? []
-            if let video = Self.pickVideo(streams, preferredQuality: preferredQuality ?? data.quality),
-               let audio = dash.audio?.first {
-                do {
-                    let videoMedia = try await Self.makeMedia(from: video)
-                    let audioMedia = try await Self.makeMedia(from: audio)
-                    let url = try proxy.start(video: videoMedia, audio: audioMedia)
-                    player = AVPlayer(url: url)
-                    player?.automaticallyWaitsToMinimizeStalling = true
-                    state = .ready
-                    return
-                } catch {
-                    // 代理失败时降级 MP4
-                }
-            }
-        }
-
-        // 降级：MP4 直链
-        if let first = data.durl?.first,
+    /// 播放：优先 MP4 直链（已验证稳定），拿不到再走 DASH 本地代理。
+    private func play(bvid: String, cid: Int, qn: Int, dashFallback: PlayURLData) async {
+        // 1. MP4
+        if let mp4 = try? await service.playURLMP4(bvid: bvid, cid: cid, qn: qn),
+           let first = mp4.durl?.first,
            let url = URL(string: first.url.replacingOccurrences(of: "http://", with: "https://")) {
             let asset = AVURLAsset(url: url, options: httpAssetOptions())
             player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
@@ -118,8 +97,38 @@ final class PlayerController: ObservableObject {
             return
         }
 
-        state = .failed
-        errorMessage = "该视频暂不支持在此客户端播放"
+        // 2. DASH 降级
+        if let dashError = await startDASH(dashFallback, preferredQuality: qn) {
+            state = .failed
+            errorMessage = "该视频暂不支持在此客户端播放（DASH：\(dashError)）"
+        } else {
+            state = .ready
+        }
+    }
+
+    /// 返回 nil 表示成功；否则返回失败原因。
+    private func startDASH(_ data: PlayURLData, preferredQuality: Int?) async -> String? {
+        guard let dash = data.dash else { return "无 DASH 流" }
+        guard let video = Self.pickVideo(dash.video ?? [], preferredQuality: preferredQuality ?? data.quality),
+              let audio = dash.audio?.first else {
+            return "缺少音视频流"
+        }
+        do {
+            let videoMedia = try await Self.makeMedia(from: video)
+            let audioMedia = try await Self.makeMedia(from: audio)
+            let url = try await proxy.start(video: videoMedia, audio: audioMedia)
+            player = AVPlayer(url: url)
+            player?.automaticallyWaitsToMinimizeStalling = true
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private func teardownPlayer() {
+        player?.pause()
+        player = nil
+        proxy.stop()
     }
 
     private static func qualityOptions(from data: PlayURLData) -> [Quality] {
@@ -137,8 +146,9 @@ final class PlayerController: ObservableObject {
     /// 优先取指定清晰度；拿不到时取不高于它的最高档；再不行取 AVC 编码流。
     private static func pickVideo(_ streams: [PlayURLData.DashStream],
                                   preferredQuality: Int?) -> PlayURLData.DashStream? {
-        let avc = streams.filter { $0.codecs?.hasPrefix("avc1") ?? false }
-        let candidates = avc.isEmpty ? streams : avc
+        let withSegment = streams.filter { $0.segmentBase != nil }
+        let avc = withSegment.filter { $0.codecs?.hasPrefix("avc1") ?? false }
+        let candidates = avc.isEmpty ? withSegment : avc
         if let preferred = preferredQuality {
             if let match = candidates.first(where: { $0.id == preferred }) {
                 return match

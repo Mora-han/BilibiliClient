@@ -26,7 +26,7 @@ final class HLSProxy {
     private let queue = DispatchQueue(label: "com.codex.bilibili.hls", qos: .userInitiated)
 
     @discardableResult
-    func start(video: Media, audio: Media) throws -> URL {
+    func start(video: Media, audio: Media) async throws -> URL {
         stop()
         session = Session(video: video, audio: audio)
 
@@ -42,7 +42,16 @@ final class HLSProxy {
         listener.start(queue: queue)
         self.listener = listener
 
-        guard let port = listener.port?.rawValue, port > 0 else {
+        // 等待端口就绪（NWListener 端口可能异步生效）
+        var port: UInt16 = 0
+        for _ in 0..<20 {
+            if let raw = listener.port?.rawValue, raw > 0 {
+                port = raw
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        guard port > 0 else {
             stop()
             throw APIError.invalidResponse
         }
