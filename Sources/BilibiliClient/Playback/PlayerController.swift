@@ -245,8 +245,23 @@ final class PlayerController: ObservableObject {
             from: url,
             range: "\(indexStart)-\(indexEnd)"
         )
-        guard let segments = SIDXParser.parse(sidxData, absoluteRangeStart: indexStart) else {
-            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH，\(sidxData.count) 字节）")
+        var segments = SIDXParser.parse(sidxData, absoluteRangeStart: indexStart)
+
+        // 兜底：Range 可能被忽略或范围存在偏移，改从文件头拉宽范围再扫一次
+        var wideData: Data?
+        if segments == nil {
+            if let (wide, _) = try? await APIClient.shared.streamData(from: url, range: "0-\(indexEnd)") {
+                wideData = wide
+                segments = SIDXParser.parse(wide, absoluteRangeStart: 0)
+            }
+        }
+
+        guard let segments else {
+            let preview = (wideData ?? sidxData).prefix(24).map { byte -> String in
+                let hex = String(byte, radix: 16)
+                return hex.count == 1 ? "0" + hex : hex
+            }.joined(separator: " ")
+            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH，窄 \(sidxData.count) 字节 / 宽 \(wideData?.count ?? 0) 字节，头部 [\(preview)]）")
         }
 
         return HLSProxy.Media(
