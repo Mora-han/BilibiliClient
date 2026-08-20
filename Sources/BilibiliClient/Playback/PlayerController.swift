@@ -23,27 +23,30 @@ final class PlayerController: ObservableObject {
 
     private let proxy = HLSProxy.shared
     private let service = VideoService()
+    private var aid = 0
     private var bvid = ""
     private var cid = 0
     private var loadedKey: String?
+    private var reportTask: Task<Void, Never>?
 
     var currentQualityName: String? {
         guard let currentQualityId else { return nil }
         return qualities.first { $0.id == currentQualityId }?.name
     }
 
-    func load(bvid: String, cid: Int) async {
+    func load(aid: Int, bvid: String, cid: Int) async {
         let key = "\(bvid):\(cid)"
         guard loadedKey != key else { return }
         loadedKey = key
+        self.aid = aid
         self.bvid = bvid
         self.cid = cid
         await resetAndLoad(qn: 80)
     }
 
-    func retry(bvid: String, cid: Int) async {
+    func retry(aid: Int, bvid: String, cid: Int) async {
         loadedKey = nil
-        await load(bvid: bvid, cid: cid)
+        await load(aid: aid, bvid: bvid, cid: cid)
     }
 
     func selectQuality(_ quality: Quality) async {
@@ -63,6 +66,16 @@ final class PlayerController: ObservableObject {
     }
 
     func stop() {
+        reportTask?.cancel()
+        reportTask = nil
+        if let player, bvid != "" {
+            let seconds = player.currentTime().seconds
+            if seconds.isFinite, seconds > 0 {
+                Task {
+                    await HistoryReporter.report(aid: aid, cid: cid, progress: Int(seconds))
+                }
+            }
+        }
         teardownPlayer()
     }
 
@@ -94,6 +107,7 @@ final class PlayerController: ObservableObject {
             player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
             player?.automaticallyWaitsToMinimizeStalling = true
             state = .ready
+            startReportLoop()
             return
         }
 
@@ -119,9 +133,32 @@ final class PlayerController: ObservableObject {
             let url = try await proxy.start(video: videoMedia, audio: audioMedia)
             player = AVPlayer(url: url)
             player?.automaticallyWaitsToMinimizeStalling = true
+            startReportLoop()
             return nil
         } catch {
             return error.localizedDescription
+        }
+    }
+
+    /// 每 15 秒上报一次观看进度（播放中才报），播完上报最终进度。
+    private func startReportLoop() {
+        reportTask?.cancel()
+        reportTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard let self, !Task.isCancelled else { return }
+                guard let player = self.player,
+                      player.timeControlStatus == .playing else { continue }
+                let seconds = player.currentTime().seconds
+                guard seconds.isFinite, seconds > 0 else { continue }
+                await HistoryReporter.report(aid: self.aid, cid: self.cid, progress: Int(seconds))
+
+                if let duration = player.currentItem?.duration.seconds,
+                   duration.isFinite, seconds >= duration - 2 {
+                    await HistoryReporter.report(aid: self.aid, cid: self.cid, progress: Int(duration))
+                    break
+                }
+            }
         }
     }
 

@@ -47,7 +47,7 @@ struct VideoDetailView: View {
         if let data = detail {
             // 返回后再进入：恢复已停止的播放器
             if player.player == nil {
-                await player.load(bvid: data.view.bvid, cid: data.view.cid)
+                await player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
             }
             return
         }
@@ -58,7 +58,7 @@ struct VideoDetailView: View {
             detail = data
             isLoading = false
             async let commentsTask: Void = loadComments(aid: data.view.aid)
-            async let playerTask: Void = player.load(bvid: data.view.bvid, cid: data.view.cid)
+            async let playerTask: Void = player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
             _ = await (commentsTask, playerTask)
             return
         } catch {
@@ -279,6 +279,6 @@ struct VideoDetailView: View {
 
     private func retryPlayer() async {
         guard let view = detail?.view else { return }
-        await player.retry(bvid: view.bvid, cid: view.cid)
+        await player.retry(aid: view.aid, bvid: view.bvid, cid: view.cid)
     }
 }

@@ -96,6 +96,42 @@ final class APIClient {
         return (data, http)
     }
 
+    /// POST 表单请求（用于观看进度上报等），只校验 code/message。
+    func postForm(path: String,
+                  base: URL = APIConstants.apiBase,
+                  form: [String: String]) async throws {
+        struct EmptyEnvelope: Decodable {
+            let code: Int
+            let message: String
+        }
+
+        var request = URLRequest(url: base.appendingPathComponent(path))
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let body = form
+            .sorted { $0.key < $1.key }
+            .map { "\(Self.encodeFormValue($0.key))=\(Self.encodeFormValue($0.value))" }
+            .joined(separator: "&")
+        request.httpBody = Data(body.utf8)
+        if !cookieHeader.isEmpty {
+            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        }
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else { throw APIError.http(http.statusCode) }
+
+        let decoder = JSONDecoder()
+        let envelope = try decoder.decode(EmptyEnvelope.self, from: data)
+        guard envelope.code == 0 else {
+            throw APIError.biz(code: envelope.code, message: envelope.message)
+        }
+    }
+
+    private static func encodeFormValue(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+    }
+
     /// 拉取 CDN 媒体分片（自动带上 Referer / Cookie / Range），供本地播放代理使用。
     func streamData(from url: URL, range: String? = nil) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: url)
