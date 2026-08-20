@@ -230,86 +230,67 @@ final class HLSProxy {
 
     // MARK: - 在线流式转发
 
-    /// 把 CDN 视频流按 Range/分块持续转发给 AVPlayer，实现边下边播。
+    /// 像普通文件服务器一样响应 Range 请求（带 Content-Length / Content-Range），
+    /// 让 AVPlayer 像播放 MP4 直链一样秒开、可拖动。
     private func serveProgressive(request: HTTPRequest, connection: NWConnection) {
         guard let baseURL = progressiveBaseURL else {
             send(status: "404 Not Found", contentType: "text/plain", body: "", to: connection)
             return
         }
-        let chunkSize = 4 * 1024 * 1024
 
         Task {
-            var start = 0
-            var end: Int?
+            let api = APIClient.shared
+
+            // 解析 AVPlayer 的 Range 请求
+            var requestedStart = 0
+            var requestedEnd: Int?
             if let rangeHeader = request.headers["range"], rangeHeader.hasPrefix("bytes=") {
                 let parts = rangeHeader.dropFirst("bytes=".count).split(separator: "-")
-                start = Int(parts.first ?? "") ?? 0
+                requestedStart = Int(parts.first ?? "") ?? 0
                 if parts.count == 2, let e = Int(parts[1]) {
-                    end = e
+                    requestedEnd = e
                 }
             }
 
-            var position = start
-            var headerSent = false
-            var totalLength: Int?
-            var finished = false
-
-            while !finished {
-                let chunkEnd = min(position + chunkSize - 1, end ?? (position + chunkSize - 1))
-                do {
-                    let (data, response) = try await APIClient.shared.streamData(
-                        from: baseURL,
-                        range: "\(position)-\(chunkEnd)"
-                    )
-                    guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-
-                    if totalLength == nil, let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
-                       let totalText = contentRange.split(separator: "/").last,
-                       let total = Int(totalText) {
-                        totalLength = total
-                    }
-
-                    if !headerSent {
-                        headerSent = true
-                        var head = "HTTP/1.1 206 Partial Content\r\n"
-                        head += "Content-Type: video/mp4\r\n"
-                        head += "Transfer-Encoding: chunked\r\n"
-                        head += "Connection: close\r\n"
-                        if let total = totalLength {
-                            let rangeEnd = min(end ?? total - 1, total - 1)
-                            head += "Content-Range: bytes \(position)-\(rangeEnd)/\(total)\r\n"
-                        } else {
-                            head += "Content-Range: bytes \(position)-\(position + max(data.count, 1) - 1)/*\r\n"
-                        }
-                        head += "\r\n"
-                        connection.send(content: Data(head.utf8),
-                                        completion: .contentProcessed { _ in })
-                    }
-
-                    if data.isEmpty {
-                        finished = true
-                        break
-                    }
-
-                    let frame = Data("\(String(data.count, radix: 16))\r\n".utf8) + data + Data("\r\n".utf8)
-                    connection.send(content: frame, completion: .contentProcessed { _ in })
-
-                    let requested = chunkEnd - position + 1
-                    position += data.count
-
-                    if let end, position > end {
-                        finished = true
-                    } else if data.count < requested {
-                        // CDN 已返回文件末尾
-                        finished = true
-                    }
-                } catch {
-                    finished = true
+            do {
+                // 先探测一次文件总长度（CDN 的 Content-Range 会带 total）
+                var total: Int?
+                var probe: Data?
+                if let (probeData, probeResponse) = try? await api.streamData(from: baseURL, range: "0-1"),
+                   let http = probeResponse as? HTTPURLResponse,
+                   let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
+                   let totalText = contentRange.split(separator: "/").last {
+                    total = Int(totalText)
+                    probe = probeData
                 }
-            }
+                guard let total else { throw APIError.invalidResponse }
 
-            connection.send(content: Data("0\r\n\r\n".utf8),
-                            completion: .contentProcessed { _ in connection.cancel() })
+                // 取实际区间：有 end 用 end，无 end 按 4MB 一块
+                let fetchEnd = min(requestedEnd ?? (requestedStart + 4 * 1024 * 1024 - 1), total - 1)
+                guard requestedStart <= fetchEnd else { throw APIError.invalidResponse }
+
+                // AVPlayer 的 0-1 探测请求直接复用探测数据
+                let data: Data
+                if requestedStart == 0, requestedEnd == 1, let probe {
+                    data = probe
+                } else {
+                    let (fetched, _) = try await api.streamData(from: baseURL, range: "\(requestedStart)-\(fetchEnd)")
+                    data = fetched
+                }
+                let length = data.count
+
+                var head = "HTTP/1.1 206 Partial Content\r\n"
+                head += "Content-Type: video/mp4\r\n"
+                head += "Accept-Ranges: bytes\r\n"
+                head += "Content-Range: bytes \(requestedStart)-\(requestedStart + max(length, 1) - 1)/\(total)\r\n"
+                head += "Content-Length: \(length)\r\n"
+                head += "Connection: close\r\n\r\n"
+
+                connection.send(content: Data(head.utf8) + data,
+                                completion: .contentProcessed { _ in connection.cancel() })
+            } catch {
+                send(status: "500 Internal Server Error", contentType: "text/plain", body: "", to: connection)
+            }
         }
     }
 
