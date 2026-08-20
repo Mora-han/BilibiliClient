@@ -4,6 +4,8 @@ struct RootView: View {
     @EnvironmentObject private var session: SessionStore
     @State private var selection: SidebarItem? = .home
     @State private var showLogin = false
+    @State private var searchText = ""
+    @State private var submittedQuery = ""
 
     enum SidebarItem: String, CaseIterable, Identifiable {
         case home = "推荐"
@@ -40,7 +42,7 @@ struct RootView: View {
                     case .home:
                         HomeFeedView()
                     case .search:
-                        SearchView()
+                        SearchView(query: submittedQuery)
                     case .dynamics:
                         DynamicFeedView()
                     case .profile:
@@ -68,7 +70,7 @@ struct RootView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("浏览") {
-                ForEach([SidebarItem.home, .search, .dynamics, .profile]) { item in
+                ForEach([SidebarItem.home, .dynamics, .profile]) { item in
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }
@@ -81,6 +83,13 @@ struct RootView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            GlassSearchField(text: $searchText) {
+                submitSearch()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+        }
         .safeAreaInset(edge: .bottom) { accountBar }
     }
 
@@ -125,6 +134,14 @@ struct RootView: View {
                 .buttonStyle(.borderedProminent)
                 .padding(10)
             }
+        }
+    }
+
+    private func submitSearch() {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        submittedQuery = trimmed
+        if !trimmed.isEmpty {
+            selection = .search
         }
     }
 

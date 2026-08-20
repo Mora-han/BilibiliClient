@@ -22,7 +22,14 @@ enum Formatters {
     }
 
     static func https(_ url: String) -> URL? {
-        URL(string: url.replacingOccurrences(of: "http://", with: "https://"))
+        var value = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("//") {
+            // 协议相对地址，如 //i0.hdslb.com/xxx.jpg
+            value = "https:" + value
+        } else if value.hasPrefix("http://") {
+            value = "https://" + value.dropFirst("http://".count)
+        }
+        return URL(string: value)
     }
 
     /// 定点小数格式化（规避部分环境下 String(format:) 失效的问题）。
