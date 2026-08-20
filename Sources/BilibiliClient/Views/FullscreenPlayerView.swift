@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import QuartzCore
 import SwiftUI
 
 /// 全屏播放窗口的内容：播放器 + 弹幕层 + 弹幕开关 + 退出全屏按钮。
@@ -98,9 +99,14 @@ struct FullscreenExitButton: View {
     }
 }
 
-/// 全屏播放窗口管理：负责创建、进入/退出系统全屏、清理。
+/// 全屏播放窗口管理：模仿 Safari 视频全屏——
+/// 窗口从内嵌播放器的屏幕位置平滑放大到整屏，退出时再缩回原位。
+/// 全程使用同一个 AVPlayer 与 DanmakuEngine，播放不中断。
 final class FullscreenPlayerWindow {
     private var window: NSWindow?
+    private var sourceRect: CGRect = .zero
+    private var onClosed: (() -> Void)?
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     var isOpen: Bool { window != nil }
 
@@ -108,43 +114,39 @@ final class FullscreenPlayerWindow {
     func open(player: AVPlayer,
               engine: DanmakuEngine,
               danmakuEnabled: Binding<Bool>,
+              sourceRect: CGRect,
               onClosed: @escaping () -> Void) {
         guard window == nil else { return }
+        self.sourceRect = sourceRect
+        self.onClosed = onClosed
 
-        let closeAction: () -> Void = { [weak self] in
-            self?.exitFullscreen()
+        let targetScreen = NSScreen.screens.first { $0.frame.intersects(sourceRect) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+        let startRect = sourceRect.isEmpty ? (targetScreen?.frame ?? .zero) : sourceRect
+        guard !startRect.isEmpty, let targetScreen else {
+            onClosed()
+            self.onClosed = nil
+            return
         }
+
         let hosting = NSHostingView(rootView: FullscreenPlayerView(player: player,
                                                                    engine: engine,
                                                                    danmakuEnabled: danmakuEnabled,
-                                                                   onClose: closeAction))
-        let screen = NSScreen.main ?? NSScreen.screens.first
-        let frame = screen?.frame ?? NSRect(x: 0, y: 0, width: 1280, height: 720)
-        let window = NSWindow(contentRect: frame,
+                                                                   onClose: { [weak self] in
+                                                                       self?.exit()
+                                                                   }))
+        let window = NSWindow(contentRect: startRect,
                               styleMask: [.borderless],
                               backing: .buffered,
                               defer: false)
         window.isReleasedWhenClosed = false
         window.backgroundColor = .black
         window.contentView = hosting
-        window.collectionBehavior = [.fullScreenPrimary]
-        window.center()
         self.window = window
 
-        // 退出全屏动画结束后统一清理
-        NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification,
-                                               object: window,
-                                               queue: .main) { [weak self] _ in
-            self?.finishClose()
-            onClosed()
-        }
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
-                                               object: window,
-                                               queue: .main) { [weak self] _ in
-            guard self?.window != nil else { return }
-            self?.window = nil
-            onClosed()
-        }
+        // 模拟真全屏：隐藏菜单栏与 Dock
+        NSApp.presentationOptions = [.hideMenuBar, .hideDock]
 
         window.makeKeyAndOrderFront(nil)
         if #available(macOS 14.0, *) {
@@ -152,24 +154,34 @@ final class FullscreenPlayerWindow {
         } else {
             NSApp.activate(ignoringOtherApps: true)
         }
-        // 等窗口先完成布局再进入全屏，避免动画不触发
-        DispatchQueue.main.async {
-            window.toggleFullScreen(nil)
+
+        // 平滑放大到整屏（Safari 式视频跟随放大）
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.35
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(targetScreen.frame, display: true)
         }
+
+        registerLifecycleObservers()
     }
 
-    /// 退出全屏（按钮/Esc 触发）。
-    func exitFullscreen() {
+    /// 退出全屏：缩回内嵌播放器原位后关闭。
+    func exit() {
         guard let window else { return }
-        if window.styleMask.contains(.fullScreen) {
-            window.toggleFullScreen(nil)
-        } else {
-            finishClose()
-        }
+        NSApp.presentationOptions = []
+        let backRect = sourceRect.isEmpty ? window.frame : sourceRect
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.28
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(backRect, display: true)
+        }, completionHandler: { [weak self] in
+            self?.finishClose()
+        })
     }
 
-    /// 立即关闭并清空（详情页离开时兜底）。
+    /// 立即关闭（页面离开等兜底场景）。
     func forceClose() {
+        NSApp.presentationOptions = []
         finishClose()
     }
 
@@ -178,5 +190,34 @@ final class FullscreenPlayerWindow {
         self.window = nil
         window.contentView = nil
         window.close()
+        removeLifecycleObservers()
+        onClosed?()
+        onClosed = nil
+    }
+
+    // MARK: - 菜单栏 / Dock 随应用激活状态恢复
+
+    private func registerLifecycleObservers() {
+        let resign = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
+                                                            object: nil,
+                                                            queue: .main) { [weak self] _ in
+            guard self?.window != nil else { return }
+            NSApp.presentationOptions = []
+        }
+        let become = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                                                            object: nil,
+                                                            queue: .main) { [weak self] _ in
+            guard self?.window != nil else { return }
+            NSApp.presentationOptions = [.hideMenuBar, .hideDock]
+        }
+        lifecycleObservers = [resign, become]
+    }
+
+    private func removeLifecycleObservers() {
+        for observer in lifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        lifecycleObservers = []
     }
 }
+

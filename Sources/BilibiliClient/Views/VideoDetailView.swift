@@ -9,6 +9,7 @@ struct VideoDetailView: View {
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @State private var fullscreen = FullscreenPlayerWindow()
     @State private var isFullscreen = false
+    @State private var playerScreenFrame: CGRect = .zero
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
@@ -199,7 +200,9 @@ struct VideoDetailView: View {
                 .padding()
             case .ready:
                 if let player = player.player {
-                    PlayerView(player: player)
+                    PlayerView(player: player, onScreenFrame: { frame in
+                        playerScreenFrame = frame
+                    })
                         .overlay {
                             DanmakuOverlayView(engine: danmaku,
                                                player: player,
@@ -470,6 +473,7 @@ struct VideoDetailView: View {
         fullscreen.open(player: player,
                         engine: danmaku,
                         danmakuEnabled: $danmakuEnabled,
+                        sourceRect: playerScreenFrame,
                         onClosed: { isFullscreen = false })
     }
 
