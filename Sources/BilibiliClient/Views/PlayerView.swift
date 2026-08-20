@@ -8,14 +8,16 @@ struct PlayerView: NSViewRepresentable {
     let player: AVPlayer
     /// 播放器视图在屏幕上的位置（用于全屏进出动画的起止帧）
     var onScreenFrame: ((CGRect) -> Void)? = nil
+    /// 是否显示系统原生全屏按钮（纯享模式用）
+    var showsNativeFullscreen: Bool = false
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = FrameReportingPlayerView()
         view.player = player
         view.controlsStyle = .floating
         view.videoGravity = .resizeAspect
-        // 全屏由自定义窗口承载（带弹幕），禁用系统自带全屏按钮
-        view.showsFullScreenToggleButton = false
+        // 平滑全屏由自定义窗口承载（带弹幕），此时禁用系统自带全屏按钮
+        view.showsFullScreenToggleButton = showsNativeFullscreen
         view.onFrameChange = onScreenFrame
         return view
     }
@@ -26,6 +28,9 @@ struct PlayerView: NSViewRepresentable {
         }
         if let view = nsView as? FrameReportingPlayerView {
             view.onFrameChange = onScreenFrame
+            if view.showsFullScreenToggleButton != showsNativeFullscreen {
+                view.showsFullScreenToggleButton = showsNativeFullscreen
+            }
         }
     }
 }

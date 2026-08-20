@@ -26,6 +26,7 @@ struct RootView: View {
         case favorites = "收藏"
         case history = "历史"
         case watchLater = "稍后再看"
+        case settings = "设置"
 
         var id: String { rawValue }
 
@@ -40,6 +41,7 @@ struct RootView: View {
             case .favorites: return "bookmark.fill"
             case .history: return "clock.arrow.circlepath"
             case .watchLater: return "clock.badge.checkmark"
+            case .settings: return "gearshape"
             }
         }
     }
@@ -70,6 +72,8 @@ struct RootView: View {
                         HistoryView()
                     case .watchLater:
                         WatchLaterView()
+                    case .settings:
+                        SettingsView()
                     case nil:
                         RecommendView()
                     }
@@ -103,6 +107,10 @@ struct RootView: View {
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }
+            }
+            Section("设置") {
+                Label(SidebarItem.settings.rawValue, systemImage: SidebarItem.settings.icon)
+                    .tag(SidebarItem.settings)
             }
         }
         .listStyle(.sidebar)

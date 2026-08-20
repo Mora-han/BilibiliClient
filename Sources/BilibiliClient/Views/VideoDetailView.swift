@@ -7,6 +7,7 @@ struct VideoDetailView: View {
     @StateObject private var player = PlayerController()
     @StateObject private var danmaku = DanmakuEngine()
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
+    @AppStorage("fullscreenMode") private var fullscreenModeRaw = FullscreenMode.smooth.rawValue
     @State private var fullscreen = FullscreenPlayerWindow()
     @State private var isFullscreen = false
     @State private var playerScreenFrame: CGRect = .zero
@@ -27,6 +28,10 @@ struct VideoDetailView: View {
     @State private var hasMoreComments = true
     @State private var commentError: String?
     @State private var commentTotal: Int?
+
+    private var usesSmoothFullscreen: Bool {
+        fullscreenModeRaw == FullscreenMode.smooth.rawValue
+    }
 
     var body: some View {
         ScrollView {
@@ -200,9 +205,11 @@ struct VideoDetailView: View {
                 .padding()
             case .ready:
                 if let player = player.player {
-                    PlayerView(player: player, onScreenFrame: { frame in
-                        playerScreenFrame = frame
-                    })
+                    PlayerView(player: player,
+                               onScreenFrame: { frame in
+                                   playerScreenFrame = frame
+                               },
+                               showsNativeFullscreen: !usesSmoothFullscreen)
                         .overlay {
                             DanmakuOverlayView(engine: danmaku,
                                                player: player,
@@ -221,8 +228,10 @@ struct VideoDetailView: View {
         .overlay(alignment: .topTrailing) {
             if player.state == .ready {
                 HStack(spacing: 8) {
-                    FullscreenEntryButton {
-                        enterFullscreen()
+                    if usesSmoothFullscreen {
+                        FullscreenEntryButton {
+                            enterFullscreen()
+                        }
                     }
                     DanmakuToggleButton(isOn: $danmakuEnabled)
                 }
@@ -468,7 +477,8 @@ struct VideoDetailView: View {
     }
 
     private func enterFullscreen() {
-        guard let player = player.player, !isFullscreen else { return }
+        guard usesSmoothFullscreen,
+              let player = player.player, !isFullscreen else { return }
         isFullscreen = true
         fullscreen.open(player: player,
                         engine: danmaku,
