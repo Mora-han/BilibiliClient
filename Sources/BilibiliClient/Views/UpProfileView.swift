@@ -5,6 +5,21 @@ struct UpProfileView: View {
     let mid: Int
 
     @State private var card: UpCardData.Card?
+    @State private var order: UpOrder = .pubdate
+
+    enum UpOrder: String, CaseIterable, Identifiable {
+        case pubdate = "最新发布"
+        case views = "最多播放"
+
+        var id: String { rawValue }
+
+        var apiValue: String {
+            switch self {
+            case .pubdate: return "pubdate"
+            case .views: return "views"
+            }
+        }
+    }
     @State private var followerCount = 0
     @State private var videos: [SeriesArchive] = []
     @State private var page = 0
@@ -76,8 +91,36 @@ struct UpProfileView: View {
                 .frame(maxWidth: .infinity, minHeight: 120)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                Text("投稿视频")
-                    .font(.title3.bold())
+                HStack {
+                    Text("投稿视频")
+                        .font(.title3.bold())
+                    Spacer()
+                    Menu {
+                        ForEach(UpOrder.allCases) { item in
+                            Button {
+                                guard order != item else { return }
+                                order = item
+                                Task { await loadVideos() }
+                            } label: {
+                                if item == order {
+                                    Label(item.rawValue, systemImage: "checkmark")
+                                } else {
+                                    Text(item.rawValue)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(order.rawValue)
+                                .font(.callout)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
                           spacing: 16) {
                     ForEach(usableVideos) { video in
@@ -184,7 +227,7 @@ struct UpProfileView: View {
         isLoadingVideos = true
         videoError = nil
         do {
-            let data = try await UpService().videos(mid: mid, page: 1)
+            let data = try await UpService().videos(mid: mid, page: 1, order: order.apiValue)
             videos = data.archives
             page = 1
             hasMore = !videos.isEmpty
@@ -198,7 +241,7 @@ struct UpProfileView: View {
         guard !isLoadingMore, hasMore else { return }
         isLoadingMore = true
         do {
-            let data = try await UpService().videos(mid: mid, page: page + 1)
+            let data = try await UpService().videos(mid: mid, page: page + 1, order: order.apiValue)
             let seen = Set(videos.map(\.id))
             videos.append(contentsOf: data.archives.filter { !seen.contains($0.id) })
             page += 1
