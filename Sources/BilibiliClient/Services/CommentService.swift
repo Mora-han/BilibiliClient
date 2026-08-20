@@ -11,4 +11,14 @@ struct CommentService {
             "nohot": "1",
         ])
     }
+
+    func videoCommentReplies(aid: Int, root: Int, page: Int = 1, pageSize: Int = 20) async throws -> CommentRepliesData {
+        try await APIClient.shared.get("/x/v2/reply/reply", query: [
+            "type": "1",
+            "oid": "\(aid)",
+            "root": "\(root)",
+            "ps": "\(pageSize)",
+            "pn": "\(page)",
+        ])
+    }
 }

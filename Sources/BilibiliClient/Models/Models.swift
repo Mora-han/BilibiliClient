@@ -322,6 +322,23 @@ struct CommentData: Decodable {
     }
 }
 
+struct CommentRepliesData: Decodable {
+    let replies: [CommentItem]
+    let page: CommentData.Page?
+
+    enum CodingKeys: String, CodingKey {
+        case replies
+        case page
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        replies = (try? container.decode([Lossy<CommentItem>].self, forKey: .replies))?
+            .compactMap { $0.value } ?? []
+        page = try container.decodeIfPresent(CommentData.Page.self, forKey: .page)
+    }
+}
+
 struct CommentItem: Decodable, Identifiable {
     let rpid: Int
     let rcount: Int?

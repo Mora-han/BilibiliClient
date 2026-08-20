@@ -183,7 +183,7 @@ struct VideoDetailView: View {
     private func commentSection(_ view: VideoDetailData.VideoView) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(comments) { comment in
-                CommentCardView(comment: comment)
+                CommentCardView(comment: comment, aid: view.aid)
                 Divider().opacity(0.4)
             }
 
