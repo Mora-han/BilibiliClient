@@ -246,7 +246,7 @@ final class PlayerController: ObservableObject {
             range: "\(indexStart)-\(indexEnd)"
         )
         guard let segments = SIDXParser.parse(sidxData, absoluteRangeStart: indexStart) else {
-            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH）")
+            throw APIError.biz(code: -1, message: "无法解析视频分片（DASH，\(sidxData.count) 字节）")
         }
 
         return HLSProxy.Media(
