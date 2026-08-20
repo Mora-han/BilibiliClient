@@ -509,3 +509,47 @@ struct ToViewItem: Decodable, Identifiable {
 
     var id: Int { aid }
 }
+
+// MARK: - 搜索
+
+struct SearchData: Decodable {
+    let numResults: Int?
+    let numPages: Int?
+    let result: [SearchVideo]
+
+    enum CodingKeys: String, CodingKey {
+        case numResults = "numResults"
+        case numPages = "numPages"
+        case result
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        numResults = try container.decodeIfPresent(Int.self, forKey: .numResults)
+        numPages = try container.decodeIfPresent(Int.self, forKey: .numPages)
+        result = (try? container.decode([Lossy<SearchVideo>].self, forKey: .result))?
+            .compactMap { $0.value } ?? []
+    }
+}
+
+struct SearchVideo: Decodable, Identifiable {
+    let id: Int
+    let aid: Int?
+    let bvid: String?
+    let author: String?
+    let title: String?
+    let description: String?
+    let pic: String?
+    let play: Int?
+    let videoReview: Int?
+    let favorites: Int?
+    let pubdate: Int?
+    let duration: String?
+    let typename: String?
+
+    /// 接口返回的标题带 <em class="keyword"> 高亮标签，去掉后用于展示。
+    var cleanTitle: String {
+        guard let title else { return "" }
+        return title.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+    }
+}

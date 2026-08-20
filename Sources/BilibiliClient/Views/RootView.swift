@@ -7,6 +7,7 @@ struct RootView: View {
 
     enum SidebarItem: String, CaseIterable, Identifiable {
         case home = "推荐"
+        case search = "搜索"
         case dynamics = "动态"
         case profile = "我的"
         case favorites = "收藏"
@@ -18,6 +19,7 @@ struct RootView: View {
         var icon: String {
             switch self {
             case .home: return "house.fill"
+            case .search: return "magnifyingglass"
             case .dynamics: return "sparkles"
             case .profile: return "person.crop.circle.fill"
             case .favorites: return "bookmark.fill"
@@ -37,6 +39,8 @@ struct RootView: View {
                     switch selection {
                     case .home:
                         HomeFeedView()
+                    case .search:
+                        SearchView()
                     case .dynamics:
                         DynamicFeedView()
                     case .profile:
@@ -64,7 +68,7 @@ struct RootView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("浏览") {
-                ForEach([SidebarItem.home, .dynamics, .profile]) { item in
+                ForEach([SidebarItem.home, .search, .dynamics, .profile]) { item in
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }

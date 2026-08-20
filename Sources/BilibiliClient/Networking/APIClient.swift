@@ -21,6 +21,42 @@ final class APIClient {
     /// 结构化 Cookie，供播放器等场景使用。
     var cookies = BiliCookies()
 
+    /// buvid3/buvid4（搜索等接口风控要求），首次搜索时获取。
+    private var buvidHeader = ""
+    private var buvidFetched = false
+
+    private var effectiveCookieHeader: String {
+        if buvidHeader.isEmpty { return cookieHeader }
+        if cookieHeader.isEmpty { return buvidHeader }
+        return buvidHeader + "; " + cookieHeader
+    }
+
+    /// 从 finger/spi 获取 buvid3/buvid4 并加入 Cookie。
+    func ensureBuvid() async {
+        guard !buvidFetched else { return }
+        buvidFetched = true
+        struct Spi: Decodable {
+            let b3: String?
+            let b4: String?
+        }
+        struct Envelope: Decodable {
+            let data: Spi?
+        }
+        do {
+            var request = URLRequest(url: URL(string: "https://api.bilibili.com/x/frontend/finger/spi")!)
+            let (data, _) = try await session.data(for: request)
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let envelope = try decoder.decode(Envelope.self, from: data)
+            var parts: [String] = []
+            if let b3 = envelope.data?.b3, !b3.isEmpty { parts.append("buvid3=\(b3)") }
+            if let b4 = envelope.data?.b4, !b4.isEmpty { parts.append("buvid4=\(b4)") }
+            buvidHeader = parts.joined(separator: "; ")
+        } catch {
+            buvidFetched = false
+        }
+    }
+
     private let session: URLSession
 
     private init() {
@@ -52,8 +88,8 @@ final class APIClient {
 
         var request = URLRequest(url: components.url!)
         request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
-        if !cookieHeader.isEmpty {
-            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        if !effectiveCookieHeader.isEmpty {
+            request.setValue(effectiveCookieHeader, forHTTPHeaderField: "Cookie")
         }
 
         let (data, response) = try await session.data(for: request)
@@ -87,8 +123,8 @@ final class APIClient {
             components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
         var request = URLRequest(url: components.url!)
-        if !cookieHeader.isEmpty {
-            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        if !effectiveCookieHeader.isEmpty {
+            request.setValue(effectiveCookieHeader, forHTTPHeaderField: "Cookie")
         }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
@@ -113,8 +149,8 @@ final class APIClient {
             .map { "\(Self.encodeFormValue($0.key))=\(Self.encodeFormValue($0.value))" }
             .joined(separator: "&")
         request.httpBody = Data(body.utf8)
-        if !cookieHeader.isEmpty {
-            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        if !effectiveCookieHeader.isEmpty {
+            request.setValue(effectiveCookieHeader, forHTTPHeaderField: "Cookie")
         }
 
         let (data, response) = try await session.data(for: request)
@@ -137,8 +173,8 @@ final class APIClient {
         var request = URLRequest(url: url)
         request.setValue(APIConstants.referer, forHTTPHeaderField: "Referer")
         request.setValue(APIConstants.userAgent, forHTTPHeaderField: "User-Agent")
-        if !cookieHeader.isEmpty {
-            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        if !effectiveCookieHeader.isEmpty {
+            request.setValue(effectiveCookieHeader, forHTTPHeaderField: "Cookie")
         }
         if let range {
             request.setValue("bytes=\(range)", forHTTPHeaderField: "Range")
