@@ -11,8 +11,10 @@ struct PartitionRoute: Hashable {
 
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
+    @AppStorage("appearance") private var appearance = AppearanceMode.system.rawValue
     @State private var selection: SidebarItem? = .home
     @State private var showLogin = false
+    @State private var showAccountPanel = false
     @State private var searchText = ""
     @State private var submittedQuery = ""
 
@@ -22,7 +24,6 @@ struct RootView: View {
         case popular = "热门"
         case search = "搜索"
         case dynamics = "动态"
-        case profile = "我的"
         case favorites = "收藏"
         case history = "历史"
         case watchLater = "稍后再看"
@@ -36,11 +37,18 @@ struct RootView: View {
             case .popular: return "flame.fill"
             case .search: return "magnifyingglass"
             case .dynamics: return "sparkles"
-            case .profile: return "person.crop.circle.fill"
             case .favorites: return "bookmark.fill"
             case .history: return "clock.arrow.circlepath"
             case .watchLater: return "clock.badge.checkmark"
             }
+        }
+    }
+
+    private var colorScheme: ColorScheme? {
+        switch appearance {
+        case AppearanceMode.light.rawValue: return .light
+        case AppearanceMode.dark.rawValue: return .dark
+        default: return nil
         }
     }
 
@@ -62,8 +70,6 @@ struct RootView: View {
                         SearchView(query: submittedQuery)
                     case .dynamics:
                         DynamicFeedView()
-                    case .profile:
-                        ProfileView()
                     case .favorites:
                         FavoritesView()
                     case .history:
@@ -85,6 +91,7 @@ struct RootView: View {
                 }
             }
         }
+        .preferredColorScheme(colorScheme)
         .sheet(isPresented: $showLogin) {
             LoginView()
         }
@@ -93,7 +100,7 @@ struct RootView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("浏览") {
-                ForEach([SidebarItem.home, .zones, .popular, .dynamics, .profile]) { item in
+                ForEach([SidebarItem.home, .zones, .popular, .search, .dynamics]) { item in
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }
@@ -116,47 +123,62 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom) { accountBar }
     }
 
+    /// 侧边栏底部账户信息：头像 + ID + 设置入口（点击弹出面板）。
     private var accountBar: some View {
         VStack(spacing: 0) {
             Divider()
             if session.loggedIn {
-                if let user = session.user {
+                Button {
+                    showAccountPanel = true
+                } label: {
                     HStack(spacing: 10) {
-                        avatar(url: user.face, size: 34)
+                        avatar(url: session.user?.face ?? "", size: 34)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(user.name)
+                            Text(session.user?.name ?? "同步中…")
                                 .font(.callout.weight(.medium))
                                 .lineLimit(1)
-                            Text("Lv.\(user.level)")
+                            Text(session.user.map { "Lv.\($0.level)" } ?? "加载账户信息")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
+                        Image(systemName: "gearshape")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(10)
                     .contentShape(Rectangle())
-                } else {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("同步中…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(10)
                 }
+                .buttonStyle(.plain)
             } else {
-                Button {
-                    showLogin = true
-                } label: {
-                    Label("扫码登录", systemImage: "qrcode")
-                        .font(.callout.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
+                HStack(spacing: 8) {
+                    Button {
+                        showLogin = true
+                    } label: {
+                        Label("扫码登录", systemImage: "qrcode")
+                            .font(.callout.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button {
+                        showAccountPanel = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.callout)
+                            .padding(7)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("设置")
                 }
-                .buttonStyle(.borderedProminent)
                 .padding(10)
             }
+        }
+        .popover(isPresented: $showAccountPanel, arrowEdge: .bottom) {
+            AccountPanelView(showLogin: $showLogin)
+                .environmentObject(session)
         }
     }
 

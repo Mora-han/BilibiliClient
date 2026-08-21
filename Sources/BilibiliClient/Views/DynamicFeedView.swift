@@ -22,34 +22,35 @@ struct DynamicFeedView: View {
                         DynamicCardView(item: item)
                     }
 
-                if hasMore && !items.isEmpty {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .onAppear {
-                            Task { await loadMore() }
+                    if hasMore && !items.isEmpty {
+                        LoadMoreFooter(isBusy: isLoadingMore) {
+                            await loadMore()
                         }
+                    }
                 }
-            }
                 .frame(maxWidth: 780)
                 .frame(maxWidth: .infinity)
                 .padding(20)
             }
+            .refreshable { await load() }
         }
         .navigationTitle("动态")
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    Task { await load() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("刷新")
+            }
+        }
         .overlay {
             if isLoading && items.isEmpty {
                 ProgressView("加载中…")
             } else if let errorMessage, items.isEmpty {
-                ContentUnavailableView {
-                    Label("加载失败", systemImage: "wifi.exclamationmark")
-                } description: {
-                    Text(errorMessage)
-                } actions: {
-                    Button("重试") {
-                        Task { await load() }
-                    }
+                LoadErrorView(message: errorMessage) {
+                    await load()
                 }
             }
         }

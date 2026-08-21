@@ -17,11 +17,4 @@ struct HomeService {
         ])
     }
 
-    /// 热门搜索词（首页热门标签）
-    func hotTags(limit: Int = 20) async throws -> HotSearchData {
-        try await APIClient.shared.get("/x/web-interface/wbi/search/square", query: [
-            "limit": "\(limit)",
-            "platform": "web",
-        ], wbi: true)
-    }
 }

@@ -7,9 +7,9 @@ struct BilibiliClientApp: App {
     @StateObject private var session = SessionStore()
 
     init() {
-        // 大一点的内存/磁盘图片缓存，提升列表滚动体验
-        URLCache.shared = URLCache(memoryCapacity: 128 * 1024 * 1024,
-                                   diskCapacity: 512 * 1024 * 1024)
+        // 适中的内存/磁盘图片缓存：兼顾列表滚动流畅度与低配机器的内存占用
+        URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024,
+                                   diskCapacity: 256 * 1024 * 1024)
     }
 
     var body: some Scene {

@@ -105,14 +105,8 @@ struct SearchView: View {
             ProgressView("搜索中…")
                 .frame(maxWidth: .infinity, minHeight: 200)
         } else if let errorMessage, results.isEmpty {
-            ContentUnavailableView {
-                Label("搜索失败", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(errorMessage)
-            } actions: {
-                Button("重试") {
-                    Task { await search(reset: true) }
-                }
+            LoadErrorView(message: errorMessage) {
+                await search(reset: true)
             }
         } else if results.isEmpty {
             VStack(spacing: 10) {
@@ -137,25 +131,17 @@ struct SearchView: View {
                     }
 
                     if hasMore {
-                        Button {
-                            Task { await search(reset: false) }
-                        } label: {
-                            if isLoadingMore {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text("加载更多")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
+                        LoadMoreFooter(isBusy: isLoadingMore) {
+                            await search(reset: false)
                         }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                     }
                 }
                 .frame(maxWidth: 760)
                 .frame(maxWidth: .infinity)
                 .padding(20)
+            }
+            .refreshable {
+                await search(reset: true)
             }
         }
     }

@@ -19,14 +19,8 @@ struct PartitionVideosView: View {
                     ProgressView("加载中…")
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else if let errorMessage {
-                    ContentUnavailableView {
-                        Label("加载失败", systemImage: "wifi.exclamationmark")
-                    } description: {
-                        Text(errorMessage)
-                    } actions: {
-                        Button("重试") {
-                            Task { await load() }
-                        }
+                    LoadErrorView(message: errorMessage) {
+                        await load()
                     }
                 } else if usableVideos.isEmpty {
                     Text("该分区暂无排行数据")
@@ -57,6 +51,7 @@ struct PartitionVideosView: View {
             .padding(20)
         }
         .navigationTitle("\(zone.name) 排行榜")
+        .refreshable { await load() }
         .task { await load() }
     }
 

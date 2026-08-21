@@ -27,14 +27,10 @@ struct WatchLaterView: View {
     }
 
     private var loginPrompt: some View {
-        ContentUnavailableView {
-            Label("登录后查看稍后再看", systemImage: "clock.badge.checkmark")
-        } description: {
-            Text("需要登录哔哩哔哩账号才能同步稍后再看列表")
-        } actions: {
-            Button("扫码登录") { showLogin = true }
-                .buttonStyle(.borderedProminent)
-        }
+        LoginRequiredView(title: "登录后查看稍后再看",
+                          systemImage: "clock.badge.checkmark",
+                          message: "需要登录哔哩哔哩账号才能同步稍后再看列表",
+                          showLogin: $showLogin)
     }
 
     private var content: some View {
@@ -44,12 +40,8 @@ struct WatchLaterView: View {
                     ProgressView("加载中…")
                         .frame(maxWidth: .infinity, minHeight: 200)
                 } else if let errorMessage, items.isEmpty {
-                    ContentUnavailableView {
-                        Label("加载失败", systemImage: "wifi.exclamationmark")
-                    } description: {
-                        Text(errorMessage)
-                    } actions: {
-                        Button("重试") { Task { await load() } }
+                    LoadErrorView(message: errorMessage) {
+                        await load()
                     }
                 } else if usableItems.isEmpty {
                     Text("稍后再看是空的")
@@ -79,6 +71,7 @@ struct WatchLaterView: View {
             .frame(maxWidth: .infinity)
             .padding(20)
         }
+        .refreshable { await load() }
     }
 
     private func row(_ item: ToViewItem) -> some View {

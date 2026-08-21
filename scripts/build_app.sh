@@ -29,12 +29,17 @@ enum BuildInfo {
 }
 SWIFT
 
-if ! swift build -c "$CONFIG" --disable-sandbox; then
-  if [ "$CONFIG" = "release" ]; then
-    echo "Release build failed (环境沙箱可能阻止 dSYM 生成), 回退到 debug 构建..."
+if ! build_log=$(swift build -c "$CONFIG" --disable-sandbox 2>&1); then
+  # 沙箱环境偶发阻止 dSYM 生成：只要 release 二进制已产出且失败点确实是 dSYM，就直接使用
+  if [ "$CONFIG" = "release" ] && [ -x ".build/out/Products/Release/$APP_NAME" ] \
+     && printf '%s' "$build_log" | grep -q "GenerateDSYMFile"; then
+    echo "Release 二进制已生成（仅 dSYM 符号文件被环境沙箱阻止，已跳过）"
+  elif [ "$CONFIG" = "release" ]; then
+    echo "Release build failed, 回退到 debug 构建..."
     CONFIG="debug"
     swift build -c "$CONFIG" --disable-sandbox
   else
+    printf '%s\n' "$build_log" | tail -30
     exit 1
   fi
 fi

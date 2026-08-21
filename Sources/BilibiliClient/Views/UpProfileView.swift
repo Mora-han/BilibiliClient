@@ -4,8 +4,21 @@ import SwiftUI
 struct UpProfileView: View {
     let mid: Int
 
+    @EnvironmentObject private var session: SessionStore
     @State private var card: UpCardData.Card?
     @State private var order: UpOrder = .pubdate
+    @State private var followerCount = 0
+    @State private var videos: [SeriesArchive] = []
+    @State private var page = 0
+    @State private var hasMore = true
+    @State private var isLoadingInfo = true
+    @State private var isLoadingVideos = true
+    @State private var isLoadingMore = false
+    @State private var infoError: String?
+    @State private var videoError: String?
+    @State private var isFollowing = false
+    @State private var isTogglingFollow = false
+    @State private var showLogin = false
 
     enum UpOrder: String, CaseIterable, Identifiable {
         case pubdate = "最新发布"
@@ -20,15 +33,6 @@ struct UpProfileView: View {
             }
         }
     }
-    @State private var followerCount = 0
-    @State private var videos: [SeriesArchive] = []
-    @State private var page = 0
-    @State private var hasMore = true
-    @State private var isLoadingInfo = true
-    @State private var isLoadingVideos = true
-    @State private var isLoadingMore = false
-    @State private var infoError: String?
-    @State private var videoError: String?
 
     private var usableVideos: [SeriesArchive] {
         videos.filter { !($0.bvid ?? "").isEmpty }
@@ -45,6 +49,10 @@ struct UpProfileView: View {
             .padding(24)
         }
         .navigationTitle(card?.name ?? "UP主页")
+        .refreshable { await load() }
+        .sheet(isPresented: $showLogin) {
+            LoginView()
+        }
         .task { await load() }
     }
 
@@ -56,16 +64,10 @@ struct UpProfileView: View {
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: 120)
         } else if let infoError {
-            HStack {
-                Text(infoError)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Button("重试") {
-                    Task { await loadInfo() }
-                }
-                .font(.callout)
+            LoadErrorView(message: infoError) {
+                await loadInfo()
             }
-            .frame(maxWidth: .infinity, minHeight: 80)
+            .frame(maxWidth: .infinity, minHeight: 100)
         }
     }
 
@@ -75,14 +77,8 @@ struct UpProfileView: View {
             ProgressView("加载投稿中…")
                 .frame(maxWidth: .infinity, minHeight: 120)
         } else if let videoError, usableVideos.isEmpty {
-            ContentUnavailableView {
-                Label("投稿加载失败", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(videoError)
-            } actions: {
-                Button("重试") {
-                    Task { await loadVideos() }
-                }
+            LoadErrorView(message: videoError) {
+                await loadVideos()
             }
         } else if usableVideos.isEmpty {
             Text("还没有投稿视频")
@@ -140,20 +136,9 @@ struct UpProfileView: View {
                 }
 
                 if hasMore {
-                    Button {
-                        Task { await loadMore() }
-                    } label: {
-                        if isLoadingMore {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("加载更多")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
+                    LoadMoreFooter(isBusy: isLoadingMore) {
+                        await loadMore()
                     }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
                 }
             }
         }
@@ -200,9 +185,43 @@ struct UpProfileView: View {
             }
 
             Spacer()
+
+            followButton
         }
         .padding(14)
         .glassCard(cornerRadius: 16)
+    }
+
+    private var followButton: some View {
+        Group {
+            if isFollowing {
+                Button {
+                    toggleFollow()
+                } label: {
+                    Label("已关注", systemImage: "checkmark")
+                        .font(.callout.weight(.medium))
+                        .frame(minWidth: 64)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button {
+                    toggleFollow()
+                } label: {
+                    if isTogglingFollow {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(minWidth: 64)
+                    } else {
+                        Label("关注", systemImage: "plus")
+                            .font(.callout.weight(.medium))
+                            .frame(minWidth: 64)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .disabled(isTogglingFollow)
+        .help(isFollowing ? "取消关注" : "关注")
     }
 
     private func load() async {
@@ -217,6 +236,9 @@ struct UpProfileView: View {
             let data = try await UpService().info(mid: mid)
             card = data.card
             followerCount = data.follower ?? data.card?.fans ?? 0
+            if session.loggedIn {
+                isFollowing = (try? await RelationService().relation(fid: mid))?.isFollowing ?? false
+            }
         } catch {
             infoError = error.localizedDescription
         }
@@ -247,8 +269,28 @@ struct UpProfileView: View {
             page += 1
             hasMore = !data.archives.isEmpty
         } catch {
-            // 静默失败
+            // 翻页失败静默，滚动后可重试
         }
         isLoadingMore = false
+    }
+
+    private func toggleFollow() {
+        guard session.loggedIn else {
+            showLogin = true
+            return
+        }
+        guard !isTogglingFollow else { return }
+        isTogglingFollow = true
+        let target = !isFollowing
+        Task {
+            do {
+                try await RelationService().modify(fid: mid, follow: target)
+                isFollowing = target
+                followerCount += target ? 1 : -1
+            } catch {
+                // 失败保持原状，静默
+            }
+            isTogglingFollow = false
+        }
     }
 }

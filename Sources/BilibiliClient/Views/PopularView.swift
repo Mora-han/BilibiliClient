@@ -42,38 +42,22 @@ struct PopularView: View {
                     }
                 }
 
-                if hasMore && !usableVideos.isEmpty {
-                    Button {
-                        Task { await loadMore() }
-                    } label: {
-                        if isLoadingMore {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("加载更多")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
+                if hasMore {
+                    LoadMoreFooter(isBusy: isLoadingMore) {
+                        await loadMore()
                     }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
                 }
             }
             .padding(20)
         }
         .navigationTitle("热门")
+        .refreshable { await load() }
         .overlay {
             if isLoading && videos.isEmpty {
                 ProgressView("加载中…")
             } else if let errorMessage, videos.isEmpty {
-                ContentUnavailableView {
-                    Label("加载失败", systemImage: "wifi.exclamationmark")
-                } description: {
-                    Text(errorMessage)
-                } actions: {
-                    Button("重试") {
-                        Task { await load() }
-                    }
+                LoadErrorView(message: errorMessage) {
+                    await load()
                 }
             }
         }

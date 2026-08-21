@@ -1,14 +1,5 @@
 import Foundation
 
-// MARK: - 通用响应包装
-
-struct BiliResponse<T: Decodable>: Decodable {
-    let code: Int
-    let message: String
-    let data: T?
-    let ttl: Int?
-}
-
 // MARK: - 错误
 
 enum APIError: LocalizedError {
@@ -633,20 +624,6 @@ struct PopularVideo: Decodable, Identifiable, Hashable {
     var id: Int { aid ?? 0 }
 }
 
-// MARK: - 热门搜索（首页热门标签）
-
-struct HotSearchData: Decodable {
-    let trending: Trending?
-
-    struct Trending: Decodable {
-        let list: [HotItem]?
-    }
-
-    struct HotItem: Decodable, Hashable {
-        let keyword: String?
-    }
-}
-
 // MARK: - 关注列表
 
 struct FollowingsData: Decodable {
@@ -672,6 +649,24 @@ struct FollowedUser: Decodable, Identifiable, Hashable {
     let face: String?
 
     var id: Int { mid }
+}
+
+// MARK: - 关注关系
+
+/// /x/relation 返回的关注关系
+struct RelationStateData: Decodable {
+    let relation: Relation?
+
+    struct Relation: Decodable {
+        /// 0=未关注，1=悄悄关注，2=已关注，3=已互粉，6=已关注（特殊）
+        let attribute: Int
+    }
+
+    /// 是否处于“已关注”状态（拉黑等异常关系不计入）
+    var isFollowing: Bool {
+        guard let attribute = relation?.attribute else { return false }
+        return [1, 2, 3, 6].contains(attribute)
+    }
 }
 
 // MARK: - UP 主页
@@ -744,24 +739,3 @@ struct SeriesArchive: Decodable, Identifiable, Hashable {
     }
 }
 
-struct UpVideosData: Decodable {
-    let list: UpList?
-
-    struct UpList: Decodable {
-        let vlist: [UpVideo]?
-    }
-}
-
-struct UpVideo: Decodable, Identifiable, Hashable {
-    let aid: Int?
-    let bvid: String?
-    let pic: String?
-    let title: String?
-    let description: String?
-    let play: Int?
-    let duration: Int?
-    let created: Int?
-    let length: String?
-
-    var id: Int { aid ?? 0 }
-}

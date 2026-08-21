@@ -8,6 +8,7 @@ struct RecommendView: View {
     @State private var isLoadingMore = false
     @State private var errorMessage: String?
     @State private var hasLoaded = false
+    @State private var hasMore = true
 
     var body: some View {
         ScrollView {
@@ -30,36 +31,30 @@ struct RecommendView: View {
             }
             .padding(20)
 
-            if !items.isEmpty {
-                Button {
-                    Task { await loadMore() }
-                } label: {
-                    if isLoadingMore {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("加载更多")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
+            if hasMore {
+                LoadMoreFooter(isBusy: isLoadingMore) {
+                    await loadMore()
                 }
-                .buttonStyle(.plain)
-                .disabled(isLoadingMore)
-                .padding(.bottom, 24)
             }
         }
         .navigationTitle("推荐")
+        .refreshable { await load() }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    Task { await load() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("刷新")
+            }
+        }
         .overlay {
             if isLoading && items.isEmpty {
                 ProgressView("加载中…")
             } else if let errorMessage, items.isEmpty {
-                ContentUnavailableView {
-                    Label("加载失败", systemImage: "wifi.exclamationmark")
-                } description: {
-                    Text(errorMessage)
-                } actions: {
-                    Button("重试") {
-                        Task { await load() }
-                    }
+                LoadErrorView(message: errorMessage) {
+                    await load()
                 }
             }
         }
@@ -77,6 +72,7 @@ struct RecommendView: View {
             items = newItems
             page = 1
             hasLoaded = true
+            hasMore = !newItems.isEmpty
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -91,6 +87,7 @@ struct RecommendView: View {
             let seen = Set(items.map(\.id))
             items.append(contentsOf: newItems.filter { !seen.contains($0.id) })
             page += 1
+            hasMore = !newItems.isEmpty
         } catch {
             // 翻页失败静默
         }

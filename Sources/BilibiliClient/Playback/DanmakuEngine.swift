@@ -3,6 +3,37 @@ import SwiftUI
 
 /// 弹幕引擎：负责轨道分配、按播放时间生成/回收弹幕、计算位置。
 /// 每次画面刷新调用 tick(playerTime:size:)，渲染层直接读 active。
+/// 弹幕速度档位（设置页可选），通过缩放横穿时长实现
+enum DanmakuSpeed: String, CaseIterable, Identifiable {
+    case relaxed
+    case normal
+    case fast
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .relaxed: return "舒缓"
+        case .normal: return "标准"
+        case .fast: return "快速"
+        }
+    }
+
+    /// 滚动弹幕横穿屏幕的总时长（秒），越大越慢
+    var duration: Double {
+        switch self {
+        case .relaxed: return 10
+        case .normal: return 8
+        case .fast: return 6
+        }
+    }
+
+    static var current: DanmakuSpeed {
+        let raw = UserDefaults.standard.string(forKey: "danmakuSpeed") ?? ""
+        return DanmakuSpeed(rawValue: raw) ?? .normal
+    }
+}
+
 @MainActor
 final class DanmakuEngine: ObservableObject {
     struct Active: Identifiable {
@@ -13,7 +44,7 @@ final class DanmakuEngine: ObservableObject {
         let mode: Int          // 1 滚动 / 4 底部 / 5 顶部
         let lane: Int          // 轨道编号
         let startTime: Double  // 该弹幕进入画面的播放器时间
-        let duration: Double   // 总生存时长（滚动=8s / 固定=4.5s，不随容器宽度变化）
+        let duration: Double   // 总生存时长（滚动由弹幕速度设置决定，固定=4.5s）
         let textWidth: CGFloat // 基准舞台宽度（baseWidth）下的文字宽度
 
         /// 基准舞台宽度：对应内嵌播放器最大宽度（980 内容列 - 两侧 24pt 内边距）。
@@ -23,7 +54,6 @@ final class DanmakuEngine: ObservableObject {
         static let rowHeight: CGFloat = 26
         static let topInset: CGFloat = 6
         static let bottomReserve: CGFloat = 40
-        static let scrollDuration = 8.0
         static let fixedDuration = 4.5
         static let maxActive = 100
 
@@ -37,13 +67,6 @@ final class DanmakuEngine: ObservableObject {
         /// 当前容器宽度下应渲染的字号
         func fontSize(for width: CGFloat) -> CGFloat {
             18 * scale * stageScale(for: width)
-        }
-
-        /// 尾端完全进入画面的耗时（基准空间，与容器宽度无关）
-        var tailEnterDuration: Double {
-            guard isScroll else { return duration }
-            let f = Double(textWidth / Self.baseWidth)
-            return duration * f / (1 + f)
         }
 
         func position(in size: CGSize, at time: Double) -> CGPoint {
@@ -163,7 +186,8 @@ final class DanmakuEngine: ObservableObject {
         switch item.mode {
         case 1:
             guard let lane = freeScrollLane(time: time) else { return }
-            let tailEnter = Active.scrollDuration * (textWidth / Active.baseWidth) /
+            let duration = DanmakuSpeed.current.duration
+            let tailEnter = duration * (textWidth / Active.baseWidth) /
                 (1 + textWidth / Active.baseWidth)
             scrollLanes[lane] = LaneState(busyUntil: time + tailEnter + 0.35)
             active.append(Active(id: item.id,
@@ -173,7 +197,7 @@ final class DanmakuEngine: ObservableObject {
                                  mode: 1,
                                  lane: lane,
                                  startTime: time,
-                                 duration: Active.scrollDuration,
+                                 duration: duration,
                                  textWidth: textWidth))
         case 5:
             guard let lane = freeFixedLane(topLanes, time: time, isTop: true),
