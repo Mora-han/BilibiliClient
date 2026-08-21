@@ -49,6 +49,7 @@ struct UpProfileView: View {
             .padding(24)
         }
         .navigationTitle(card?.name ?? "UP主页")
+        .autoLoadMore { await loadMore() }
         .refreshable { await load() }
         .sheet(isPresented: $showLogin) {
             LoginView()
@@ -260,7 +261,7 @@ struct UpProfileView: View {
     }
 
     private func loadMore() async {
-        guard !isLoadingMore, hasMore else { return }
+        guard !isLoadingMore, hasMore, !videos.isEmpty else { return }
         isLoadingMore = true
         do {
             let data = try await UpService().videos(mid: mid, page: page + 1, order: order.apiValue)

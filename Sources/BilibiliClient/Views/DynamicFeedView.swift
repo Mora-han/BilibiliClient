@@ -33,6 +33,7 @@ struct DynamicFeedView: View {
                 .padding(20)
             }
             .refreshable { await load() }
+            .autoLoadMore { await loadMore() }
         }
         .navigationTitle("动态")
         .toolbar {
@@ -149,7 +150,7 @@ struct DynamicFeedView: View {
     }
 
     private func loadMore() async {
-        guard !isLoadingMore, let offset, hasMore else { return }
+        guard !isLoadingMore, let offset, hasMore, !items.isEmpty else { return }
         isLoadingMore = true
         do {
             let data = try await DynamicService().feed(offset: offset, hostMid: selectedUP)

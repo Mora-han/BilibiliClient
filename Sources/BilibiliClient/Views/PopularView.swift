@@ -51,6 +51,7 @@ struct PopularView: View {
             .padding(20)
         }
         .navigationTitle("热门")
+        .autoLoadMore { await loadMore() }
         .refreshable { await load() }
         .overlay {
             if isLoading && videos.isEmpty {
@@ -83,7 +84,7 @@ struct PopularView: View {
     }
 
     private func loadMore() async {
-        guard !isLoadingMore, hasMore else { return }
+        guard !isLoadingMore, hasMore, !videos.isEmpty else { return }
         isLoadingMore = true
         do {
             let data = try await HomeService().popular(page: page + 1, pageSize: 20)

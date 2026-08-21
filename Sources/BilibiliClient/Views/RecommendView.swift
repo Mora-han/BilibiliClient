@@ -38,6 +38,7 @@ struct RecommendView: View {
             }
         }
         .navigationTitle("推荐")
+        .autoLoadMore { await loadMore() }
         .refreshable { await load() }
         .toolbar {
             ToolbarItem {
@@ -80,7 +81,7 @@ struct RecommendView: View {
     }
 
     private func loadMore() async {
-        guard !isLoadingMore, hasMore else { return }
+        guard !isLoadingMore, hasMore, !items.isEmpty else { return }
         isLoadingMore = true
         do {
             let newItems = try await FeedService().recommend(page: page + 1)

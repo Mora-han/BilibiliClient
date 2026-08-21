@@ -84,6 +84,7 @@ struct FavoritesView: View {
             .padding(20)
         }
         .refreshable { await load() }
+        .autoLoadMore { await loadMore() }
     }
 
     private var folderChips: some View {
@@ -174,7 +175,7 @@ struct FavoritesView: View {
     }
 
     private func loadMore() async {
-        guard !isLoadingMore, hasMore, let folderId = selectedFolderId else { return }
+        guard !isLoadingMore, hasMore, !medias.isEmpty, let folderId = selectedFolderId else { return }
         isLoadingMore = true
         do {
             let data = try await LibraryService().favoriteResources(mediaId: folderId, page: page + 1)

@@ -143,6 +143,9 @@ struct SearchView: View {
             .refreshable {
                 await search(reset: true)
             }
+            .autoLoadMore {
+                await search(reset: false)
+            }
         }
     }
 
@@ -168,7 +171,7 @@ struct SearchView: View {
             errorMessage = nil
             isLoading = true
         } else {
-            guard !isLoadingMore, hasMore else { return }
+            guard !isLoadingMore, hasMore, !results.isEmpty else { return }
             isLoadingMore = true
         }
 

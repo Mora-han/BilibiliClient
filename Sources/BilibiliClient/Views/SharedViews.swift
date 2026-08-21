@@ -1,15 +1,13 @@
 import SwiftUI
 
-/// 列表滚动到底部时自动加载下一页的原生小部件：
-/// 可见即触发加载，无需手动点击；加载失败时点击可重试。
+/// 列表底部加载指示：只在真正请求时显示“加载中”，
+/// 空闲时保持透明占位（配合 autoLoadMore 接近底部自动预载，实现无感连续加载）。
 struct LoadMoreFooter: View {
     var isBusy: Bool
     var onLoad: () async -> Void
 
     var body: some View {
-        Button {
-            Task { await onLoad() }
-        } label: {
+        Group {
             if isBusy {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -19,20 +17,29 @@ struct LoadMoreFooter: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .contentShape(Rectangle())
             } else {
-                Text("继续下滑加载更多")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                // 透明占位：保持 onAppear 兜底触发，视觉上无任何提示
+                Color.clear
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
+                    .frame(height: 44)
             }
         }
-        .buttonStyle(.plain)
-        .disabled(isBusy)
         .onAppear {
             Task { await onLoad() }
+        }
+    }
+}
+
+extension View {
+    /// 滚动接近底部时自动加载下一页：剩余可滚动距离不足 threshold（默认约一屏）
+    /// 即触发，内容始终在滚动前就绪，实现“拉不到底”的连续加载体验。
+    func autoLoadMore(threshold: CGFloat = 600, load: @escaping () async -> Void) -> some View {
+        onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height
+        } action: { _, remaining in
+            if remaining < threshold {
+                Task { await load() }
+            }
         }
     }
 }

@@ -72,6 +72,7 @@ struct HistoryView: View {
             .padding(20)
         }
         .refreshable { await load() }
+        .autoLoadMore { await loadMore() }
     }
 
     private func row(_ item: HistoryItem) -> some View {
@@ -111,7 +112,7 @@ struct HistoryView: View {
     }
 
     private func loadMore() async {
-        guard !isLoadingMore, hasMore, let cursor else { return }
+        guard !isLoadingMore, hasMore, !items.isEmpty, let cursor else { return }
         isLoadingMore = true
         do {
             let data = try await LibraryService().history(
