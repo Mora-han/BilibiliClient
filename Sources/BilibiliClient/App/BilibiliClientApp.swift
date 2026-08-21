@@ -30,10 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static weak var shared: AppDelegate?
 
     private var menuBar: MenuBarController?
+    private var appIconManager: AppIconManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         NSApplication.shared.setActivationPolicy(.regular)
+        appIconManager = AppIconManager()
         let menuBar = MenuBarController()
         menuBar.install()
         self.menuBar = menuBar

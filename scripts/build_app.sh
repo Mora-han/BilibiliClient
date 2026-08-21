@@ -11,9 +11,9 @@ BUILD="${BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
 # Prefer a CLT SDK that matches the installed compiler; fall back to xcrun.
 if [ -z "${SDKROOT:-}" ]; then
   if [ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk" ]; then
-    SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+    export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
   else
-    SDKROOT="$(xcrun --show-sdk-path)"
+    export SDKROOT="$(xcrun --show-sdk-path)"
   fi
 fi
 
@@ -50,12 +50,16 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp ".build/$CONFIG/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
+cp "assets/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+cp "assets/AppIcon-dark.icns" "$APP_DIR/Contents/Resources/AppIcon-dark.icns"
 
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleExecutable</key>
     <string>BilibiliClient</string>
     <key>CFBundleIdentifier</key>
