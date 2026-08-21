@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DynamicFeedView: View {
     @EnvironmentObject private var session: SessionStore
+    @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var items: [DynamicItem] = []
     @State private var followedUPs: [FollowedUser] = []
     @State private var selectedUP: Int?
@@ -17,9 +18,22 @@ struct DynamicFeedView: View {
             upBar
             Divider()
             ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(displayItems) { item in
-                        DynamicCardView(item: item)
+                VStack(spacing: 0) {
+                    if displayMode == .list2 {
+                        // 两列列表：动态卡片双列排布，与其他页面保持一致
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                            GridItem(.flexible(), spacing: 12)],
+                                  spacing: 12) {
+                            ForEach(displayItems) { item in
+                                DynamicCardView(item: item)
+                            }
+                        }
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(displayItems) { item in
+                                DynamicCardView(item: item)
+                            }
+                        }
                     }
 
                     if !items.isEmpty {

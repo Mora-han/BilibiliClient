@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 设置项通用协议：可枚举、可展示当前值、点击弹出菜单切换。
+/// 设置项通用协议：可枚举、可展示当前值、点击弹出列表切换。
 protocol SettingOption: CaseIterable, Identifiable, RawRepresentable where RawValue == String {
     var label: String { get }
 }
@@ -27,7 +27,6 @@ extension DanmakuSpeed: SettingOption {}
 extension VideoDisplayMode: SettingOption {}
 
 /// 软件设置页：外观、弹幕、视频显示、缓存与关于。
-/// 选项采用 Apple 风格：单行只展示当前选中值，点击弹出小列表切换。
 struct SettingsView: View {
     @AppStorage("appearance") private var appearance = AppearanceMode.system.rawValue
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
@@ -53,7 +52,7 @@ struct SettingsView: View {
 
     private var appearanceSection: some View {
         settingsCard("外观") {
-            menuRow(AppearanceMode.self, "外观", selection: $appearance)
+            SettingMenuRow<AppearanceMode>(title: "外观", selection: $appearance)
         }
     }
 
@@ -62,13 +61,13 @@ struct SettingsView: View {
             Toggle("默认开启弹幕", isOn: $danmakuEnabled)
                 .font(.callout)
             Divider()
-            menuRow(DanmakuSpeed.self, "弹幕速度", selection: $danmakuSpeed)
+            SettingMenuRow<DanmakuSpeed>(title: "弹幕速度", selection: $danmakuSpeed)
         }
     }
 
     private var displaySection: some View {
         settingsCard("视频显示") {
-            menuRow(VideoDisplayMode.self, "视频显示", selection: $displayMode)
+            SettingMenuRow<VideoDisplayMode>(title: "视频显示", selection: $displayMode)
             Text("卡片：首页式网格；列表：单列紧凑；两列列表：双列紧凑，全局所有视频列表同步切换。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -111,29 +110,37 @@ struct SettingsView: View {
         }
     }
 
-    /// Apple 风格选项行：左侧标题，右侧当前值 + 展开箭头，点击弹出选项列表。
-    private func menuRow<O: SettingOption>(_ type: O.Type,
-                                           _ title: String,
-                                           selection: Binding<String>) -> some View {
-        let options = Array(O.allCases)
-        let current = options.first { $0.rawValue == selection.wrappedValue }
-        return HStack {
+    private func settingsCard(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.callout)
-            Spacer()
-            Menu {
-                ForEach(options) { option in
-                    Button {
-                        selection.wrappedValue = option.rawValue
-                    } label: {
-                        if option.rawValue == selection.wrappedValue {
-                            Label(option.label, systemImage: "checkmark")
-                        } else {
-                            Text(option.label)
-                        }
-                    }
-                }
-            } label: {
+                .font(.headline)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .glassCard(cornerRadius: 14)
+    }
+}
+
+/// Apple Music 风格选项行：点击后弹出选项列表，已选选项位于列表正中。
+private struct SettingMenuRow<O: SettingOption>: View {
+    let title: String
+    @Binding var selection: String
+    @State private var isOpen = false
+
+    private var options: [O] { Array(O.allCases) }
+    private var current: O? { options.first { $0.rawValue == selection } }
+
+    private let rowHeight: CGFloat = 36
+
+    var body: some View {
+        Button {
+            isOpen = true
+        } label: {
+            HStack {
+                Text(title)
+                    .font(.callout)
+                Spacer()
                 HStack(spacing: 5) {
                     Text(current?.label ?? "")
                         .foregroundStyle(.secondary)
@@ -145,19 +152,55 @@ struct SettingsView: View {
                 .padding(.vertical, 5)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+            optionList
         }
     }
 
-    private func settingsCard(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.headline)
-            content()
+    /// 弹出列表：三行可见、上下留白，使已选选项始终位于列表正中。
+    private var optionList: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: rowHeight * 1.25)
+                    ForEach(options) { option in
+                        Button {
+                            selection = option.rawValue
+                            isOpen = false
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(option.label)
+                                    .font(.callout)
+                                Spacer()
+                                if option.rawValue == selection {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.weight(.semibold))
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .frame(height: rowHeight)
+                            .contentShape(Rectangle())
+                            .background(
+                                option.rawValue == selection
+                                    ? Color.accentColor.opacity(0.16)
+                                    : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 8)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .id(option.rawValue)
+                    }
+                    Color.clear.frame(height: rowHeight * 1.25)
+                }
+            }
+            .frame(width: 230, height: rowHeight * 3 + 10)
+            .onAppear {
+                proxy.scrollTo(selection, anchor: .center)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassCard(cornerRadius: 14)
+        .padding(6)
     }
 }
