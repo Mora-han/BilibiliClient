@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct UpRoute: Hashable {
@@ -100,6 +101,12 @@ struct RootView: View {
         .preferredColorScheme(colorScheme)
         .sheet(isPresented: $showLogin) {
             LoginView()
+        }
+        .onAppear {
+            // 绑定主窗口代理，用于“关闭窗口”行为（完全退出 / 菜单栏模式 / 询问）
+            if let window = NSApp.windows.first(where: { $0.isVisible }) {
+                window.delegate = AppDelegate.shared
+            }
         }
     }
 

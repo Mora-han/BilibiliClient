@@ -9,12 +9,12 @@ final class AppRouter: ObservableObject {
     /// 主窗口详情区的导航路径
     @Published var path = NavigationPath()
 
-    /// 跳转到指定视频详情：激活主窗口并推入对应页面。
+    /// 跳转到指定视频详情：激活主窗口（若被隐藏则一并唤回）并推入对应页面。
     func openVideo(_ bvid: String) {
         path.append(bvid)
-        if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) {
-            window.makeKeyAndOrderFront(nil)
-        }
+        let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey })
+            ?? NSApp.windows.first
+        window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }

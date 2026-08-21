@@ -17,7 +17,28 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// 软件设置页：外观、弹幕、视频显示、缓存与关于。
+/// 关闭主窗口时的行为（完全退出 / 菜单栏模式 / 每次询问）
+enum CloseBehavior: String, CaseIterable, Identifiable {
+    case quit
+    case menuBar
+    case ask
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .quit: return "完全退出"
+        case .menuBar: return "菜单栏模式"
+        case .ask: return "每次询问"
+        }
+    }
+
+    static var current: CloseBehavior {
+        CloseBehavior(rawValue: UserDefaults.standard.string(forKey: "closeBehavior") ?? "") ?? .ask
+    }
+}
+
+/// 软件设置页：外观、窗口、弹幕、视频显示、缓存与关于。
 /// 采用 macOS 系统设置风格：普通分组行、无卡片玻璃材质；
 /// 选项使用系统原生弹出按钮（Picker .menu，即 NSPopUpButton），
 /// 点击小方块即以其为中心展开列表，已选选项居中。
@@ -26,12 +47,15 @@ struct SettingsView: View {
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @AppStorage("danmakuSpeed") private var danmakuSpeed = DanmakuSpeed.normal.rawValue
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card.rawValue
+    @AppStorage("closeBehavior") private var closeBehavior = CloseBehavior.ask.rawValue
     @State private var cacheCleared = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 appearanceSection.padding(.vertical, 16)
+                Divider()
+                windowSection.padding(.vertical, 16)
                 Divider()
                 danmakuSection.padding(.vertical, 16)
                 Divider()
@@ -64,6 +88,25 @@ struct SettingsView: View {
                 .labelsHidden()
                 .fixedSize()
             }
+        }
+    }
+
+    private var windowSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("窗口")
+            optionRow("关闭窗口时") {
+                Picker("关闭窗口时", selection: $closeBehavior) {
+                    ForEach(CloseBehavior.allCases) { behavior in
+                        Text(behavior.label).tag(behavior.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
+            Text("选择“菜单栏模式”后，关闭窗口会隐藏到顶部菜单栏继续运行；“每次询问”会在关闭时弹出选择。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

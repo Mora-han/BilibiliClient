@@ -7,7 +7,10 @@ struct MenuBarPanelView: View {
     var onOpenVideo: (String) -> Void = { _ in }
 
     @State private var items: [DynamicItem] = []
+    @State private var offset: String?
+    @State private var hasMore = true
     @State private var isLoading = false
+    @State private var isLoadingMore = false
     @State private var hasLoaded = false
     @State private var errorMessage: String?
     @State private var showLogin = false
@@ -105,33 +108,65 @@ struct MenuBarPanelView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(items) { item in
-                        MenuBarDynamicRow(item: item) { bvid in
-                            onOpenVideo(bvid)
+                VStack(spacing: 0) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(items) { item in
+                            MenuBarDynamicRow(item: item) { bvid in
+                                onOpenVideo(bvid)
+                            }
+                            Divider()
+                                .padding(.leading, 56)
                         }
-                        Divider()
-                            .padding(.leading, 56)
+                    }
+
+                    if !items.isEmpty {
+                        LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                            await loadMore()
+                        }
                     }
                 }
                 .padding(.vertical, 6)
             }
+            // 接近底部自动预载下一页，与主界面一致的无感连续加载
+            .autoLoadMore(threshold: 500) { await loadMore() }
         }
     }
 
     private func load(force: Bool = false) async {
         guard !isLoading else { return }
-        if force { items = [] }
+        if force {
+            items = []
+            offset = nil
+            hasMore = true
+        }
         isLoading = true
         errorMessage = nil
         do {
             let data = try await DynamicService().feed()
             items = data.items
+            offset = data.offset
+            hasMore = data.hasMore ?? false
             hasLoaded = true
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func loadMore() async {
+        guard !isLoadingMore, hasMore, !items.isEmpty, let offset else { return }
+        isLoadingMore = true
+        do {
+            let data = try await DynamicService().feed(offset: offset)
+            let seen = Set(items.map(\.id))
+            let fresh = data.items.filter { !seen.contains($0.id) }
+            items.append(contentsOf: fresh)
+            self.offset = data.offset
+            hasMore = (data.hasMore ?? false) && !fresh.isEmpty
+        } catch {
+            // 翻页失败：保留 hasMore，滚动或点击可重试
+        }
+        isLoadingMore = false
     }
 }
 
