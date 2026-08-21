@@ -59,7 +59,9 @@ final class DanmakuEngine: ObservableObject {
                 y = inset + CGFloat(lane) * row + row / 2
             }
             if mode == 1 {
-                let progress = time - startTime
+                // progress 是 0...1 的归一化进度（经过秒数 / 总横穿时长），
+                // 再乘总行程，避免直接把“秒 × 像素”当成速度导致弹幕快十倍。
+                let progress = min(max((time - startTime) / duration, 0), 1)
                 let travel = size.width + textWidth * s
                 let x = size.width - CGFloat(progress) * travel
                 return CGPoint(x: x, y: y)
