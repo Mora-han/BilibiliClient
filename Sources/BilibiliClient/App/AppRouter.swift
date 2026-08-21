@@ -12,6 +12,11 @@ final class AppRouter: ObservableObject {
     /// 跳转到指定视频详情：激活主窗口（若被隐藏则一并唤回）并推入对应页面。
     func openVideo(_ bvid: String) {
         path.append(bvid)
+        openMain()
+    }
+
+    /// 回到主界面：激活并前置主窗口。
+    func openMain() {
         let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey })
             ?? NSApp.windows.first
         window?.makeKeyAndOrderFront(nil)

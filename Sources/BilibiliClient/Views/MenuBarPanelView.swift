@@ -5,6 +5,7 @@ struct MenuBarPanelView: View {
     @ObservedObject var session: SessionStore
     @ObservedObject var router: AppRouter
     var onOpenVideo: (String) -> Void = { _ in }
+    var onOpenApp: () -> Void = {}
 
     @State private var items: [DynamicItem] = []
     @State private var offset: String?
@@ -45,10 +46,11 @@ struct MenuBarPanelView: View {
                     Text(user.name)
                         .font(.headline)
                         .lineLimit(1)
-                    Text("Lv.\(user.level) · 关注 \(Formatters.count(user.following)) · 粉丝 \(Formatters.count(user.follower))")
+                    Text("Lv.\(user.level) · 关注 \(Formatters.count(user.following)) · 粉丝 \(Formatters.count(user.follower)) · 硬币 \(Formatters.decimal(user.coin))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
             } else {
                 Image(systemName: "person.crop.circle")
@@ -77,6 +79,15 @@ struct MenuBarPanelView: View {
             }
             .buttonStyle(.plain)
             .help(session.loggedIn ? "刷新动态" : "扫码登录")
+
+            Button {
+                onOpenApp()
+            } label: {
+                Image(systemName: "macwindow")
+                    .font(.callout)
+            }
+            .buttonStyle(.plain)
+            .help("返回主界面")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

@@ -25,6 +25,10 @@ final class MenuBarController: NSObject {
             onOpenVideo: { [weak self] bvid in
                 self?.popover?.performClose(nil)
                 AppRouter.shared.openVideo(bvid)
+            },
+            onOpenApp: { [weak self] in
+                self?.popover?.performClose(nil)
+                AppRouter.shared.openMain()
             }
         )
         .environmentObject(SessionStore.shared)
