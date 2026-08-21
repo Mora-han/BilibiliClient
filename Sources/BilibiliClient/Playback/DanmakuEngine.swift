@@ -13,10 +13,8 @@ final class DanmakuEngine: ObservableObject {
         let mode: Int          // 1 滚动 / 4 底部 / 5 顶部
         let lane: Int          // 轨道编号
         let startTime: Double  // 该弹幕进入画面的播放器时间
-        let speed: CGFloat     // 滚动速度（px/s，用于轨道避让）
+        let speed: CGFloat     // 滚动速度（px/s）
         let textWidth: CGFloat
-        let spawnWidth: CGFloat  // 生成时的容器宽度（滚动位置归一化基准）
-        let yFraction: CGFloat   // 生成时的纵向位置比例（0-1，随窗口缩放同步）
 
         static let rowHeight: CGFloat = 26
         static let topInset: CGFloat = 6
@@ -33,15 +31,24 @@ final class DanmakuEngine: ObservableObject {
             return Double(textWidth / speed)
         }
 
-        /// 位置使用归一化坐标（比例），窗口缩放时弹幕随视频一起缩放，不跳变。
         func position(in size: CGSize, at time: Double) -> CGPoint {
+            let y: CGFloat
             if mode == 1 {
-                let progress = min(max((time - startTime) / Self.scrollDuration, 0), 1)
-                let travel = (1 + textWidth / max(spawnWidth, 1)) * progress
-                let x = size.width * (1 - travel)
-                return CGPoint(x: x, y: size.height * yFraction)
+                let row = Self.rowHeight
+                y = Self.topInset + CGFloat(lane) * row + row / 2
+            } else if mode == 5 {
+                let row = Self.rowHeight
+                y = Self.topInset + CGFloat(lane) * row + row / 2
+            } else {
+                let row = Self.rowHeight
+                y = size.height - Self.bottomReserve - CGFloat(lane) * row - row / 2
             }
-            return CGPoint(x: size.width / 2, y: size.height * yFraction)
+            if mode == 1 {
+                let progress = time - startTime
+                let x = size.width - CGFloat(progress) * speed
+                return CGPoint(x: x, y: y)
+            }
+            return CGPoint(x: size.width / 2, y: y)
         }
 
         func isFinished(at time: Double) -> Bool {
@@ -89,13 +96,13 @@ final class DanmakuEngine: ObservableObject {
     // MARK: - 每帧更新
 
     func tick(playerTime: Double, size: CGSize) {
-        guard size.width > 0, size.height > 0, playerTime.isFinite else { return }
+        guard size.width > 0, size.height > 0 else { return }
         if size != configuredSize {
             configuredSize = size
             rebuildLanes(size: size)
         }
 
-        let t = playerTime
+        let t = playerTime.isFinite ? playerTime : 0
 
         // 生成新弹幕（跳过时间跨度大于 2.5s 的，避免拖动进度条时瞬间堆满）
         while nextIndex < all.count, all[nextIndex].time <= t {
@@ -136,7 +143,6 @@ final class DanmakuEngine: ObservableObject {
             scrollLanes[lane] = LaneState(lastStart: time,
                                           lastSpeed: speed,
                                           lastWidth: textWidth)
-            let yFraction = (Active.topInset + CGFloat(lane) * Active.rowHeight + Active.rowHeight / 2) / size.height
             active.append(Active(id: item.id,
                                  text: item.text,
                                  color: color,
@@ -145,14 +151,11 @@ final class DanmakuEngine: ObservableObject {
                                  lane: lane,
                                  startTime: time,
                                  speed: speed,
-                                 textWidth: textWidth,
-                                 spawnWidth: size.width,
-                                 yFraction: yFraction))
+                                 textWidth: textWidth))
         case 5:
             guard let lane = freeFixedLane(topLanes, time: time, isTop: true),
                   lane >= 0, lane < topLanes.count else { return }
             topLanes[lane] = LaneState(lastStart: time, lastSpeed: 0, lastWidth: 0)
-            let yFraction = (Active.topInset + CGFloat(lane) * Active.rowHeight + Active.rowHeight / 2) / size.height
             active.append(Active(id: item.id,
                                  text: item.text,
                                  color: color,
@@ -161,14 +164,11 @@ final class DanmakuEngine: ObservableObject {
                                  lane: lane,
                                  startTime: time,
                                  speed: 0,
-                                 textWidth: textWidth,
-                                 spawnWidth: size.width,
-                                 yFraction: yFraction))
+                                 textWidth: textWidth))
         case 4:
             guard let lane = freeFixedLane(bottomLanes, time: time, isTop: false),
                   lane >= 0, lane < bottomLanes.count else { return }
             bottomLanes[lane] = LaneState(lastStart: time, lastSpeed: 0, lastWidth: 0)
-            let yFraction = (size.height - Active.bottomReserve - CGFloat(lane) * Active.rowHeight - Active.rowHeight / 2) / size.height
             active.append(Active(id: item.id,
                                  text: item.text,
                                  color: color,
@@ -177,9 +177,7 @@ final class DanmakuEngine: ObservableObject {
                                  lane: lane,
                                  startTime: time,
                                  speed: 0,
-                                 textWidth: textWidth,
-                                 spawnWidth: size.width,
-                                 yFraction: yFraction))
+                                 textWidth: textWidth))
         default:
             break
         }

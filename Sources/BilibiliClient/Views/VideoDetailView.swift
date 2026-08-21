@@ -8,6 +8,11 @@ struct VideoDetailView: View {
     @EnvironmentObject private var session: SessionStore
     @StateObject private var player = PlayerController()
     @StateObject private var danmaku = DanmakuEngine()
+    @AppStorage("danmakuEnabled") private var danmakuEnabled = true
+    @State private var fullscreenDanmaku = NativeFullscreenDanmaku()
+    @State private var isFullscreen = false
+    @State private var pendingFullscreenAttach = false
+    @State private var fullscreenObserver: NSObjectProtocol?
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
@@ -52,7 +57,16 @@ struct VideoDetailView: View {
         }
         .navigationTitle(detail?.view.title ?? "视频详情")
         .task { await load() }
+        .onAppear {
+            registerFullscreenObservers()
+        }
         .onDisappear {
+            if let fullscreenObserver {
+                NotificationCenter.default.removeObserver(fullscreenObserver)
+            }
+            fullscreenObserver = nil
+            pendingFullscreenAttach = false
+            fullscreenDanmaku.detach()
             player.stop()
             danmaku.reset()
         }
@@ -197,7 +211,22 @@ struct VideoDetailView: View {
                 .padding()
             case .ready:
                 if let player = player.player {
-                    PlayerView(player: player, engine: danmaku)
+                    PlayerView(player: player,
+                               onWillEnterFullscreen: { _ in
+                                   playerWillEnterFullscreen()
+                               },
+                               onEnterFullscreen: { playerView in
+                                   playerDidEnterFullscreen(playerView)
+                               },
+                               onExitFullscreen: { _ in
+                                   playerDidExitFullscreen()
+                               })
+                        .overlay {
+                            DanmakuOverlayView(engine: danmaku,
+                                               player: player,
+                                               enabled: danmakuEnabled,
+                                               suspended: isFullscreen)
+                        }
                 }
             }
         }
@@ -207,6 +236,12 @@ struct VideoDetailView: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         )
+        .overlay(alignment: .topTrailing) {
+            if player.state == .ready {
+                DanmakuToggleButton(isOn: $danmakuEnabled)
+                    .padding(10)
+            }
+        }
     }
 
     private func infoRow(_ view: VideoDetailData.VideoView) -> some View {
@@ -446,6 +481,46 @@ struct VideoDetailView: View {
             commentError = error.localizedDescription
         }
         isLoadingComments = false
+    }
+
+    /// 系统全屏窗口即将开始动画：此时挂载弹幕层，让它随窗口一起放大/缩小。
+    private func registerFullscreenObservers() {
+        guard fullscreenObserver == nil else { return }
+        fullscreenObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willEnterFullScreenNotification,
+            object: nil,
+            queue: .main
+        ) { [self] note in
+            guard pendingFullscreenAttach,
+                  let window = note.object as? NSWindow,
+                  let avPlayer = player.player else { return }
+            pendingFullscreenAttach = false
+            fullscreenDanmaku.attach(engine: danmaku, player: avPlayer, to: window)
+        }
+    }
+
+    /// AVPlayerView 即将进入全屏：标记等待挂载，并让内嵌弹幕层挂起。
+    private func playerWillEnterFullscreen() {
+        pendingFullscreenAttach = true
+        isFullscreen = true
+    }
+
+    /// 兜底：若窗口通知未触发，进入完成后再挂载。
+    private func playerDidEnterFullscreen(_ playerView: AVPlayerView) {
+        pendingFullscreenAttach = false
+        guard let avPlayer = playerView.player ?? player.player else { return }
+        isFullscreen = true
+        guard !fullscreenDanmaku.isAttached else { return }
+        let window = NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.fullScreen) }
+            ?? playerView.window
+        fullscreenDanmaku.attach(engine: danmaku, player: avPlayer, to: window)
+    }
+
+    /// 退出系统全屏：移除挂载的弹幕层，内嵌播放器恢复驱动。
+    private func playerDidExitFullscreen() {
+        pendingFullscreenAttach = false
+        fullscreenDanmaku.detach()
+        isFullscreen = false
     }
 
     private func loadDanmaku(cid: Int) async {

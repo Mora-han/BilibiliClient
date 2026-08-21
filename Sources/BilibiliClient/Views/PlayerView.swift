@@ -1,42 +1,31 @@
 import AVKit
 import SwiftUI
 
-/// AVPlayerView 包装：视频 + 弹幕层 + 弹幕开关。
-/// 弹幕渲染视图放进 AVPlayerView.contentOverlayView（视频与控制条之间），
-/// 作为播放器内容的一部分，全屏进出动画时自动跟随，无需额外挂载。
+/// 自绘 AVPlayerView 包装。
+/// 不用 SwiftUI 的 VideoPlayer：旧 SDK 生成的 VideoPlayerView 元数据
+/// 与 macOS 27 运行时不兼容（superclass demangle 失败直接 abort）。
 struct PlayerView: NSViewRepresentable {
     let player: AVPlayer
-    @ObservedObject var engine: DanmakuEngine
+    /// 进入/退出系统原生全屏的回调（用于把弹幕层挂进全屏窗口）
+    var onWillEnterFullscreen: ((AVPlayerView) -> Void)? = nil
+    var onEnterFullscreen: ((AVPlayerView) -> Void)? = nil
+    var onExitFullscreen: ((AVPlayerView) -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.player = player
         view.controlsStyle = .floating
         view.videoGravity = .resizeAspect
-        // 系统原生全屏（带系统动画），弹幕层随 contentOverlayView 一起走
+        // 系统原生全屏（带系统动画），弹幕由代理回调挂进全屏窗口
         view.showsFullScreenToggleButton = true
-
-        if let overlay = view.contentOverlayView {
-            // 弹幕渲染层
-            let render = DanmakuRenderView()
-            render.engine = engine
-            render.player = player
-            render.frame = overlay.bounds
-            render.autoresizingMask = [.width, .height]
-            overlay.addSubview(render)
-            context.coordinator.renderView = render
-
-            // 弹幕开关（右上角，内嵌与全屏共用）
-            let toggle = NSHostingView(rootView: DanmakuToggleHost())
-            let toggleWidth: CGFloat = 96
-            let toggleHeight: CGFloat = 34
-            toggle.frame = NSRect(x: overlay.bounds.maxX - toggleWidth - 14,
-                                  y: overlay.bounds.maxY - toggleHeight - 14,
-                                  width: toggleWidth,
-                                  height: toggleHeight)
-            toggle.autoresizingMask = [.minXMargin, .minYMargin]
-            overlay.addSubview(toggle)
-        }
+        view.delegate = context.coordinator
+        context.coordinator.onWillEnterFullscreen = onWillEnterFullscreen
+        context.coordinator.onEnterFullscreen = onEnterFullscreen
+        context.coordinator.onExitFullscreen = onExitFullscreen
         return view
     }
 
@@ -44,15 +33,26 @@ struct PlayerView: NSViewRepresentable {
         if nsView.player !== player {
             nsView.player = player
         }
-        context.coordinator.renderView?.engine = engine
-        context.coordinator.renderView?.player = player
+        context.coordinator.onWillEnterFullscreen = onWillEnterFullscreen
+        context.coordinator.onEnterFullscreen = onEnterFullscreen
+        context.coordinator.onExitFullscreen = onExitFullscreen
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
+    final class Coordinator: NSObject, AVPlayerViewDelegate {
+        var onWillEnterFullscreen: ((AVPlayerView) -> Void)?
+        var onEnterFullscreen: ((AVPlayerView) -> Void)?
+        var onExitFullscreen: ((AVPlayerView) -> Void)?
 
-    final class Coordinator {
-        weak var renderView: DanmakuRenderView?
+        func playerViewWillEnterFullScreen(_ playerView: AVPlayerView) {
+            onWillEnterFullscreen?(playerView)
+        }
+
+        func playerViewDidEnterFullScreen(_ playerView: AVPlayerView) {
+            onEnterFullscreen?(playerView)
+        }
+
+        func playerViewDidExitFullScreen(_ playerView: AVPlayerView) {
+            onExitFullscreen?(playerView)
+        }
     }
 }
