@@ -30,16 +30,21 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                appearanceSection
-                danmakuSection
-                displaySection
-                storageSection
-                aboutSection
+            VStack(alignment: .leading, spacing: 0) {
+                appearanceSection.padding(.vertical, 16)
+                Divider()
+                danmakuSection.padding(.vertical, 16)
+                Divider()
+                displaySection.padding(.vertical, 16)
+                Divider()
+                storageSection.padding(.vertical, 16)
+                Divider()
+                aboutSection.padding(.vertical, 16)
             }
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(28)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 8)
         }
         .navigationTitle("设置")
     }
