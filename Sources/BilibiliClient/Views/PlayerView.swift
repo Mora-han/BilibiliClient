@@ -6,19 +6,24 @@ import SwiftUI
 /// 与 macOS 27 运行时不兼容（superclass demangle 失败直接 abort）。
 struct PlayerView: NSViewRepresentable {
     let player: AVPlayer
-    /// 播放器视图在屏幕上的位置（用于全屏进出动画的起止帧）
-    var onScreenFrame: ((CGRect) -> Void)? = nil
-    /// 是否显示系统原生全屏按钮（纯享模式用）
-    var showsNativeFullscreen: Bool = false
+    /// 进入/退出系统原生全屏的回调（用于把弹幕层挂进全屏窗口）
+    var onEnterFullscreen: ((AVPlayerView) -> Void)? = nil
+    var onExitFullscreen: ((AVPlayerView) -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeNSView(context: Context) -> AVPlayerView {
-        let view = FrameReportingPlayerView()
+        let view = AVPlayerView()
         view.player = player
         view.controlsStyle = .floating
         view.videoGravity = .resizeAspect
-        // 平滑全屏由自定义窗口承载（带弹幕），此时禁用系统自带全屏按钮
-        view.showsFullScreenToggleButton = showsNativeFullscreen
-        view.onFrameChange = onScreenFrame
+        // 系统原生全屏（带系统动画），弹幕由代理回调挂进全屏窗口
+        view.showsFullScreenToggleButton = true
+        view.delegate = context.coordinator
+        context.coordinator.onEnterFullscreen = onEnterFullscreen
+        context.coordinator.onExitFullscreen = onExitFullscreen
         return view
     }
 
@@ -26,36 +31,20 @@ struct PlayerView: NSViewRepresentable {
         if nsView.player !== player {
             nsView.player = player
         }
-        if let view = nsView as? FrameReportingPlayerView {
-            view.onFrameChange = onScreenFrame
-            if view.showsFullScreenToggleButton != showsNativeFullscreen {
-                view.showsFullScreenToggleButton = showsNativeFullscreen
-            }
+        context.coordinator.onEnterFullscreen = onEnterFullscreen
+        context.coordinator.onExitFullscreen = onExitFullscreen
+    }
+
+    final class Coordinator: NSObject, AVPlayerViewDelegate {
+        var onEnterFullscreen: ((AVPlayerView) -> Void)?
+        var onExitFullscreen: ((AVPlayerView) -> Void)?
+
+        func playerViewDidEnterFullScreen(_ playerView: AVPlayerView) {
+            onEnterFullscreen?(playerView)
         }
-    }
-}
 
-/// 上报自己在屏幕坐标中的 frame（左下角原点），供全屏动画使用。
-private final class FrameReportingPlayerView: AVPlayerView {
-    var onFrameChange: ((CGRect) -> Void)?
-    private var lastReported: CGRect = .zero
-
-    override func layout() {
-        super.layout()
-        report()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        report()
-    }
-
-    private func report() {
-        guard let window else { return }
-        let screenFrame = window.convertToScreen(convert(bounds, to: nil))
-        if screenFrame != lastReported {
-            lastReported = screenFrame
-            onFrameChange?(screenFrame)
+        func playerViewDidExitFullScreen(_ playerView: AVPlayerView) {
+            onExitFullscreen?(playerView)
         }
     }
 }

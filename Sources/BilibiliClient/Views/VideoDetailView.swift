@@ -1,3 +1,5 @@
+import AppKit
+import AVKit
 import SwiftUI
 
 struct VideoDetailView: View {
@@ -7,10 +9,8 @@ struct VideoDetailView: View {
     @StateObject private var player = PlayerController()
     @StateObject private var danmaku = DanmakuEngine()
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
-    @AppStorage("fullscreenMode") private var fullscreenModeRaw = FullscreenMode.smooth.rawValue
-    @State private var fullscreen = FullscreenPlayerWindow()
+    @State private var fullscreenDanmaku = NativeFullscreenDanmaku()
     @State private var isFullscreen = false
-    @State private var playerScreenFrame: CGRect = .zero
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
@@ -28,10 +28,6 @@ struct VideoDetailView: View {
     @State private var hasMoreComments = true
     @State private var commentError: String?
     @State private var commentTotal: Int?
-
-    private var usesSmoothFullscreen: Bool {
-        fullscreenModeRaw == FullscreenMode.smooth.rawValue
-    }
 
     var body: some View {
         ScrollView {
@@ -60,7 +56,7 @@ struct VideoDetailView: View {
         .navigationTitle(detail?.view.title ?? "视频详情")
         .task { await load() }
         .onDisappear {
-            fullscreen.forceClose()
+            fullscreenDanmaku.detach()
             player.stop()
             danmaku.reset()
         }
@@ -206,10 +202,12 @@ struct VideoDetailView: View {
             case .ready:
                 if let player = player.player {
                     PlayerView(player: player,
-                               onScreenFrame: { frame in
-                                   playerScreenFrame = frame
+                               onEnterFullscreen: { playerView in
+                                   playerDidEnterFullscreen(playerView)
                                },
-                               showsNativeFullscreen: !usesSmoothFullscreen)
+                               onExitFullscreen: { _ in
+                                   playerDidExitFullscreen()
+                               })
                         .overlay {
                             DanmakuOverlayView(engine: danmaku,
                                                player: player,
@@ -227,15 +225,8 @@ struct VideoDetailView: View {
         )
         .overlay(alignment: .topTrailing) {
             if player.state == .ready {
-                HStack(spacing: 8) {
-                    if usesSmoothFullscreen {
-                        FullscreenEntryButton {
-                            enterFullscreen()
-                        }
-                    }
-                    DanmakuToggleButton(isOn: $danmakuEnabled)
-                }
-                .padding(10)
+                DanmakuToggleButton(isOn: $danmakuEnabled)
+                    .padding(10)
             }
         }
     }
@@ -479,15 +470,19 @@ struct VideoDetailView: View {
         isLoadingComments = false
     }
 
-    private func enterFullscreen() {
-        guard usesSmoothFullscreen,
-              let player = player.player, !isFullscreen else { return }
+    /// 系统原生全屏进入：把弹幕层与开关挂进 AVPlayerView 的全屏窗口。
+    private func playerDidEnterFullscreen(_ playerView: AVPlayerView) {
+        guard let avPlayer = playerView.player ?? player.player else { return }
         isFullscreen = true
-        fullscreen.open(player: player,
-                        engine: danmaku,
-                        danmakuEnabled: $danmakuEnabled,
-                        sourceRect: playerScreenFrame,
-                        onClosed: { isFullscreen = false })
+        let window = NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.fullScreen) }
+            ?? playerView.window
+        fullscreenDanmaku.attach(engine: danmaku, player: avPlayer, to: window)
+    }
+
+    /// 退出系统全屏：移除挂载的弹幕层，内嵌播放器恢复驱动。
+    private func playerDidExitFullscreen() {
+        fullscreenDanmaku.detach()
+        isFullscreen = false
     }
 
     private func loadDanmaku(cid: Int) async {
