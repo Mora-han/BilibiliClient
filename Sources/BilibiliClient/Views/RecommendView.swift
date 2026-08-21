@@ -14,38 +14,33 @@ struct RecommendView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if displayMode == .card {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                              spacing: 16) {
-                        ForEach(items) { item in
-                            NavigationLink(value: item.bvid) {
-                                VideoCardView(
-                                    bvid: item.bvid,
-                                    title: item.title,
-                                    pic: item.pic,
-                                    duration: item.duration,
-                                    ownerName: item.owner?.name ?? "",
-                                    viewCount: item.stat?.view ?? 0,
-                                    badgeText: item.rcmdReason?.content
-                                )
-                            }
-                            .buttonStyle(.plain)
+                VideoFeedLayout(mode: displayMode) {
+                    ForEach(items) { item in
+                        NavigationLink(value: item.bvid) {
+                            VideoCardView(
+                                bvid: item.bvid,
+                                title: item.title,
+                                pic: item.pic,
+                                duration: item.duration,
+                                ownerName: item.owner?.name ?? "",
+                                viewCount: item.stat?.view ?? 0,
+                                badgeText: item.rcmdReason?.content
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
-                } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(items) { item in
-                            NavigationLink(value: item.bvid) {
-                                MediaListRow(
-                                    coverURL: item.pic,
-                                    title: item.title,
-                                    line2: item.owner?.name ?? "未知UP主",
-                                    line3: "播放 \(Formatters.count(item.stat?.view ?? 0))",
-                                    durationText: Formatters.duration(item.duration)
-                                )
-                            }
-                            .buttonStyle(.plain)
+                } rowContent: {
+                    ForEach(items) { item in
+                        NavigationLink(value: item.bvid) {
+                            MediaListRow(
+                                coverURL: item.pic,
+                                title: item.title,
+                                line2: item.owner?.name ?? "未知UP主",
+                                line3: "播放 \(Formatters.count(item.stat?.view ?? 0))",
+                                durationText: Formatters.duration(item.duration)
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }

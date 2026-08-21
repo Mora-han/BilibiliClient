@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// 设置项通用协议：可枚举、可展示当前值、点击弹出菜单切换。
+protocol SettingOption: CaseIterable, Identifiable, RawRepresentable where RawValue == String {
+    var label: String { get }
+}
+
 /// 外观模式（跟随系统 / 浅色 / 深色）
 enum AppearanceMode: String, CaseIterable, Identifiable {
     case system
@@ -17,7 +22,12 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// 软件设置页：外观、弹幕、视频显示模式、缓存与关于。
+extension AppearanceMode: SettingOption {}
+extension DanmakuSpeed: SettingOption {}
+extension VideoDisplayMode: SettingOption {}
+
+/// 软件设置页：外观、弹幕、视频显示、缓存与关于。
+/// 选项采用 Apple 风格：单行只展示当前选中值，点击弹出小列表切换。
 struct SettingsView: View {
     @AppStorage("appearance") private var appearance = AppearanceMode.system.rawValue
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
@@ -43,13 +53,7 @@ struct SettingsView: View {
 
     private var appearanceSection: some View {
         settingsCard("外观") {
-            Picker("外观", selection: $appearance) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Text(mode.label).tag(mode.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            menuRow(AppearanceMode.self, "外观", selection: $appearance)
         }
     }
 
@@ -57,26 +61,15 @@ struct SettingsView: View {
         settingsCard("弹幕") {
             Toggle("默认开启弹幕", isOn: $danmakuEnabled)
                 .font(.callout)
-            Picker("弹幕速度", selection: $danmakuSpeed) {
-                ForEach(DanmakuSpeed.allCases) { speed in
-                    Text(speed.label).tag(speed.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            Divider()
+            menuRow(DanmakuSpeed.self, "弹幕速度", selection: $danmakuSpeed)
         }
     }
 
     private var displaySection: some View {
         settingsCard("视频显示") {
-            Picker("视频显示模式", selection: $displayMode) {
-                ForEach(VideoDisplayMode.allCases) { mode in
-                    Text(mode.label).tag(mode.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            Text("卡片模式更贴近首页观感；列表模式信息更紧凑，全局所有视频列表同步切换。")
+            menuRow(VideoDisplayMode.self, "视频显示", selection: $displayMode)
+            Text("卡片：首页式网格；列表：单列紧凑；两列列表：双列紧凑，全局所有视频列表同步切换。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -92,11 +85,17 @@ struct SettingsView: View {
                     cacheCleared = false
                 }
             } label: {
-                Label(cacheCleared ? "已清除" : "清除图片缓存", systemImage: "trash")
-                    .font(.callout)
-                    .foregroundStyle(cacheCleared ? Color.green : Color.secondary)
+                HStack {
+                    Text("清除图片缓存")
+                        .font(.callout)
+                    Spacer()
+                    Text(cacheCleared ? "已清除" : "")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             }
             .buttonStyle(.plain)
+            .foregroundStyle(cacheCleared ? Color.green : Color.primary)
         }
     }
 
@@ -109,6 +108,45 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// Apple 风格选项行：左侧标题，右侧当前值 + 展开箭头，点击弹出选项列表。
+    private func menuRow<O: SettingOption>(_ type: O.Type,
+                                           _ title: String,
+                                           selection: Binding<String>) -> some View {
+        let options = Array(O.allCases)
+        let current = options.first { $0.rawValue == selection.wrappedValue }
+        return HStack {
+            Text(title)
+                .font(.callout)
+            Spacer()
+            Menu {
+                ForEach(options) { option in
+                    Button {
+                        selection.wrappedValue = option.rawValue
+                    } label: {
+                        if option.rawValue == selection.wrappedValue {
+                            Label(option.label, systemImage: "checkmark")
+                        } else {
+                            Text(option.label)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(current?.label ?? "")
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
         }
     }
 

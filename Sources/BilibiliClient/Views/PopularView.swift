@@ -24,40 +24,35 @@ struct PopularView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if displayMode == .card {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                              spacing: 16) {
-                        ForEach(usableVideos.indices, id: \.self) { index in
-                            let video = usableVideos[index]
-                            NavigationLink(value: video.bvid ?? "") {
-                                VideoCardView(
-                                    bvid: video.bvid ?? "",
-                                    title: video.title ?? "未知标题",
-                                    pic: video.pic ?? "",
-                                    duration: video.duration ?? 0,
-                                    ownerName: video.owner?.name ?? "",
-                                    viewCount: video.stat?.view ?? 0,
-                                    rank: index + 1
-                                )
-                            }
-                            .buttonStyle(.plain)
+                VideoFeedLayout(mode: displayMode) {
+                    ForEach(usableVideos.indices, id: \.self) { index in
+                        let video = usableVideos[index]
+                        NavigationLink(value: video.bvid ?? "") {
+                            VideoCardView(
+                                bvid: video.bvid ?? "",
+                                title: video.title ?? "未知标题",
+                                pic: video.pic ?? "",
+                                duration: video.duration ?? 0,
+                                ownerName: video.owner?.name ?? "",
+                                viewCount: video.stat?.view ?? 0,
+                                rank: index + 1
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
-                } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(usableVideos.indices, id: \.self) { index in
-                            let video = usableVideos[index]
-                            NavigationLink(value: video.bvid ?? "") {
-                                MediaListRow(
-                                    coverURL: video.pic ?? "",
-                                    title: video.title ?? "未知标题",
-                                    line2: "#\(index + 1) \(video.owner?.name ?? "未知UP主")",
-                                    line3: "播放 \(Formatters.count(video.stat?.view ?? 0))",
-                                    durationText: Formatters.duration(video.duration ?? 0)
-                                )
-                            }
-                            .buttonStyle(.plain)
+                } rowContent: {
+                    ForEach(usableVideos.indices, id: \.self) { index in
+                        let video = usableVideos[index]
+                        NavigationLink(value: video.bvid ?? "") {
+                            MediaListRow(
+                                coverURL: video.pic ?? "",
+                                title: video.title ?? "未知标题",
+                                line2: "#\(index + 1) \(video.owner?.name ?? "未知UP主")",
+                                line3: "播放 \(Formatters.count(video.stat?.view ?? 0))",
+                                durationText: Formatters.duration(video.duration ?? 0)
+                            )
                         }
+                        .buttonStyle(.plain)
                     }
                 }
 

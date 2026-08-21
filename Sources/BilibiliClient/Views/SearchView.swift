@@ -122,35 +122,30 @@ struct SearchView: View {
         } else {
             ScrollView {
                 VStack(spacing: 0) {
-                    if displayMode == .card {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                                  spacing: 16) {
-                            ForEach(results) { video in
-                                if let bvid = video.bvid, !bvid.isEmpty {
-                                    NavigationLink(value: bvid) {
-                                        VideoCardView(
-                                            bvid: bvid,
-                                            title: video.cleanTitle,
-                                            pic: video.pic ?? "",
-                                            duration: Formatters.seconds(fromDurationText: video.duration),
-                                            ownerName: video.author ?? "未知UP主",
-                                            viewCount: video.play ?? 0,
-                                            badgeText: nil
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
+                    VideoFeedLayout(mode: displayMode) {
+                        ForEach(results) { video in
+                            if let bvid = video.bvid, !bvid.isEmpty {
+                                NavigationLink(value: bvid) {
+                                    VideoCardView(
+                                        bvid: bvid,
+                                        title: video.cleanTitle,
+                                        pic: video.pic ?? "",
+                                        duration: Formatters.seconds(fromDurationText: video.duration),
+                                        ownerName: video.author ?? "未知UP主",
+                                        viewCount: video.play ?? 0,
+                                        badgeText: nil
+                                    )
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
-                    } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(results) { video in
-                                if let bvid = video.bvid, !bvid.isEmpty {
-                                    NavigationLink(value: bvid) {
-                                        row(video)
-                                    }
-                                    .buttonStyle(.plain)
+                    } rowContent: {
+                        ForEach(results) { video in
+                            if let bvid = video.bvid, !bvid.isEmpty {
+                                NavigationLink(value: bvid) {
+                                    row(video)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }

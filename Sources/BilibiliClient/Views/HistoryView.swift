@@ -52,32 +52,27 @@ struct HistoryView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
-                    if displayMode == .card {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                                  spacing: 16) {
-                            ForEach(usableItems) { item in
-                                NavigationLink(value: item.history?.bvid ?? "") {
-                                    VideoCardView(
-                                        bvid: item.history?.bvid ?? "",
-                                        title: item.title ?? "未知标题",
-                                        pic: item.cover ?? "",
-                                        duration: item.duration ?? 0,
-                                        ownerName: item.authorName ?? "未知UP主",
-                                        viewCount: 0,
-                                        badgeText: nil
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                    VideoFeedLayout(mode: displayMode) {
+                        ForEach(usableItems) { item in
+                            NavigationLink(value: item.history?.bvid ?? "") {
+                                VideoCardView(
+                                    bvid: item.history?.bvid ?? "",
+                                    title: item.title ?? "未知标题",
+                                    pic: item.cover ?? "",
+                                    duration: item.duration ?? 0,
+                                    ownerName: item.authorName ?? "未知UP主",
+                                    viewCount: 0,
+                                    badgeText: nil
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
-                    } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(usableItems) { item in
-                                NavigationLink(value: item.history?.bvid ?? "") {
-                                    row(item)
-                                }
-                                .buttonStyle(.plain)
+                    } rowContent: {
+                        ForEach(usableItems) { item in
+                            NavigationLink(value: item.history?.bvid ?? "") {
+                                row(item)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
 

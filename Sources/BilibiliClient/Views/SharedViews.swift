@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// 视频展示模式（设置项）：卡片模式（首页样式）/ 列表模式，全局统一生效。
+/// 视频展示模式（设置项）：卡片 / 单列列表 / 两列列表，全局统一生效。
 enum VideoDisplayMode: String, CaseIterable, Identifiable {
     case card
     case list
+    case list2
 
     var id: String { rawValue }
 
@@ -11,11 +12,48 @@ enum VideoDisplayMode: String, CaseIterable, Identifiable {
         switch self {
         case .card: return "卡片"
         case .list: return "列表"
+        case .list2: return "两列列表"
         }
     }
 
     static var current: VideoDisplayMode {
         VideoDisplayMode(rawValue: UserDefaults.standard.string(forKey: "videoDisplayMode") ?? "") ?? .card
+    }
+}
+
+/// 按全局显示模式统一布局：卡片网格 / 单列列表 / 两列列表。
+/// 各页面只需提供卡片与行两种内容，容器与切换逻辑统一由这里处理。
+struct VideoFeedLayout<CardContent: View, RowContent: View>: View {
+    var mode: VideoDisplayMode
+    @ViewBuilder var cardContent: CardContent
+    @ViewBuilder var rowContent: RowContent
+
+    init(mode: VideoDisplayMode,
+         @ViewBuilder cardContent: () -> CardContent,
+         @ViewBuilder rowContent: () -> RowContent) {
+        self.mode = mode
+        self.cardContent = cardContent()
+        self.rowContent = rowContent()
+    }
+
+    var body: some View {
+        switch mode {
+        case .card:
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+                      spacing: 16) {
+                cardContent
+            }
+        case .list:
+            LazyVStack(spacing: 12) {
+                rowContent
+            }
+        case .list2:
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                GridItem(.flexible(), spacing: 12)],
+                      spacing: 12) {
+                rowContent
+            }
+        }
     }
 }
 

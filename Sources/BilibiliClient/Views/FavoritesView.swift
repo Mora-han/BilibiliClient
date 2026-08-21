@@ -58,38 +58,33 @@ struct FavoritesView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
-                    if displayMode == .card {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                                  spacing: 16) {
-                            ForEach(usableMedias) { media in
-                                NavigationLink(value: media.bvid ?? "") {
-                                    VideoCardView(
-                                        bvid: media.bvid ?? "",
-                                        title: media.title ?? "",
-                                        pic: media.cover ?? "",
-                                        duration: media.duration ?? 0,
-                                        ownerName: media.upper?.name ?? "未知UP主",
-                                        viewCount: media.cntInfo?.play ?? 0,
-                                        badgeText: nil
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                    VideoFeedLayout(mode: displayMode) {
+                        ForEach(usableMedias) { media in
+                            NavigationLink(value: media.bvid ?? "") {
+                                VideoCardView(
+                                    bvid: media.bvid ?? "",
+                                    title: media.title ?? "",
+                                    pic: media.cover ?? "",
+                                    duration: media.duration ?? 0,
+                                    ownerName: media.upper?.name ?? "未知UP主",
+                                    viewCount: media.cntInfo?.play ?? 0,
+                                    badgeText: nil
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
-                    } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(usableMedias) { media in
-                                NavigationLink(value: media.bvid ?? "") {
-                                    MediaListRow(
-                                        coverURL: media.cover ?? "",
-                                        title: media.title ?? "",
-                                        line2: media.upper?.name ?? "未知UP主",
-                                        line3: "收藏于 \(Formatters.timeAgo(media.favTime ?? 0)) · 播放 \(Formatters.count(media.cntInfo?.play ?? 0))",
-                                        durationText: Formatters.duration(media.duration ?? 0)
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                    } rowContent: {
+                        ForEach(usableMedias) { media in
+                            NavigationLink(value: media.bvid ?? "") {
+                                MediaListRow(
+                                    coverURL: media.cover ?? "",
+                                    title: media.title ?? "",
+                                    line2: media.upper?.name ?? "未知UP主",
+                                    line3: "收藏于 \(Formatters.timeAgo(media.favTime ?? 0)) · 播放 \(Formatters.count(media.cntInfo?.play ?? 0))",
+                                    durationText: Formatters.duration(media.duration ?? 0)
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
                     }
 

@@ -58,32 +58,27 @@ struct WatchLaterView: View {
                     }
                     .padding(.bottom, 2)
 
-                    if displayMode == .card {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                                  spacing: 16) {
-                            ForEach(usableItems) { item in
-                                NavigationLink(value: item.bvid ?? "") {
-                                    VideoCardView(
-                                        bvid: item.bvid ?? "",
-                                        title: item.title ?? "未知标题",
-                                        pic: item.pic ?? "",
-                                        duration: item.duration ?? 0,
-                                        ownerName: item.owner?.name ?? "未知UP主",
-                                        viewCount: item.stat?.view ?? 0,
-                                        badgeText: nil
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                    VideoFeedLayout(mode: displayMode) {
+                        ForEach(usableItems) { item in
+                            NavigationLink(value: item.bvid ?? "") {
+                                VideoCardView(
+                                    bvid: item.bvid ?? "",
+                                    title: item.title ?? "未知标题",
+                                    pic: item.pic ?? "",
+                                    duration: item.duration ?? 0,
+                                    ownerName: item.owner?.name ?? "未知UP主",
+                                    viewCount: item.stat?.view ?? 0,
+                                    badgeText: nil
+                                )
                             }
+                            .buttonStyle(.plain)
                         }
-                    } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(usableItems) { item in
-                                NavigationLink(value: item.bvid ?? "") {
-                                    row(item)
-                                }
-                                .buttonStyle(.plain)
+                    } rowContent: {
+                        ForEach(usableItems) { item in
+                            NavigationLink(value: item.bvid ?? "") {
+                                row(item)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
