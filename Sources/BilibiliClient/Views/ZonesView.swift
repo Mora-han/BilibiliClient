@@ -9,19 +9,7 @@ struct ZonesView: View {
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(BiliZones.main) { zone in
                     NavigationLink(value: PartitionRoute(tid: zone.id, name: zone.name)) {
-                        VStack(spacing: 8) {
-                            Image(systemName: zone.icon)
-                                .font(.system(size: 30))
-                            Text(zone.name)
-                                .font(.callout.weight(.medium))
-                            Text("排行榜")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 26)
-                        .glassCard(cornerRadius: 18)
+                        ZoneCard(zone: zone)
                     }
                     .buttonStyle(.plain)
                 }
@@ -29,5 +17,34 @@ struct ZonesView: View {
             .padding(24)
         }
         .navigationTitle("分区")
+    }
+}
+
+/// 分区卡片：鼠标靠近时放大 + 高亮描边（与首页视频卡片同款动效）。
+private struct ZoneCard: View {
+    let zone: BiliZone
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: zone.icon)
+                .font(.system(size: 30))
+            Text(zone.name)
+                .font(.callout.weight(.medium))
+            Text("排行榜")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .foregroundStyle(.primary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 26)
+        .glassCard(cornerRadius: 18)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(.white.opacity(hovering ? 0.22 : 0), lineWidth: 1)
+        )
+        .scaleEffect(hovering ? 1.03 : 1)
+        .animation(Motion.hover, value: hovering)
+        .onHover { hovering = $0 }
     }
 }

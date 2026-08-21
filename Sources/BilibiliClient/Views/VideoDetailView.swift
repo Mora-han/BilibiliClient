@@ -6,6 +6,8 @@ struct VideoDetailView: View {
     @EnvironmentObject private var session: SessionStore
     @StateObject private var player = PlayerController()
     @StateObject private var danmaku = DanmakuEngine()
+    @Environment(\.dismiss) private var dismiss
+    @State private var playerSectionFrame: CGRect = .zero
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @AppStorage("fullscreenMode") private var fullscreenModeRaw = FullscreenMode.smooth.rawValue
     @State private var fullscreen = FullscreenPlayerWindow()
@@ -58,8 +60,12 @@ struct VideoDetailView: View {
             .padding(24)
         }
         .navigationTitle(detail?.view.title ?? "视频详情")
+        .animatedBackButton {
+            backWithHero()
+        }
         .task { await load() }
         .onDisappear {
+            HeroController.shared.cancel()
             fullscreen.forceClose()
             player.stop()
             danmaku.reset()
@@ -225,6 +231,12 @@ struct VideoDetailView: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         )
+        .background {
+            ScreenFrameReader { rect in
+                playerSectionFrame = rect
+                HeroController.shared.offerDestination(rect)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if player.state == .ready {
                 HStack(spacing: 8) {
@@ -274,6 +286,7 @@ struct VideoDetailView: View {
                 .foregroundStyle(liked ? Color.pink : Color.secondary)
             }
             .buttonStyle(.plain)
+            .hoverScale(scale: 1.06)
 
             Menu {
                 Button("投 1 枚硬币") {
@@ -293,6 +306,7 @@ struct VideoDetailView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .disabled(coined)
+            .hoverScale(scale: 1.06)
 
             Button {
                 Task { await toggleFavorite() }
@@ -305,6 +319,7 @@ struct VideoDetailView: View {
                 .foregroundStyle(faved ? Color.blue : Color.secondary)
             }
             .buttonStyle(.plain)
+            .hoverScale(scale: 1.06)
 
             Menu {
                 Button("复制链接") {
@@ -474,6 +489,17 @@ struct VideoDetailView: View {
             commentError = error.localizedDescription
         }
         isLoadingComments = false
+    }
+
+    private func backWithHero() {
+        if HeroController.shared.isActive, !playerSectionFrame.isEmpty {
+            HeroController.shared.reverse(from: playerSectionFrame,
+                                          to: HeroController.shared.sourceFrame) {
+                dismiss()
+            }
+        } else {
+            dismiss()
+        }
     }
 
     private func enterFullscreen() {
