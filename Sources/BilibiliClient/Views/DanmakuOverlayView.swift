@@ -38,9 +38,10 @@ struct DanmakuOverlayView: View {
                 return
             }
             // 播放暂停时 playerTime 不变，弹幕自然冻结
+            // 以最高刷新率（120Hz，覆盖 ProMotion）驱动，滚动更丝滑
             while !Task.isCancelled {
                 engine.tick(playerTime: player.currentTime().seconds, size: size)
-                try? await Task.sleep(for: .seconds(1.0 / 30.0))
+                try? await Task.sleep(for: .seconds(1.0 / 120.0))
             }
         }
         .allowsHitTesting(false)
