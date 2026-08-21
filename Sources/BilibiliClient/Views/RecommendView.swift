@@ -78,6 +78,10 @@ struct RecommendView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+        // 首屏就绪后立即预载下一页，让内容缓冲领先于滚动位置
+        if hasMore && !items.isEmpty {
+            Task { await loadMore() }
+        }
     }
 
     private func loadMore() async {

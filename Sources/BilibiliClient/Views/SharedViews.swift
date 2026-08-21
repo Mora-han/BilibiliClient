@@ -31,9 +31,10 @@ struct LoadMoreFooter: View {
 }
 
 extension View {
-    /// 滚动接近底部时自动加载下一页：剩余可滚动距离不足 threshold（默认约一屏）
-    /// 即触发，内容始终在滚动前就绪，实现“拉不到底”的连续加载体验。
-    func autoLoadMore(threshold: CGFloat = 600, load: @escaping () async -> Void) -> some View {
+    /// 滚动接近底部时自动加载下一页：剩余可滚动距离不足 threshold（默认约两屏半）
+    /// 即触发，并在加载完成后由内容高度变化自动接续下一页，
+    /// 让内容始终领先滚动位置，实现快速下拉也“拉不到底”的连续加载体验。
+    func autoLoadMore(threshold: CGFloat = 2000, load: @escaping () async -> Void) -> some View {
         onScrollGeometryChange(for: CGFloat.self) { geometry in
             geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height
         } action: { _, remaining in
