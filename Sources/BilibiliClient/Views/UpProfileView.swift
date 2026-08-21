@@ -265,9 +265,10 @@ struct UpProfileView: View {
         do {
             let data = try await UpService().videos(mid: mid, page: page + 1, order: order.apiValue)
             let seen = Set(videos.map(\.id))
-            videos.append(contentsOf: data.archives.filter { !seen.contains($0.id) })
+            let fresh = data.archives.filter { !seen.contains($0.id) }
+            videos.append(contentsOf: fresh)
             page += 1
-            hasMore = !data.archives.isEmpty
+            hasMore = !fresh.isEmpty
         } catch {
             // 翻页失败静默，滚动后可重试
         }

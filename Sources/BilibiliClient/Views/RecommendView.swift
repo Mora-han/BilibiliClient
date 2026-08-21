@@ -80,16 +80,18 @@ struct RecommendView: View {
     }
 
     private func loadMore() async {
-        guard !isLoadingMore else { return }
+        guard !isLoadingMore, hasMore else { return }
         isLoadingMore = true
         do {
             let newItems = try await FeedService().recommend(page: page + 1)
             let seen = Set(items.map(\.id))
-            items.append(contentsOf: newItems.filter { !seen.contains($0.id) })
+            let fresh = newItems.filter { !seen.contains($0.id) }
+            items.append(contentsOf: fresh)
             page += 1
-            hasMore = !newItems.isEmpty
+            // 本页没有新增内容（接口翻页返回重复或空）时停止自动加载，避免无限转圈
+            hasMore = !fresh.isEmpty
         } catch {
-            // 翻页失败静默
+            // 翻页失败：保留 hasMore，点击底部提示可重试
         }
         isLoadingMore = false
     }

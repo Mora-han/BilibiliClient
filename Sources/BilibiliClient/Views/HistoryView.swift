@@ -120,9 +120,10 @@ struct HistoryView: View {
                 viewAt: cursor.viewAt ?? 0
             )
             let seen = Set(items.map(\.id))
-            items.append(contentsOf: data.list.filter { !seen.contains($0.id) })
+            let fresh = data.list.filter { !seen.contains($0.id) }
+            items.append(contentsOf: fresh)
             self.cursor = data.cursor
-            hasMore = !data.list.isEmpty
+            hasMore = !fresh.isEmpty
         } catch {
             // 静默失败
         }

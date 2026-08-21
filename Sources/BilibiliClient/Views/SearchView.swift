@@ -175,16 +175,21 @@ struct SearchView: View {
         do {
             let targetPage = reset ? 1 : page + 1
             let data = try await SearchService().videos(keyword: trimmed, page: targetPage, order: order.apiValue)
+            var addedCount = 0
             if reset {
                 results = data.result
                 page = 1
+                addedCount = results.count
             } else {
                 let seen = Set(results.map(\.id))
-                results.append(contentsOf: data.result.filter { !seen.contains($0.id) })
+                let fresh = data.result.filter { !seen.contains($0.id) }
+                results.append(contentsOf: fresh)
                 page = targetPage
+                addedCount = fresh.count
             }
             numResults = data.numResults ?? results.count
-            hasMore = results.count < (data.numResults ?? 0) && (data.numPages ?? 1) > targetPage
+            // 本页没有新增内容时停止，避免无限重复请求
+            hasMore = addedCount > 0 && results.count < numResults && (data.numPages ?? 1) > targetPage
         } catch {
             if reset {
                 errorMessage = error.localizedDescription

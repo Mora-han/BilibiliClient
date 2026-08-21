@@ -10,12 +10,24 @@ struct LoadMoreFooter: View {
         Button {
             Task { await onLoad() }
         } label: {
-            ProgressView()
-                .controlSize(.small)
-                .opacity(isBusy ? 1 : 0.45)
+            if isBusy {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("加载中…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
+            } else {
+                Text("继续下滑加载更多")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+            }
         }
         .buttonStyle(.plain)
         .disabled(isBusy)

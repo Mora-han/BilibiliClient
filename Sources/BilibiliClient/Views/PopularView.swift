@@ -74,7 +74,7 @@ struct PopularView: View {
             let data = try await HomeService().popular(page: 1, pageSize: 20)
             videos = data.list
             page = 1
-            hasMore = !(data.noMore ?? true)
+            hasMore = !(data.noMore ?? false)
             hasLoaded = true
         } catch {
             errorMessage = error.localizedDescription
@@ -88,11 +88,12 @@ struct PopularView: View {
         do {
             let data = try await HomeService().popular(page: page + 1, pageSize: 20)
             let seen = Set(videos.map(\.id))
-            videos.append(contentsOf: data.list.filter { !seen.contains($0.id) })
+            let fresh = data.list.filter { !seen.contains($0.id) }
+            videos.append(contentsOf: fresh)
             page += 1
-            hasMore = !(data.noMore ?? true)
+            hasMore = !(data.noMore ?? false) && !fresh.isEmpty
         } catch {
-            // 静默失败
+            // 翻页失败：保留 hasMore，点击底部提示可重试
         }
         isLoadingMore = false
     }

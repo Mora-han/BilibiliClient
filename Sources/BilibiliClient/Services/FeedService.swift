@@ -16,6 +16,8 @@ struct FeedService {
                 "brush": "\(page)",
                 "feed_version": "V8",
                 "homepage_ver": "1",
+                "web_location": "1430650",
+                "y_num": "5",
             ],
             wbi: true
         )

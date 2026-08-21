@@ -154,9 +154,10 @@ struct DynamicFeedView: View {
         do {
             let data = try await DynamicService().feed(offset: offset, hostMid: selectedUP)
             let seen = Set(items.map(\.id))
-            items.append(contentsOf: data.items.filter { !seen.contains($0.id) })
+            let fresh = data.items.filter { !seen.contains($0.id) }
+            items.append(contentsOf: fresh)
             self.offset = data.offset
-            hasMore = data.hasMore ?? false
+            hasMore = (data.hasMore ?? false) && !fresh.isEmpty
         } catch {
             // 翻页失败静默
         }

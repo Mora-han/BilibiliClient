@@ -179,9 +179,10 @@ struct FavoritesView: View {
         do {
             let data = try await LibraryService().favoriteResources(mediaId: folderId, page: page + 1)
             let seen = Set(medias.map(\.id))
-            medias.append(contentsOf: data.medias.filter { !seen.contains($0.id) })
+            let fresh = data.medias.filter { !seen.contains($0.id) }
+            medias.append(contentsOf: fresh)
             page += 1
-            hasMore = data.hasMore ?? false
+            hasMore = (data.hasMore ?? false) && !fresh.isEmpty
         } catch {
             // 静默失败
         }
