@@ -45,7 +45,6 @@ struct UpProfileView: View {
             .padding(24)
         }
         .navigationTitle(card?.name ?? "UP主页")
-        .animatedBackButton()
         .task { await load() }
     }
 

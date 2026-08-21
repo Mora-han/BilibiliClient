@@ -57,7 +57,6 @@ struct PartitionVideosView: View {
             .padding(20)
         }
         .navigationTitle("\(zone.name) 排行榜")
-        .animatedBackButton()
         .task { await load() }
     }
 

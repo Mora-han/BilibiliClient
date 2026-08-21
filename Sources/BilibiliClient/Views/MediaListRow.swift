@@ -8,7 +8,6 @@ struct MediaListRow: View {
     var durationText: String?
     var progress: Double?
     @State private var hovering = false
-    @State private var coverFrame: CGRect = .zero
 
     var body: some View {
         HStack(spacing: 12) {
@@ -16,9 +15,6 @@ struct MediaListRow: View {
                 RemoteImage(url: Formatters.https(coverURL))
                     .frame(width: 132, height: 78)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .background {
-                        ScreenFrameReader { rect in coverFrame = rect }
-                    }
                 if let durationText {
                     Text(durationText)
                         .font(.caption2.weight(.semibold))
@@ -62,8 +58,5 @@ struct MediaListRow: View {
         .scaleEffect(hovering ? 1.01 : 1)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hovering)
         .onHover { hovering = $0 }
-        .simultaneousGesture(TapGesture().onEnded {
-            HeroController.shared.start(imageURL: coverURL, from: coverFrame)
-        })
     }
 }

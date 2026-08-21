@@ -11,14 +11,10 @@ struct VideoCardView: View {
     var badgeText: String?
     var rank: Int?
     @State private var hovering = false
-    @State private var thumbnailFrame: CGRect = .zero
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             thumbnail
-                .background {
-                    ScreenFrameReader { rect in thumbnailFrame = rect }
-                }
 
             Text(title)
                 .font(.callout.weight(.medium))
@@ -48,10 +44,6 @@ struct VideoCardView: View {
         .scaleEffect(hovering ? 1.02 : 1)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hovering)
         .onHover { hovering = $0 }
-        .simultaneousGesture(TapGesture().onEnded {
-            // App Store 式放大转场：缩略图从卡片原位放大到播放页
-            HeroController.shared.start(imageURL: pic, from: thumbnailFrame)
-        })
     }
 
     private var thumbnail: some View {
