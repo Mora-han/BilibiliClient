@@ -36,7 +36,7 @@ final class DanmakuEngine: ObservableObject {
 
         /// 当前容器宽度下应渲染的字号
         func fontSize(for width: CGFloat) -> CGFloat {
-            20 * scale * stageScale(for: width)
+            18 * scale * stageScale(for: width)
         }
 
         /// 尾端完全进入画面的耗时（基准空间，与容器宽度无关）
@@ -76,6 +76,10 @@ final class DanmakuEngine: ObservableObject {
     }
 
     @Published private(set) var active: [Active] = []
+
+    /// 当前帧渲染用的播放器时间：由 tick 每帧采样一次，渲染层统一读取，
+    /// 避免每个弹幕各自调用 player.currentTime()。
+    private(set) var renderTime: Double = 0
 
     private var all: [DanmakuItem] = []
     private var nextIndex = 0
@@ -120,6 +124,7 @@ final class DanmakuEngine: ObservableObject {
         }
 
         let t = playerTime.isFinite ? playerTime : 0
+        renderTime = t
 
         // 生成新弹幕（跳过时间跨度大于 2.5s 的，避免拖动进度条时瞬间堆满）
         while nextIndex < all.count, all[nextIndex].time <= t {
@@ -224,7 +229,7 @@ final class DanmakuEngine: ObservableObject {
     // MARK: - 工具
 
     private static func estimateWidth(text: String, scale: CGFloat) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 20 * scale, weight: .bold)
+        let font = NSFont.systemFont(ofSize: 18 * scale, weight: .medium)
         return (text as NSString).size(withAttributes: [.font: font]).width
     }
 

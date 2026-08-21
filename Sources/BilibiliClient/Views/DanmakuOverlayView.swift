@@ -16,14 +16,22 @@ struct DanmakuOverlayView: View {
         GeometryReader { geo in
             ZStack {
                 if enabled && !suspended {
-                    ForEach(engine.active) { item in
-                        Text(item.text)
-                            .font(.system(size: item.fontSize(for: geo.size.width),
-                                          weight: .bold))
-                            .foregroundStyle(item.color)
-                            .shadow(color: .black.opacity(0.85), radius: 2, x: 0, y: 1)
-                            .position(item.position(in: geo.size,
-                                                   at: player.currentTime().seconds))
+                    // 单个 Canvas 一帧绘制所有弹幕：避免几十个 SwiftUI Text 视图
+                    // 逐帧布局/重绘，全屏大字号下依然能跑满高刷新率。
+                    Canvas { context, size in
+                        let time = engine.renderTime
+                        // 阴影用一次 context 滤镜统一绘制，避免每个弹幕重复栅格化
+                        context.addFilter(.shadow(color: .black.opacity(0.85),
+                                                  radius: 2, x: 0, y: 1))
+                        for item in engine.active {
+                            // macOS 26 SDK 中 Text.foregroundColor/foregroundStyle 会擦除类型，
+                            // 改用 AttributedString 携带字体与颜色，Text 类型保持可用。
+                            var attr = AttributedString(item.text)
+                            attr.font = .system(size: item.fontSize(for: size.width),
+                                                weight: .medium)
+                            attr.foregroundColor = item.color
+                            context.draw(Text(attr), at: item.position(in: size, at: time))
+                        }
                     }
                 }
             }
