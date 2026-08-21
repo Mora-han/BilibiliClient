@@ -13,9 +13,13 @@ final class DanmakuEngine: ObservableObject {
         let mode: Int          // 1 滚动 / 4 底部 / 5 顶部
         let lane: Int          // 轨道编号
         let startTime: Double  // 该弹幕进入画面的播放器时间
-        let speed: CGFloat     // 滚动速度（px/s）
-        let textWidth: CGFloat
+        let duration: Double   // 总生存时长（滚动=8s / 固定=4.5s，不随容器宽度变化）
+        let textWidth: CGFloat // 基准舞台宽度（baseWidth）下的文字宽度
 
+        /// 基准舞台宽度：对应内嵌播放器最大宽度（980 内容列 - 两侧 24pt 内边距）。
+        /// 全屏时容器变宽，字号/轨道/滚动路径都按 width/baseWidth 等比放大，
+        /// 横穿时间不变——观感与官网网页端一致（舞台整体放大，而不是弹幕变快）。
+        static let baseWidth: CGFloat = 932
         static let rowHeight: CGFloat = 26
         static let topInset: CGFloat = 6
         static let bottomReserve: CGFloat = 40
@@ -25,27 +29,39 @@ final class DanmakuEngine: ObservableObject {
 
         var isScroll: Bool { mode == 1 }
 
-        /// 滚动弹幕越过后半段时才真正占住轨道（尾端完全进入画面后放行下一跳）
+        /// 当前容器宽度对应的舞台缩放比例
+        func stageScale(for width: CGFloat) -> CGFloat {
+            width / Self.baseWidth
+        }
+
+        /// 当前容器宽度下应渲染的字号
+        func fontSize(for width: CGFloat) -> CGFloat {
+            20 * scale * stageScale(for: width)
+        }
+
+        /// 尾端完全进入画面的耗时（基准空间，与容器宽度无关）
         var tailEnterDuration: Double {
-            guard speed > 0 else { return Active.scrollDuration }
-            return Double(textWidth / speed)
+            guard isScroll else { return duration }
+            let f = Double(textWidth / Self.baseWidth)
+            return duration * f / (1 + f)
         }
 
         func position(in size: CGSize, at time: Double) -> CGPoint {
+            let s = stageScale(for: size.width)
+            let row = Self.rowHeight * s
+            let inset = Self.topInset * s
+            let reserve = Self.bottomReserve * s
             let y: CGFloat
-            if mode == 1 {
-                let row = Self.rowHeight
-                y = Self.topInset + CGFloat(lane) * row + row / 2
-            } else if mode == 5 {
-                let row = Self.rowHeight
-                y = Self.topInset + CGFloat(lane) * row + row / 2
-            } else {
-                let row = Self.rowHeight
-                y = size.height - Self.bottomReserve - CGFloat(lane) * row - row / 2
+            switch mode {
+            case 4:
+                y = size.height - reserve - CGFloat(lane) * row - row / 2
+            default:
+                y = inset + CGFloat(lane) * row + row / 2
             }
             if mode == 1 {
                 let progress = time - startTime
-                let x = size.width - CGFloat(progress) * speed
+                let travel = size.width + textWidth * s
+                let x = size.width - CGFloat(progress) * travel
                 return CGPoint(x: x, y: y)
             }
             return CGPoint(x: size.width / 2, y: y)
@@ -53,7 +69,7 @@ final class DanmakuEngine: ObservableObject {
 
         func isFinished(at time: Double) -> Bool {
             let progress = time - startTime
-            return progress >= (isScroll ? Self.scrollDuration : Self.fixedDuration)
+            return progress >= duration
         }
     }
 
@@ -64,9 +80,8 @@ final class DanmakuEngine: ObservableObject {
     private var configuredSize: CGSize = .zero
 
     private struct LaneState {
-        var lastStart: Double = -1
-        var lastSpeed: CGFloat = 0
-        var lastWidth: CGFloat = 0
+        /// 该轨道可被复用的最早时间（滚动=尾端进入+0.35s；固定=上一条结束+0.2s）
+        var busyUntil: Double = -1
     }
     private var scrollLanes: [LaneState] = []
     private var topLanes: [LaneState] = []
@@ -122,10 +137,12 @@ final class DanmakuEngine: ObservableObject {
     // MARK: - 轨道与生成
 
     private func rebuildLanes(size: CGSize) {
-        let usable = max(1, size.height - Active.topInset - Active.bottomReserve)
-        let scrollCount = max(3, Int(usable / Active.rowHeight))
+        let s = size.width / Active.baseWidth
+        let row = Active.rowHeight * s
+        let usable = max(1, size.height - (Active.topInset + Active.bottomReserve) * s)
+        let scrollCount = max(3, Int(usable / row))
         scrollLanes = Array(repeating: LaneState(), count: scrollCount)
-        let fixedCount = max(2, Int(usable / (Active.rowHeight * 1.2)))
+        let fixedCount = max(2, Int(usable / (row * 1.2)))
         topLanes = Array(repeating: LaneState(), count: min(fixedCount, 6))
         bottomLanes = Array(repeating: LaneState(), count: min(fixedCount, 6))
     }
@@ -138,11 +155,10 @@ final class DanmakuEngine: ObservableObject {
 
         switch item.mode {
         case 1:
-            guard let lane = freeScrollLane(time: time, width: size.width) else { return }
-            let speed = (size.width + textWidth) / CGFloat(Active.scrollDuration)
-            scrollLanes[lane] = LaneState(lastStart: time,
-                                          lastSpeed: speed,
-                                          lastWidth: textWidth)
+            guard let lane = freeScrollLane(time: time) else { return }
+            let tailEnter = Active.scrollDuration * (textWidth / Active.baseWidth) /
+                (1 + textWidth / Active.baseWidth)
+            scrollLanes[lane] = LaneState(busyUntil: time + tailEnter + 0.35)
             active.append(Active(id: item.id,
                                  text: item.text,
                                  color: color,
@@ -150,12 +166,12 @@ final class DanmakuEngine: ObservableObject {
                                  mode: 1,
                                  lane: lane,
                                  startTime: time,
-                                 speed: speed,
+                                 duration: Active.scrollDuration,
                                  textWidth: textWidth))
         case 5:
             guard let lane = freeFixedLane(topLanes, time: time, isTop: true),
                   lane >= 0, lane < topLanes.count else { return }
-            topLanes[lane] = LaneState(lastStart: time, lastSpeed: 0, lastWidth: 0)
+            topLanes[lane] = LaneState(busyUntil: time + Active.fixedDuration + 0.2)
             active.append(Active(id: item.id,
                                  text: item.text,
                                  color: color,
@@ -163,12 +179,12 @@ final class DanmakuEngine: ObservableObject {
                                  mode: 5,
                                  lane: lane,
                                  startTime: time,
-                                 speed: 0,
+                                 duration: Active.fixedDuration,
                                  textWidth: textWidth))
         case 4:
             guard let lane = freeFixedLane(bottomLanes, time: time, isTop: false),
                   lane >= 0, lane < bottomLanes.count else { return }
-            bottomLanes[lane] = LaneState(lastStart: time, lastSpeed: 0, lastWidth: 0)
+            bottomLanes[lane] = LaneState(busyUntil: time + Active.fixedDuration + 0.2)
             active.append(Active(id: item.id,
                                  text: item.text,
                                  color: color,
@@ -176,20 +192,16 @@ final class DanmakuEngine: ObservableObject {
                                  mode: 4,
                                  lane: lane,
                                  startTime: time,
-                                 speed: 0,
+                                 duration: Active.fixedDuration,
                                  textWidth: textWidth))
         default:
             break
         }
     }
 
-    private func freeScrollLane(time: Double, width: CGFloat) -> Int? {
-        for (i, lane) in scrollLanes.enumerated() {
-            guard lane.lastStart >= 0 else { return i }
-            let tailEnter = lane.lastStart + Double(lane.lastWidth / max(lane.lastSpeed, 1))
-            if time >= tailEnter + 0.35 {
-                return i
-            }
+    private func freeScrollLane(time: Double) -> Int? {
+        for (i, lane) in scrollLanes.enumerated() where time >= lane.busyUntil {
+            return i
         }
         return nil
     }
@@ -200,7 +212,7 @@ final class DanmakuEngine: ObservableObject {
         let order = isTop ? Array(0..<count) : Array((0..<count).reversed())
         for i in order {
             let lane = lanes[i]
-            if lane.lastStart < 0 || time >= lane.lastStart + Active.fixedDuration + 0.2 {
+            if time >= lane.busyUntil {
                 return i
             }
         }

@@ -18,7 +18,8 @@ struct DanmakuOverlayView: View {
                 if enabled && !suspended {
                     ForEach(engine.active) { item in
                         Text(item.text)
-                            .font(.system(size: 20 * item.scale, weight: .bold))
+                            .font(.system(size: item.fontSize(for: geo.size.width),
+                                          weight: .bold))
                             .foregroundStyle(item.color)
                             .shadow(color: .black.opacity(0.85), radius: 2, x: 0, y: 1)
                             .position(item.position(in: geo.size,
