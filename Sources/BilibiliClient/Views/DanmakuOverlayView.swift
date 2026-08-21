@@ -1,15 +1,16 @@
+import AppKit
 import AVFoundation
+import QuartzCore
 import SwiftUI
 
-/// 叠在播放器上的弹幕层：30fps 定时驱动引擎，按播放时间渲染活跃弹幕。
+/// 叠在播放器上的弹幕层：由 CADisplayLink 按显示器最高刷新率逐帧驱动引擎，
+/// 按播放时间渲染活跃弹幕（160Hz/120Hz/ProMotion 均可跑满）。
 struct DanmakuOverlayView: View {
     @ObservedObject var engine: DanmakuEngine
     let player: AVPlayer
     let enabled: Bool
     /// 全屏窗口打开时，内嵌层的驱动挂起，只由全屏层驱动引擎
     var suspended: Bool = false
-
-    @State private var size: CGSize = .zero
 
     var body: some View {
         GeometryReader { geo in
@@ -26,26 +27,75 @@ struct DanmakuOverlayView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onAppear { size = geo.size }
-            .onChange(of: geo.size) { _, newSize in size = newSize }
-        }
-        .task(id: enabled && !suspended) {
-            guard enabled, !suspended else {
-                if !enabled {
-                    // 关闭开关：立即清掉屏幕上已有的弹幕
-                    engine.clear()
+            .background {
+                // 逐帧回调与所在显示器刷新同步；暂停时 playerTime 不变，弹幕自然冻结
+                DisplayLinkDriver(isActive: enabled && !suspended) {
+                    engine.tick(playerTime: player.currentTime().seconds, size: geo.size)
                 }
-                return
             }
-            // 播放暂停时 playerTime 不变，弹幕自然冻结
-            // 以最高刷新率（120Hz，覆盖 ProMotion）驱动，滚动更丝滑
-            while !Task.isCancelled {
-                engine.tick(playerTime: player.currentTime().seconds, size: size)
-                try? await Task.sleep(for: .seconds(1.0 / 120.0))
+        }
+        .onChange(of: enabled) { _, newValue in
+            if !newValue {
+                // 关闭开关：立即清掉屏幕上已有的弹幕
+                engine.clear()
             }
         }
         .allowsHitTesting(false)
         .clipped()
+    }
+}
+
+/// 用 NSView.displayLink 获取与显示器刷新同步的逐帧回调。
+private struct DisplayLinkDriver: NSViewRepresentable {
+    var isActive: Bool
+    let onTick: () -> Void
+
+    func makeNSView(context: Context) -> DisplayLinkDriverView {
+        let view = DisplayLinkDriverView()
+        view.isActive = isActive
+        view.onTick = onTick
+        return view
+    }
+
+    func updateNSView(_ view: DisplayLinkDriverView, context: Context) {
+        view.isActive = isActive
+        view.onTick = onTick
+    }
+}
+
+private final class DisplayLinkDriverView: NSView {
+    var isActive = false {
+        didSet {
+            if isActive != oldValue {
+                updateLink()
+            }
+        }
+    }
+    var onTick: (() -> Void)?
+    private var link: CADisplayLink?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateLink()
+    }
+
+    private func updateLink() {
+        let shouldRun = isActive && window != nil && !isHiddenOrHasHiddenAncestor
+        if shouldRun {
+            guard link == nil else { return }
+            let newLink = displayLink(target: self, selector: #selector(frameTick))
+            // 跟随显示器最高刷新率（160Hz 显示即 160fps 回调）
+            newLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 240)
+            newLink.add(to: .main, forMode: .common)
+            link = newLink
+        } else {
+            link?.invalidate()
+            link = nil
+        }
+    }
+
+    @objc private func frameTick() {
+        onTick?()
     }
 }
 
