@@ -4,7 +4,8 @@ import SwiftUI
 @main
 struct BilibiliClientApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var session = SessionStore()
+    @StateObject private var session = SessionStore.shared
+    @StateObject private var router = AppRouter.shared
 
     init() {
         // 适中的内存/磁盘图片缓存：兼顾列表滚动流畅度与低配机器的内存占用
@@ -16,6 +17,7 @@ struct BilibiliClientApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(session)
+                .environmentObject(router)
                 .frame(minWidth: 960, minHeight: 620)
         }
         .windowStyle(.hiddenTitleBar)
@@ -24,8 +26,13 @@ struct BilibiliClientApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var menuBar: MenuBarController?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
+        let menuBar = MenuBarController()
+        menuBar.install()
+        self.menuBar = menuBar
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 

@@ -11,6 +11,7 @@ struct PartitionRoute: Hashable {
 
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var router: AppRouter
     @AppStorage("appearance") private var appearance = AppearanceMode.system.rawValue
     @State private var selection: SidebarItem? = .home
     @State private var showLogin = false
@@ -60,7 +61,7 @@ struct RootView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 270)
         } detail: {
-            NavigationStack {
+            NavigationStack(path: $router.path) {
                 Group {
                     switch selection {
                     case .home:
