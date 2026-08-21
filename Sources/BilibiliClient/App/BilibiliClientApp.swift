@@ -38,6 +38,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menuBar.install()
         self.menuBar = menuBar
         NSApplication.shared.activate(ignoringOtherApps: true)
+
+        // SwiftUI 可能在创建窗口后接管 delegate，这里监听窗口成为主/关键窗口，
+        // 确保关闭拦截（windowShouldClose）始终由本对象处理。
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reattachWindowDelegate(_:)),
+            name: NSWindow.didBecomeMainNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reattachWindowDelegate(_:)),
+            name: NSWindow.didBecomeKeyNotification, object: nil
+        )
+
+        // 启动后延迟重挂一次：SwiftUI 创建窗口并可能接管 delegate
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            NSApp.windows.first?.delegate = self
+        }
+    }
+
+    @objc private func reattachWindowDelegate(_ note: Notification) {
+        if let window = note.object as? NSWindow {
+            window.delegate = self
+        }
     }
 
     /// 关闭主窗口时按用户设置处理：完全退出 / 菜单栏模式 / 每次询问。
@@ -62,9 +85,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
 
+    /// 兜底：若窗口仍被关闭（delegate 未拦截到），按设置决定是否退出。
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        switch CloseBehavior.current {
+        case .quit:
+            return true
+        case .menuBar:
+            return false
+        case .ask:
+            showClosePromptModal()
+            return false
+        }
     }
+
 
     private func showClosePrompt(for window: NSWindow) {
         let alert = NSAlert()
@@ -87,6 +120,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } else {
                 window.orderOut(nil)
             }
+        }
+    }
+
+    private func showClosePromptModal() {
+        let alert = NSAlert()
+        alert.messageText = "关闭窗口后要做什么？"
+        alert.informativeText = "可以完全退出应用，或保留在菜单栏继续运行。"
+        alert.addButton(withTitle: "完全退出")
+        alert.addButton(withTitle: "菜单栏模式")
+        let checkbox = NSButton(checkboxWithTitle: "不再询问，以后按此选择", target: nil, action: nil)
+        alert.accessoryView = checkbox
+        let response = alert.runModal()
+        let quit = response == .alertFirstButtonReturn
+        if checkbox.state == .on {
+            UserDefaults.standard.set(
+                quit ? CloseBehavior.quit.rawValue : CloseBehavior.menuBar.rawValue,
+                forKey: "closeBehavior"
+            )
+        }
+        if quit {
+            NSApp.terminate(nil)
         }
     }
 }
