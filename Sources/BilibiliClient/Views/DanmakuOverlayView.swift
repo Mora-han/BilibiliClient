@@ -3,8 +3,9 @@ import AVFoundation
 import QuartzCore
 import SwiftUI
 
-/// 叠在播放器上的弹幕层：由 CADisplayLink 按显示器最高刷新率逐帧驱动引擎，
-/// 按播放时间渲染活跃弹幕（160Hz/120Hz/ProMotion 均可跑满）。
+/// 弹幕层：CADisplayLink 按显示器最高刷新率逐帧驱动（160Hz/120Hz/ProMotion），
+/// 渲染采用 Core Animation（每个弹幕一个 CATextLayer），
+/// 只更新图层位置，避免 SwiftUI 逐帧重绘带来的开销，全屏/内嵌都丝滑。
 struct DanmakuOverlayView: View {
     @ObservedObject var engine: DanmakuEngine
     let player: AVPlayer
@@ -14,25 +15,10 @@ struct DanmakuOverlayView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ZStack {
-                if enabled && !suspended {
-                    ForEach(engine.active) { item in
-                        Text(item.text)
-                            .font(.system(size: 20 * item.scale, weight: .bold))
-                            .foregroundStyle(item.color)
-                            .shadow(color: .black.opacity(0.85), radius: 2, x: 0, y: 1)
-                            .position(item.position(in: geo.size,
-                                                   at: player.currentTime().seconds))
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                // 逐帧回调与所在显示器刷新同步；暂停时 playerTime 不变，弹幕自然冻结
-                DisplayLinkDriver(isActive: enabled && !suspended) {
-                    engine.tick(playerTime: player.currentTime().seconds, size: geo.size)
-                }
-            }
+            DanmakuRenderer(engine: engine,
+                            player: player,
+                            isActive: enabled && !suspended)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onChange(of: enabled) { _, newValue in
             if !newValue {
@@ -45,25 +31,30 @@ struct DanmakuOverlayView: View {
     }
 }
 
-/// 用 NSView.displayLink 获取与显示器刷新同步的逐帧回调。
-private struct DisplayLinkDriver: NSViewRepresentable {
-    var isActive: Bool
-    let onTick: () -> Void
+/// 渲染器：NSView + CATextLayer，display link 驱动。
+private struct DanmakuRenderer: NSViewRepresentable {
+    @ObservedObject var engine: DanmakuEngine
+    let player: AVPlayer
+    let isActive: Bool
 
-    func makeNSView(context: Context) -> DisplayLinkDriverView {
-        let view = DisplayLinkDriverView()
+    func makeNSView(context: Context) -> DanmakuRenderView {
+        let view = DanmakuRenderView()
+        view.engine = engine
+        view.player = player
         view.isActive = isActive
-        view.onTick = onTick
         return view
     }
 
-    func updateNSView(_ view: DisplayLinkDriverView, context: Context) {
+    func updateNSView(_ view: DanmakuRenderView, context: Context) {
+        view.engine = engine
+        view.player = player
         view.isActive = isActive
-        view.onTick = onTick
     }
 }
 
-private final class DisplayLinkDriverView: NSView {
+private final class DanmakuRenderView: NSView {
+    var engine: DanmakuEngine?
+    var player: AVPlayer?
     var isActive = false {
         didSet {
             if isActive != oldValue {
@@ -71,13 +62,38 @@ private final class DisplayLinkDriverView: NSView {
             }
         }
     }
-    var onTick: (() -> Void)?
+
     private var link: CADisplayLink?
+    private var layers: [Int: CATextLayer] = [:]
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateLink()
     }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil  // 弹幕不拦截鼠标
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        // 窗口在不同缩放比屏幕间移动时保持文字清晰
+        let scale = window?.backingScaleFactor ?? 2
+        for textLayer in layers.values {
+            textLayer.contentsScale = scale
+        }
+    }
+
+    // MARK: - 驱动
 
     private func updateLink() {
         let shouldRun = isActive && window != nil && !isHiddenOrHasHiddenAncestor
@@ -91,11 +107,69 @@ private final class DisplayLinkDriverView: NSView {
         } else {
             link?.invalidate()
             link = nil
+            removeAllLayers()
         }
     }
 
     @objc private func frameTick() {
-        onTick?()
+        guard let engine, let player, isActive else { return }
+        let time = player.currentTime().seconds
+        let size = bounds.size
+        engine.tick(playerTime: time, size: size)
+        render(engine.active, size: size, time: time)
+    }
+
+    // MARK: - 渲染
+
+    private func render(_ items: [DanmakuEngine.Active], size: CGSize, time: Double) {
+        guard size.width > 0, size.height > 0 else { return }
+        let activeIDs = Set(items.map(\.id))
+        for (id, textLayer) in layers where !activeIDs.contains(id) {
+            textLayer.removeFromSuperlayer()
+            layers[id] = nil
+        }
+        guard let host = layer else { return }
+
+        for item in items {
+            let textLayer: CATextLayer
+            if let existing = layers[item.id] {
+                textLayer = existing
+            } else {
+                textLayer = Self.makeLayer(for: item)
+                host.addSublayer(textLayer)
+                layers[item.id] = textLayer
+            }
+            // 引擎坐标是左上原点，CALayer 坐标系为左下原点
+            let point = item.position(in: size, at: time)
+            textLayer.position = CGPoint(x: point.x, y: size.height - point.y)
+        }
+    }
+
+    private static func makeLayer(for item: DanmakuEngine.Active) -> CATextLayer {
+        let font = NSFont.systemFont(ofSize: 20 * item.scale, weight: .bold)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor(item.color),
+            .strokeColor: NSColor.black,
+            .strokeWidth: -2.5,  // 描边（B 站弹幕风格）
+        ]
+        let attributed = NSAttributedString(string: item.text, attributes: attributes)
+        let textSize = attributed.size()
+
+        let textLayer = CATextLayer()
+        textLayer.string = attributed
+        textLayer.isWrapped = false
+        textLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        textLayer.bounds = CGRect(origin: .zero, size: textSize)
+        textLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        return textLayer
+    }
+
+    private func removeAllLayers() {
+        for textLayer in layers.values {
+            textLayer.removeFromSuperlayer()
+        }
+        layers.removeAll()
     }
 }
 
