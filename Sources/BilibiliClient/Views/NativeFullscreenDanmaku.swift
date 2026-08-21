@@ -15,12 +15,12 @@ final class NativeFullscreenDanmaku {
         detach()
         guard let content = window?.contentView else { return }
 
-        // 弹幕渲染层：整窗口铺满，点击穿透
+        // 弹幕渲染层：整窗口铺满，点击穿透。
+        // 注意：不要对 NSHostingView 强制 wantsLayer / 手动设置 layer，
+        // 否则会脱离系统默认渲染管线，Retina 下文字变糊、出现残影。
         let overlay = HitTransparentHostingView(rootView: FullscreenDanmakuLayer(engine: engine, player: player))
         overlay.frame = content.bounds
         overlay.autoresizingMask = [.width, .height]
-        overlay.wantsLayer = true
-        overlay.layer?.backgroundColor = NSColor.clear.cgColor
         content.addSubview(overlay)
         hosts.append(overlay)
 
