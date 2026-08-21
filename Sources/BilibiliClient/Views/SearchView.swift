@@ -3,6 +3,7 @@ import SwiftUI
 struct SearchView: View {
     let query: String
 
+    @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var results: [SearchVideo] = []
     @State private var page = 0
     @State private var numResults = 0
@@ -120,23 +121,47 @@ struct SearchView: View {
             .frame(maxWidth: .infinity, minHeight: 200)
         } else {
             ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(results) { video in
-                        if let bvid = video.bvid, !bvid.isEmpty {
-                            NavigationLink(value: bvid) {
-                                row(video)
+                VStack(spacing: 0) {
+                    if displayMode == .card {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+                                  spacing: 16) {
+                            ForEach(results) { video in
+                                if let bvid = video.bvid, !bvid.isEmpty {
+                                    NavigationLink(value: bvid) {
+                                        VideoCardView(
+                                            bvid: bvid,
+                                            title: video.cleanTitle,
+                                            pic: video.pic ?? "",
+                                            duration: Formatters.seconds(fromDurationText: video.duration),
+                                            ownerName: video.author ?? "未知UP主",
+                                            viewCount: video.play ?? 0,
+                                            badgeText: nil
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
-                            .buttonStyle(.plain)
+                        }
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(results) { video in
+                                if let bvid = video.bvid, !bvid.isEmpty {
+                                    NavigationLink(value: bvid) {
+                                        row(video)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                         }
                     }
 
-                    if hasMore {
-                        LoadMoreFooter(isBusy: isLoadingMore) {
+                    if !results.isEmpty {
+                        LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
                             await search(reset: false)
                         }
                     }
                 }
-                .frame(maxWidth: 760)
+                .frame(maxWidth: 980)
                 .frame(maxWidth: .infinity)
                 .padding(20)
             }

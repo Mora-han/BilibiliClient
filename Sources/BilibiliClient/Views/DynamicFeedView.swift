@@ -22,8 +22,8 @@ struct DynamicFeedView: View {
                         DynamicCardView(item: item)
                     }
 
-                    if hasMore && !items.isEmpty {
-                        LoadMoreFooter(isBusy: isLoadingMore) {
+                    if !items.isEmpty {
+                        LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
                             await loadMore()
                         }
                     }

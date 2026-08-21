@@ -1,31 +1,59 @@
 import SwiftUI
 
-/// 列表底部加载指示：只在真正请求时显示“加载中”，
-/// 空闲时保持透明占位（配合 autoLoadMore 接近底部自动预载，实现无感连续加载）。
+/// 视频展示模式（设置项）：卡片模式（首页样式）/ 列表模式，全局统一生效。
+enum VideoDisplayMode: String, CaseIterable, Identifiable {
+    case card
+    case list
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .card: return "卡片"
+        case .list: return "列表"
+        }
+    }
+
+    static var current: VideoDisplayMode {
+        VideoDisplayMode(rawValue: UserDefaults.standard.string(forKey: "videoDisplayMode") ?? "") ?? .card
+    }
+}
+
+/// 列表底部加载指示：只在真正请求时显示“加载中”，空闲时保持透明占位；
+/// 没有更多内容时显示“没有更多内容了”作为到达末尾的反馈。
 struct LoadMoreFooter: View {
     var isBusy: Bool
+    var hasMore: Bool
     var onLoad: () async -> Void
 
     var body: some View {
-        Group {
-            if isBusy {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("加载中…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-            } else {
-                // 透明占位：保持 onAppear 兜底触发，视觉上无任何提示
-                Color.clear
+        if hasMore {
+            Group {
+                if isBusy {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("加载中…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 44)
+                    .padding(.vertical, 10)
+                } else {
+                    // 透明占位：保持 onAppear 兜底触发，视觉上无任何提示
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                }
             }
-        }
-        .onAppear {
-            Task { await onLoad() }
+            .onAppear {
+                Task { await onLoad() }
+            }
+        } else {
+            Text("没有更多内容了")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
         }
     }
 }

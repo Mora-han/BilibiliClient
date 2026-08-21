@@ -22,11 +22,13 @@ struct RootView: View {
         case home = "推荐"
         case zones = "分区"
         case popular = "热门"
-        case search = "搜索"
         case dynamics = "动态"
         case favorites = "收藏"
         case history = "历史"
         case watchLater = "稍后再看"
+        case settings = "设置"
+        // 搜索仅由顶部搜索框进入，不出现在侧边栏
+        case search = "搜索"
 
         var id: String { rawValue }
 
@@ -35,11 +37,12 @@ struct RootView: View {
             case .home: return "house.fill"
             case .zones: return "square.grid.2x2"
             case .popular: return "flame.fill"
-            case .search: return "magnifyingglass"
             case .dynamics: return "sparkles"
             case .favorites: return "bookmark.fill"
             case .history: return "clock.arrow.circlepath"
             case .watchLater: return "clock.badge.checkmark"
+            case .settings: return "gearshape"
+            case .search: return "magnifyingglass"
             }
         }
     }
@@ -76,6 +79,8 @@ struct RootView: View {
                         HistoryView()
                     case .watchLater:
                         WatchLaterView()
+                    case .settings:
+                        SettingsView()
                     case nil:
                         RecommendView()
                     }
@@ -100,7 +105,7 @@ struct RootView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("浏览") {
-                ForEach([SidebarItem.home, .zones, .popular, .search, .dynamics]) { item in
+                ForEach([SidebarItem.home, .zones, .popular, .dynamics]) { item in
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }
@@ -110,6 +115,10 @@ struct RootView: View {
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }
+            }
+            Section {
+                Label(SidebarItem.settings.rawValue, systemImage: SidebarItem.settings.icon)
+                    .tag(SidebarItem.settings)
             }
         }
         .listStyle(.sidebar)
@@ -123,7 +132,7 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom) { accountBar }
     }
 
-    /// 侧边栏底部账户信息：头像 + ID + 设置入口（点击弹出面板）。
+    /// 侧边栏底部账户信息卡片：仅展示纯个人信息，点击可查看详情/退出登录。
     private var accountBar: some View {
         VStack(spacing: 0) {
             Divider()
@@ -142,37 +151,29 @@ struct RootView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "gearshape")
-                            .font(.callout)
+                        if let user = session.user {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("关注 \(Formatters.count(user.following))")
+                                Text("粉丝 \(Formatters.count(user.follower))")
+                            }
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
+                        }
                     }
                     .padding(10)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             } else {
-                HStack(spacing: 8) {
-                    Button {
-                        showLogin = true
-                    } label: {
-                        Label("扫码登录", systemImage: "qrcode")
-                            .font(.callout.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 7)
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    Button {
-                        showAccountPanel = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.callout)
-                            .padding(7)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("设置")
+                Button {
+                    showLogin = true
+                } label: {
+                    Label("扫码登录", systemImage: "qrcode")
+                        .font(.callout.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
                 }
+                .buttonStyle(.borderedProminent)
                 .padding(10)
             }
         }

@@ -21,6 +21,14 @@ enum Formatters {
         return "\(two(m)):\(two(s))"
     }
 
+    /// 把 "hh:mm:ss" / "mm:ss" 时长文本转成秒数（搜索接口返回的是文本）。
+    static func seconds(fromDurationText text: String?) -> Int {
+        guard let text, !text.isEmpty else { return 0 }
+        let parts = text.split(separator: ":").compactMap { Int($0) }
+        guard !parts.isEmpty else { return 0 }
+        return parts.reduce(0) { $0 * 60 + $1 }
+    }
+
     static func https(_ url: String) -> URL? {
         var value = url.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasPrefix("//") {

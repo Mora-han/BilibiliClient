@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HistoryView: View {
     @EnvironmentObject private var session: SessionStore
+    @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var items: [HistoryItem] = []
     @State private var cursor: HistoryCursor?
     @State private var isLoading = false
@@ -51,23 +52,41 @@ struct HistoryView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(usableItems) { item in
-                            NavigationLink(value: item.history?.bvid ?? "") {
-                                row(item)
+                    if displayMode == .card {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+                                  spacing: 16) {
+                            ForEach(usableItems) { item in
+                                NavigationLink(value: item.history?.bvid ?? "") {
+                                    VideoCardView(
+                                        bvid: item.history?.bvid ?? "",
+                                        title: item.title ?? "未知标题",
+                                        pic: item.cover ?? "",
+                                        duration: item.duration ?? 0,
+                                        ownerName: item.authorName ?? "未知UP主",
+                                        viewCount: 0,
+                                        badgeText: nil
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
-
-                        if hasMore {
-                            LoadMoreFooter(isBusy: isLoadingMore) {
-                                await loadMore()
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(usableItems) { item in
+                                NavigationLink(value: item.history?.bvid ?? "") {
+                                    row(item)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
+
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                        await loadMore()
+                    }
                 }
             }
-            .frame(maxWidth: 760)
+            .frame(maxWidth: 980)
             .frame(maxWidth: .infinity)
             .padding(20)
         }

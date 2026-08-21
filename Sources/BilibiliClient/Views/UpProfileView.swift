@@ -5,6 +5,7 @@ struct UpProfileView: View {
     let mid: Int
 
     @EnvironmentObject private var session: SessionStore
+    @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var card: UpCardData.Card?
     @State private var order: UpOrder = .pubdate
     @State private var followerCount = 0
@@ -118,26 +119,43 @@ struct UpProfileView: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                 }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                          spacing: 16) {
-                    ForEach(usableVideos) { video in
-                        NavigationLink(value: video.bvid ?? "") {
-                            VideoCardView(
-                                bvid: video.bvid ?? "",
-                                title: video.title ?? "未知标题",
-                                pic: video.pic ?? "",
-                                duration: video.duration ?? 0,
-                                ownerName: "",
-                                viewCount: video.stat?.view ?? 0,
-                                badgeText: nil
-                            )
+                if displayMode == .card {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+                              spacing: 16) {
+                        ForEach(usableVideos) { video in
+                            NavigationLink(value: video.bvid ?? "") {
+                                VideoCardView(
+                                    bvid: video.bvid ?? "",
+                                    title: video.title ?? "未知标题",
+                                    pic: video.pic ?? "",
+                                    duration: video.duration ?? 0,
+                                    ownerName: "",
+                                    viewCount: video.stat?.view ?? 0,
+                                    badgeText: nil
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                    }
+                } else {
+                    LazyVStack(spacing: 12) {
+                        ForEach(usableVideos) { video in
+                            NavigationLink(value: video.bvid ?? "") {
+                                MediaListRow(
+                                    coverURL: video.pic ?? "",
+                                    title: video.title ?? "未知标题",
+                                    line2: "投稿视频",
+                                    line3: "播放 \(Formatters.count(video.stat?.view ?? 0))",
+                                    durationText: Formatters.duration(video.duration ?? 0)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
 
-                if hasMore {
-                    LoadMoreFooter(isBusy: isLoadingMore) {
+                if !usableVideos.isEmpty {
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
                         await loadMore()
                     }
                 }

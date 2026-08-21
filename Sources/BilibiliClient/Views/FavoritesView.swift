@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FavoritesView: View {
     @EnvironmentObject private var session: SessionStore
+    @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var folders: [FavFolder] = []
     @State private var selectedFolderId: Int?
     @State private var medias: [FavMedia] = []
@@ -57,29 +58,47 @@ struct FavoritesView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(usableMedias) { media in
-                            NavigationLink(value: media.bvid ?? "") {
-                                MediaListRow(
-                                    coverURL: media.cover ?? "",
-                                    title: media.title ?? "",
-                                    line2: media.upper?.name ?? "未知UP主",
-                                    line3: "收藏于 \(Formatters.timeAgo(media.favTime ?? 0)) · 播放 \(Formatters.count(media.cntInfo?.play ?? 0))",
-                                    durationText: Formatters.duration(media.duration ?? 0)
-                                )
+                    if displayMode == .card {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+                                  spacing: 16) {
+                            ForEach(usableMedias) { media in
+                                NavigationLink(value: media.bvid ?? "") {
+                                    VideoCardView(
+                                        bvid: media.bvid ?? "",
+                                        title: media.title ?? "",
+                                        pic: media.cover ?? "",
+                                        duration: media.duration ?? 0,
+                                        ownerName: media.upper?.name ?? "未知UP主",
+                                        viewCount: media.cntInfo?.play ?? 0,
+                                        badgeText: nil
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
-
-                        if hasMore {
-                            LoadMoreFooter(isBusy: isLoadingMore) {
-                                await loadMore()
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(usableMedias) { media in
+                                NavigationLink(value: media.bvid ?? "") {
+                                    MediaListRow(
+                                        coverURL: media.cover ?? "",
+                                        title: media.title ?? "",
+                                        line2: media.upper?.name ?? "未知UP主",
+                                        line3: "收藏于 \(Formatters.timeAgo(media.favTime ?? 0)) · 播放 \(Formatters.count(media.cntInfo?.play ?? 0))",
+                                        durationText: Formatters.duration(media.duration ?? 0)
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
+
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                        await loadMore()
+                    }
                 }
             }
-            .frame(maxWidth: 760)
+            .frame(maxWidth: 980)
             .frame(maxWidth: .infinity)
             .padding(20)
         }

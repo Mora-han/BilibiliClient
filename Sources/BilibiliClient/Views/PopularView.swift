@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 热门页：按排行顺序的卡片流，封面右上角标记序号
 struct PopularView: View {
+    @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var videos: [PopularVideo] = []
     @State private var page = 0
     @State private var hasMore = true
@@ -23,27 +24,45 @@ struct PopularView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
-                          spacing: 16) {
-                    ForEach(usableVideos.indices, id: \.self) { index in
-                        let video = usableVideos[index]
-                        NavigationLink(value: video.bvid ?? "") {
-                            VideoCardView(
-                                bvid: video.bvid ?? "",
-                                title: video.title ?? "未知标题",
-                                pic: video.pic ?? "",
-                                duration: video.duration ?? 0,
-                                ownerName: video.owner?.name ?? "",
-                                viewCount: video.stat?.view ?? 0,
-                                rank: index + 1
-                            )
+                if displayMode == .card {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+                              spacing: 16) {
+                        ForEach(usableVideos.indices, id: \.self) { index in
+                            let video = usableVideos[index]
+                            NavigationLink(value: video.bvid ?? "") {
+                                VideoCardView(
+                                    bvid: video.bvid ?? "",
+                                    title: video.title ?? "未知标题",
+                                    pic: video.pic ?? "",
+                                    duration: video.duration ?? 0,
+                                    ownerName: video.owner?.name ?? "",
+                                    viewCount: video.stat?.view ?? 0,
+                                    rank: index + 1
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                    }
+                } else {
+                    LazyVStack(spacing: 12) {
+                        ForEach(usableVideos.indices, id: \.self) { index in
+                            let video = usableVideos[index]
+                            NavigationLink(value: video.bvid ?? "") {
+                                MediaListRow(
+                                    coverURL: video.pic ?? "",
+                                    title: video.title ?? "未知标题",
+                                    line2: "#\(index + 1) \(video.owner?.name ?? "未知UP主")",
+                                    line3: "播放 \(Formatters.count(video.stat?.view ?? 0))",
+                                    durationText: Formatters.duration(video.duration ?? 0)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
 
-                if hasMore {
-                    LoadMoreFooter(isBusy: isLoadingMore) {
+                if !usableVideos.isEmpty {
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
                         await loadMore()
                     }
                 }
