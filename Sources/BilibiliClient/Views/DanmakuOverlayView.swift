@@ -65,6 +65,8 @@ private final class DanmakuRenderView: NSView {
 
     private var link: CADisplayLink?
     private var layers: [Int: CATextLayer] = [:]
+    private var lastTime: Double = -1
+    private var pendingJump: Double?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -113,7 +115,30 @@ private final class DanmakuRenderView: NSView {
 
     @objc private func frameTick() {
         guard let engine, let player, isActive else { return }
-        let time = player.currentTime().seconds
+        let raw = player.currentTime().seconds
+        guard raw.isFinite else { return }
+
+        // 时间平滑：瞬时尖峰（如暂停瞬间 currentTime 抖动）不生效；
+        // 连续两帧确认的大跳变（拖动进度条 seek）才接受
+        var time = raw
+        if lastTime >= 0 {
+            let delta = raw - lastTime
+            if abs(delta) > 0.5 {
+                if let pending = pendingJump, abs(raw - pending) < 0.05 {
+                    lastTime = raw
+                    pendingJump = nil
+                } else {
+                    pendingJump = raw
+                    time = lastTime
+                }
+            } else {
+                lastTime = raw
+                pendingJump = nil
+            }
+        } else {
+            lastTime = raw
+        }
+
         let size = bounds.size
         engine.tick(playerTime: time, size: size)
         render(engine.active, size: size, time: time)
@@ -147,11 +172,10 @@ private final class DanmakuRenderView: NSView {
 
     private static func makeLayer(for item: DanmakuEngine.Active) -> CATextLayer {
         let font = NSFont.systemFont(ofSize: 20 * item.scale, weight: .bold)
+        // 不描边，只保留弹幕原色（CATextLayer 描边在笔画交叉处会有伪影）
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor(item.color),
-            .strokeColor: NSColor.black,
-            .strokeWidth: -2.5,  // 描边（B 站弹幕风格）
         ]
         let attributed = NSAttributedString(string: item.text, attributes: attributes)
         let textSize = attributed.size()
