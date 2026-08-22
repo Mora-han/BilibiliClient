@@ -656,6 +656,7 @@ struct FollowedUser: Decodable, Identifiable, Hashable {
 
 /// /x/relation 返回的关注关系
 struct RelationStateData: Decodable {
+    let attribute: Int?
     let relation: Relation?
 
     struct Relation: Decodable {
@@ -663,10 +664,21 @@ struct RelationStateData: Decodable {
         let attribute: Int
     }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        attribute = try container.decodeIfPresent(Int.self, forKey: .attribute)
+        relation = try container.decodeIfPresent(Relation.self, forKey: .relation)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case attribute
+        case relation
+    }
+
     /// 是否处于“已关注”状态（拉黑等异常关系不计入）
     var isFollowing: Bool {
-        guard let attribute = relation?.attribute else { return false }
-        return [1, 2, 3, 6].contains(attribute)
+        let value = attribute ?? relation?.attribute
+        return value.map { [1, 2, 3, 6].contains($0) } ?? false
     }
 }
 
