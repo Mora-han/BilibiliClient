@@ -303,7 +303,7 @@ struct VideoDetailView: View {
                     Text(Formatters.count(likeCount))
                         .font(.caption2)
                 }
-                .foregroundStyle(liked ? Color.pink : Color.black)
+                .foregroundStyle(liked ? Color.pink : Color.primary)
             }
             .buttonStyle(.plain)
             .hoverScale(scale: 1.06)
@@ -321,7 +321,7 @@ struct VideoDetailView: View {
                     Text(Formatters.count(coinCount))
                         .font(.caption2)
                 }
-                .foregroundStyle(coined ? Color.orange : Color.secondary)
+                .foregroundStyle(coined ? Color.orange : Color.primary)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -329,14 +329,14 @@ struct VideoDetailView: View {
             .hoverScale(scale: 1.06)
 
             Button {
-                Task { await beginFavorite() }
+                Task { await toggleFavorite() }
             } label: {
                 VStack(spacing: 3) {
                     Image(systemName: faved ? "bookmark.fill" : "bookmark")
                     Text(Formatters.count(favCount))
                         .font(.caption2)
                 }
-                .foregroundStyle(faved ? Color.blue : Color.black)
+                .foregroundStyle(faved ? Color.blue : Color.primary)
             }
             .buttonStyle(.plain)
             .hoverScale(scale: 1.06)
@@ -354,7 +354,7 @@ struct VideoDetailView: View {
                     Text("分享")
                         .font(.caption2)
                 }
-                .foregroundStyle(.black)
+                .foregroundStyle(.primary)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -363,7 +363,7 @@ struct VideoDetailView: View {
                 VStack(spacing: 3) {
                     Image(systemName: watchLaterAdded ? "clock.fill" : "clock")
                     Text("稍后再看").font(.caption2)
-                }.foregroundStyle(watchLaterAdded ? .pink : .black)
+                }.foregroundStyle(watchLaterAdded ? .pink : .primary)
             }.buttonStyle(.plain).hoverScale(scale: 1.06)
 
             Spacer()
@@ -396,10 +396,19 @@ struct VideoDetailView: View {
         }
     }
 
-    private func beginFavorite() async {
+    private func toggleFavorite() async {
         guard requireLogin() else { return }
         guard let view = detail?.view else { return }
-        if faved { return }
+        if faved {
+            do {
+                let folders = favoriteFolders.isEmpty ? try await UserActionService().favoriteFolders() : favoriteFolders
+                guard let folder = folders.first else { throw APIError.biz(code: -1, message: "没有可用收藏夹") }
+                try await LibraryService().removeFavorite(aid: view.aid, folderId: folder.id)
+                faved = false
+                favCount = max(0, favCount - 1)
+            } catch { actionError = error.localizedDescription }
+            return
+        }
         do {
             favoriteFolders = try await UserActionService().favoriteFolders()
             let behavior = FavoriteBehavior(rawValue: UserDefaults.standard.string(forKey: "favoriteBehavior") ?? "") ?? .defaultFolder
@@ -420,7 +429,15 @@ struct VideoDetailView: View {
 
     private func addToWatchLater() async {
         guard requireLogin(), let view = detail?.view else { return }
-        do { try await LibraryService().addToWatchLater(aid: view.aid, bvid: view.bvid); watchLaterAdded = true }
+        do {
+            if watchLaterAdded {
+                try await LibraryService().removeFromWatchLater(aid: view.aid)
+                watchLaterAdded = false
+            } else {
+                try await LibraryService().addToWatchLater(aid: view.aid, bvid: view.bvid)
+                watchLaterAdded = true
+            }
+        }
         catch { actionError = error.localizedDescription }
     }
 
