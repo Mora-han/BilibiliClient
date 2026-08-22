@@ -116,10 +116,14 @@ struct VideoDetailView: View {
             if session.loggedIn {
                 async let likedTask = try? UserActionService().hasLiked(aid: data.view.aid)
                 async let coinedTask = try? UserActionService().coinCount(aid: data.view.aid)
+                async let favedTask = try? UserActionService().hasFavorite(aid: data.view.aid)
+                async let watchLaterTask = try? LibraryService().watchLater()
                 async let relationTask = try? RelationService().relation(fid: data.view.owner.mid)
-                let (likedResult, coinedResult, relationResult) = await (likedTask, coinedTask, relationTask)
+                let (likedResult, coinedResult, favedResult, watchLaterResult, relationResult) = await (likedTask, coinedTask, favedTask, watchLaterTask, relationTask)
                 liked = likedResult ?? false
                 coined = (coinedResult ?? 0) > 0
+                faved = favedResult ?? false
+                watchLaterAdded = watchLaterResult?.list.contains { $0.aid == data.view.aid || $0.bvid == data.view.bvid } ?? false
                 if let relationResult {
                     isFollowing = relationResult.isFollowing
                     relationLoaded = true

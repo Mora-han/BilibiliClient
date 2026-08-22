@@ -68,6 +68,12 @@ struct UserActionService {
         return payload.multiply ?? 0
     }
 
+    func hasFavorite(aid: Int) async throws -> Bool {
+        struct Payload: Decodable { let favoured: Bool? }
+        let payload: Payload = try await APIClient.shared.get("/x/v2/fav/video/favoured", query: ["aid": "\(aid)"])
+        return payload.favoured ?? false
+    }
+
     private func csrf() -> String {
         APIClient.shared.cookies.biliJct ?? ""
     }
