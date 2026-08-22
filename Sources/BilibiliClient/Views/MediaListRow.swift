@@ -7,8 +7,6 @@ struct MediaListRow: View {
     let line3: String
     var durationText: String?
     var progress: Double?
-    @State private var hovering = false
-
     var body: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
@@ -51,12 +49,6 @@ struct MediaListRow: View {
         }
         .padding(10)
         .contentCard(cornerRadius: 14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)
-        )
-        .scaleEffect(hovering ? 1.01 : 1)
-        .animation(Motion.hover, value: hovering)
-        .onHover { hovering = $0 }
+        .hoverScale(scale: 1.01, cornerRadius: 14)
     }
 }

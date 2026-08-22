@@ -10,8 +10,6 @@ struct VideoCardView: View {
     let viewCount: Int
     var badgeText: String?
     var rank: Int?
-    @State private var hovering = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             thumbnail
@@ -37,13 +35,7 @@ struct VideoCardView: View {
         }
         .padding(10)
         .contentCard()
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)
-        )
-        .scaleEffect(hovering ? 1.02 : 1)
-        .animation(Motion.hover, value: hovering)
-        .onHover { hovering = $0 }
+        .hoverScale(cornerRadius: 18)
     }
 
     private var thumbnail: some View {

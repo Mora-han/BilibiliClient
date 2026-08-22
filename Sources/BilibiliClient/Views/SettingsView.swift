@@ -257,6 +257,10 @@ struct SettingsView: View {
                 Text("原生 SwiftUI · Liquid Glass · 数据接口来自社区整理的 bilibili-API-collect，仅用于个人学习研究。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Link(destination: URL(string: "https://github.com/Mora-han/BilibiliClient")!) {
+                    Label("GitHub 项目主页", systemImage: "link")
+                }
+                .font(.caption)
             }
         }
     }

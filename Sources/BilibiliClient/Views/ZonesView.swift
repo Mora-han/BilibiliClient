@@ -25,7 +25,6 @@ struct ZonesView: View {
 @MainActor
 private struct ZoneCard: View {
     let zone: BiliZone
-    @State private var hovering = false
 
     var body: some View {
         VStack(spacing: 8) {
@@ -41,12 +40,6 @@ private struct ZoneCard: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 26)
         .contentCard(cornerRadius: 18)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)
-        )
-        .scaleEffect(hovering ? 1.03 : 1)
-        .animation(Motion.hover, value: hovering)
-        .onHover { hovering = $0 }
+        .hoverScale(scale: 1.03, cornerRadius: 18)
     }
 }
