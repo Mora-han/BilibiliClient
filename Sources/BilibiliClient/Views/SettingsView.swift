@@ -38,6 +38,36 @@ enum CloseBehavior: String, CaseIterable, Identifiable {
     }
 }
 
+/// 卡片样式（设置项）：液态玻璃 / 实色卡片，全局统一生效。
+enum CardStyle: String, CaseIterable, Identifiable {
+    case glass
+    case solid
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .glass: return "液态玻璃"
+        case .solid: return "实色卡片"
+        }
+    }
+}
+
+/// 动态页 UP 切换栏位置（设置项）：上侧 / 左侧。
+enum UpBarPosition: String, CaseIterable, Identifiable {
+    case top
+    case left
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .top: return "上侧"
+        case .left: return "左侧"
+        }
+    }
+}
+
 /// 软件设置页：外观、窗口、弹幕、视频显示、缓存与关于。
 /// 采用 macOS 系统设置风格：普通分组行、无卡片玻璃材质；
 /// 选项使用系统原生弹出按钮（Picker .menu，即 NSPopUpButton），
@@ -47,6 +77,8 @@ struct SettingsView: View {
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @AppStorage("danmakuSpeed") private var danmakuSpeed = DanmakuSpeed.normal.rawValue
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card.rawValue
+    @AppStorage("cardStyle") private var cardStyle = CardStyle.solid.rawValue
+    @AppStorage("upBarPosition") private var upBarPosition = UpBarPosition.top.rawValue
     @AppStorage("closeBehavior") private var closeBehavior = CloseBehavior.ask.rawValue
     @State private var cacheCleared = false
 
@@ -60,6 +92,8 @@ struct SettingsView: View {
                 danmakuSection.padding(.vertical, 16)
                 Divider()
                 displaySection.padding(.vertical, 16)
+                Divider()
+                dynamicSection.padding(.vertical, 16)
                 Divider()
                 storageSection.padding(.vertical, 16)
                 Divider()
@@ -142,7 +176,36 @@ struct SettingsView: View {
                 .labelsHidden()
                 .fixedSize()
             }
+            optionRow("卡片样式") {
+                Picker("卡片样式", selection: $cardStyle) {
+                    ForEach(CardStyle.allCases) { style in
+                        Text(style.label).tag(style.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
             Text("卡片：首页式网格；列表：单列紧凑；两列列表：双列紧凑，全局所有视频列表同步切换。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var dynamicSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("动态")
+            optionRow("UP 栏位置") {
+                Picker("UP 栏位置", selection: $upBarPosition) {
+                    ForEach(UpBarPosition.allCases) { position in
+                        Text(position.label).tag(position.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
+            Text("选择“左侧”后，UP 筛选栏固定在动态列表左侧竖排展示。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

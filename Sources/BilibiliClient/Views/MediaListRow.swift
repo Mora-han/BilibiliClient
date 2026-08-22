@@ -50,7 +50,7 @@ struct MediaListRow: View {
             Spacer()
         }
         .padding(10)
-        .solidCard(cornerRadius: 14)
+        .contentCard(cornerRadius: 14)
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)

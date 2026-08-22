@@ -203,7 +203,7 @@ struct UpProfileView: View {
             followButton
         }
         .padding(14)
-        .solidCard(cornerRadius: 16)
+        .contentCard(cornerRadius: 16)
     }
 
     private var followButton: some View {

@@ -36,7 +36,7 @@ struct VideoCardView: View {
             .foregroundStyle(.secondary)
         }
         .padding(10)
-        .solidCard()
+        .contentCard()
         .overlay(
             RoundedRectangle(cornerRadius: 18)
                 .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)

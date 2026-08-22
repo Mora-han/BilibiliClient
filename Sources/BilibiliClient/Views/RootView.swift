@@ -150,23 +150,10 @@ struct RootView: View {
                 } label: {
                     HStack(spacing: 10) {
                         avatar(url: session.user?.face ?? "", size: 34)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(session.user?.name ?? "同步中…")
-                                .font(.callout.weight(.medium))
-                                .lineLimit(1)
-                            Text(session.user.map { "Lv.\($0.level)" } ?? "加载账户信息")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(session.user?.name ?? "同步中…")
+                            .font(.callout.weight(.medium))
+                            .lineLimit(1)
                         Spacer()
-                        if let user = session.user {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("关注 \(Formatters.count(user.following))")
-                                Text("粉丝 \(Formatters.count(user.follower))")
-                            }
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        }
                     }
                     .padding(10)
                     .contentShape(Rectangle())

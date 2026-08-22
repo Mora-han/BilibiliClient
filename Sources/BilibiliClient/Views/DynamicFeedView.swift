@@ -3,6 +3,7 @@ import SwiftUI
 struct DynamicFeedView: View {
     @EnvironmentObject private var session: SessionStore
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
+    @AppStorage("upBarPosition") private var upBarPosition = UpBarPosition.top.rawValue
     @State private var items: [DynamicItem] = []
     @State private var followedUPs: [FollowedUser] = []
     @State private var selectedUP: Int?
@@ -14,40 +15,19 @@ struct DynamicFeedView: View {
     @State private var hasLoaded = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            upBar
-            Divider()
-            ScrollView {
-                VStack(spacing: 0) {
-                    if displayMode == .list2 {
-                        // 两列列表：动态卡片双列排布，与其他页面保持一致
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
-                                            GridItem(.flexible(), spacing: 12)],
-                                  spacing: 12) {
-                            ForEach(displayItems) { item in
-                                DynamicCardView(item: item)
-                            }
-                        }
-                    } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(displayItems) { item in
-                                DynamicCardView(item: item)
-                            }
-                        }
-                    }
-
-                    if !items.isEmpty {
-                        LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
-                            await loadMore()
-                        }
-                    }
-                }
-                .frame(maxWidth: 780)
-                .frame(maxWidth: .infinity)
-                .padding(20)
+        HStack(spacing: 0) {
+            if upBarPosition == UpBarPosition.left.rawValue {
+                leftBar
+                Divider()
             }
-            .refreshable { await load() }
-            .autoLoadMore { await loadMore() }
+
+            VStack(spacing: 0) {
+                if upBarPosition == UpBarPosition.top.rawValue {
+                    topBar
+                    Divider()
+                }
+                feedContent
+            }
         }
         .navigationTitle("动态")
         .toolbar {
@@ -82,7 +62,8 @@ struct DynamicFeedView: View {
         }
     }
 
-    private var upBar: some View {
+    /// 上侧：横向滚动的 UP 筛选栏
+    private var topBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 chip(title: "全部", isSelected: selectedUP == nil) {
@@ -99,6 +80,59 @@ struct DynamicFeedView: View {
         }
     }
 
+    /// 左侧：竖向固定的 UP 筛选栏
+    private var leftBar: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 8) {
+                chip(title: "全部", isSelected: selectedUP == nil) {
+                    selectUP(nil)
+                }
+                ForEach(followedUPs) { up in
+                    chip(title: up.uname ?? "UP", isSelected: selectedUP == up.mid, avatar: up.face ?? "") {
+                        selectUP(up.mid)
+                    }
+                }
+            }
+            .padding(10)
+        }
+        .frame(width: 170)
+    }
+
+    /// 动态内容列表（含下拉刷新与滚动自动加载）
+    private var feedContent: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                if displayMode == .list2 {
+                    // 两列列表：动态卡片双列排布，与其他页面保持一致
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                        GridItem(.flexible(), spacing: 12)],
+                              spacing: 12) {
+                        ForEach(displayItems) { item in
+                            DynamicCardView(item: item)
+                        }
+                    }
+                } else {
+                    LazyVStack(spacing: 12) {
+                        ForEach(displayItems) { item in
+                            DynamicCardView(item: item)
+                        }
+                    }
+                }
+
+                if !items.isEmpty {
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                        await loadMore()
+                    }
+                }
+            }
+            .frame(maxWidth: 780)
+            .frame(maxWidth: .infinity)
+            .padding(20)
+        }
+        .refreshable { await load() }
+        .autoLoadMore { await loadMore() }
+    }
+
     private func chip(title: String, isSelected: Bool, avatar: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
@@ -113,10 +147,16 @@ struct DynamicFeedView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(
-                isSelected ? AnyShapeStyle(.tint.opacity(0.2)) : AnyShapeStyle(.quaternary.opacity(0.4)),
-                in: Capsule()
-            )
+            .background {
+                // 液态玻璃胶囊：选中时叠加主题色
+                ZStack {
+                    Capsule()
+                        .fill(.white.opacity(0.05))
+                        .glassEffect(.regular, in: .capsule)
+                    Capsule()
+                        .fill(isSelected ? Color.accentColor.opacity(0.28) : Color.clear)
+                }
+            }
             .foregroundStyle(isSelected ? Color.accentColor : .primary)
         }
         .buttonStyle(.plain)
@@ -199,7 +239,7 @@ struct DynamicCardView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .solidCard(cornerRadius: 14)
+        .contentCard(cornerRadius: 14)
     }
 
     private var header: some View {

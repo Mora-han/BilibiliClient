@@ -38,7 +38,7 @@ private struct ZoneCard: View {
         .foregroundStyle(.primary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 26)
-        .solidCard(cornerRadius: 18)
+        .contentCard(cornerRadius: 18)
         .overlay(
             RoundedRectangle(cornerRadius: 18)
                 .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)
