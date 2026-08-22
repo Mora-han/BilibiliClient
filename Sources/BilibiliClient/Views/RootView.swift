@@ -40,7 +40,7 @@ struct RootView: View {
             case .zones: return "square.grid.2x2"
             case .popular: return "flame.fill"
             case .dynamics: return "sparkles"
-            case .favorites: return "bookmark.fill"
+            case .favorites: return "bookmark"
             case .history: return "clock.arrow.circlepath"
             case .watchLater: return "clock.badge.checkmark"
             case .settings: return "gearshape"
