@@ -382,7 +382,7 @@ struct VideoDetailView: View {
         guard requireLogin() else { return }
         guard let view = detail?.view else { return }
         do {
-            try await UserActionService().coin(aid: view.aid, multiply: multiply)
+            try await UserActionService().coin(aid: view.aid, bvid: view.bvid, multiply: multiply)
             coined = true
             coinCount += multiply
         } catch {

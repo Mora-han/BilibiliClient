@@ -144,6 +144,9 @@ final class APIClient {
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue(APIConstants.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(APIConstants.referer, forHTTPHeaderField: "Referer")
+        request.setValue("https://www.bilibili.com", forHTTPHeaderField: "Origin")
         let body = form
             .sorted { $0.key < $1.key }
             .map { "\(Self.encodeFormValue($0.key))=\(Self.encodeFormValue($0.value))" }

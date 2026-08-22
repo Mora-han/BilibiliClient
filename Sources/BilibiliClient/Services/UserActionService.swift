@@ -15,14 +15,16 @@ struct UserActionService {
         try await APIClient.shared.postForm(path: "/x/web-interface/archive/like", form: form)
     }
 
-    func coin(aid: Int, multiply: Int) async throws {
+    func coin(aid: Int, bvid: String? = nil, multiply: Int) async throws {
         await APIClient.shared.ensureBuvid()
-        try await APIClient.shared.postForm(path: "/x/web-interface/coin/add", form: [
+        var form: [String: String] = [
             "aid": "\(aid)",
             "multiply": "\(multiply)",
             "select_like": "0",
             "csrf": csrf(),
-        ])
+        ]
+        if let bvid, !bvid.isEmpty { form["bvid"] = bvid }
+        try await APIClient.shared.postForm(path: "/x/web-interface/coin/add", form: form)
     }
 
     func favorite(aid: Int, faved: Bool) async throws {
