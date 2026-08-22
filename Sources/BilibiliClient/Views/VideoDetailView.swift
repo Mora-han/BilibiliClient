@@ -21,6 +21,7 @@ struct VideoDetailView: View {
     @State private var showFavoritePicker = false
     @State private var shareMessage: String?
     @State private var isFollowing = false
+    @State private var relationLoaded = false
     @State private var likeCount = 0
     @State private var coinCount = 0
     @State private var favCount = 0
@@ -119,7 +120,10 @@ struct VideoDetailView: View {
                 let (likedResult, coinedResult, relationResult) = await (likedTask, coinedTask, relationTask)
                 liked = likedResult ?? false
                 coined = (coinedResult ?? 0) > 0
-                isFollowing = relationResult?.isFollowing ?? false
+                if let relationResult {
+                    isFollowing = relationResult.isFollowing
+                    relationLoaded = true
+                }
             }
             async let commentsTask: Void = loadComments(aid: data.view.aid)
             async let playerTask: Void = player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
@@ -272,7 +276,9 @@ struct VideoDetailView: View {
                 }
             }
             .buttonStyle(.plain)
-            if isFollowing {
+            if !session.loggedIn || !relationLoaded {
+                EmptyView()
+            } else if isFollowing {
                 Text("已关注").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             } else {
                 Button("+关注") { Task { await follow(mid: view.owner.mid) } }

@@ -12,7 +12,8 @@ struct RelationService {
 
     /// 当前用户与指定 UP 的关注关系
     func relation(fid: Int) async throws -> RelationStateData {
-        try await APIClient.shared.get("/x/relation", query: ["fid": "\(fid)"])
+        await APIClient.shared.ensureBuvid()
+        return try await APIClient.shared.get("/x/relation", query: ["fid": "\(fid)"])
     }
 
     /// 关注 / 取关 UP（act: 1=关注，2=取关）
