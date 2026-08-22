@@ -17,9 +17,8 @@ final class AppRouter: ObservableObject {
 
     /// 回到主界面：激活并前置主窗口。
     func openMain() {
-        let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey })
-            ?? NSApp.windows.first
-        window?.makeKeyAndOrderFront(nil)
+        // 始终唤回同一个主窗口（排除菜单栏 popover 面板）
+        AppDelegate.mainWindow()?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }

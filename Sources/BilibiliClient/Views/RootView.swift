@@ -104,7 +104,7 @@ struct RootView: View {
         }
         .onAppear {
             // 绑定主窗口代理，用于“关闭窗口”行为（完全退出 / 菜单栏模式 / 询问）
-            if let window = NSApp.windows.first(where: { $0.isVisible }) {
+            if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
                 window.delegate = AppDelegate.shared
             }
         }

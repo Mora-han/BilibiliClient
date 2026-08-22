@@ -14,7 +14,9 @@ struct BilibiliClientApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // 使用单窗口 Window 场景：菜单栏模式下隐藏/唤回同一个窗口，
+        // 避免 WindowGroup 在重新激活时额外创建新窗口导致双窗口。
+        Window("Bilibili Client", id: "main") {
             RootView()
                 .environmentObject(session)
                 .environmentObject(router)
@@ -31,6 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private var menuBar: MenuBarController?
     private var appIconManager: AppIconManager?
+
+    /// 定位主窗口：优先按 Scene id “main”，并排除菜单栏 popover 等 NSPanel。
+    static func mainWindow() -> NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue == "main" }
+            ?? NSApp.windows.first { !($0 is NSPanel) }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -55,14 +63,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 启动后延迟重挂一次：SwiftUI 创建窗口并可能接管 delegate
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
-            NSApp.windows.first?.delegate = self
+            Self.mainWindow()?.delegate = self
         }
     }
 
     @objc private func reattachWindowDelegate(_ note: Notification) {
-        if let window = note.object as? NSWindow {
-            window.delegate = self
-        }
+        // 只对主窗口重挂 delegate，避免菜单栏 popover 面板也被接管
+        guard let window = note.object as? NSWindow, !(window is NSPanel) else { return }
+        window.delegate = self
     }
 
     /// 关闭主窗口时按用户设置处理：完全退出 / 菜单栏模式 / 每次询问。
@@ -82,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 点击 Dock 图标时，若窗口被隐藏（菜单栏模式）则重新显示。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            NSApp.windows.first?.makeKeyAndOrderFront(nil)
+            Self.mainWindow()?.makeKeyAndOrderFront(nil)
         }
         return true
     }
