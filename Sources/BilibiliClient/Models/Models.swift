@@ -110,6 +110,7 @@ struct VideoDetailData: Decodable {
         let owner: Owner
         let stat: Stat
         let pages: [VideoPage]?
+        let shortLinkV2: String?
     }
 
     struct RelatedVideo: Decodable, Identifiable, Hashable {
@@ -738,4 +739,3 @@ struct SeriesArchive: Decodable, Identifiable, Hashable {
         let view: Int?
     }
 }
-

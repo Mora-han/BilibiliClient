@@ -28,6 +28,11 @@ struct RecommendView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("加入稍后再看") {
+                                Task { try? await LibraryService().addToWatchLater(aid: item.id, bvid: item.bvid) }
+                            }
+                        }
                     }
                 } rowContent: {
                     ForEach(items) { item in
@@ -41,6 +46,11 @@ struct RecommendView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("加入稍后再看") {
+                                Task { try? await LibraryService().addToWatchLater(aid: item.id, bvid: item.bvid) }
+                            }
+                        }
                     }
                 }
             }

@@ -39,6 +39,15 @@ struct UserActionService {
         try await APIClient.shared.postForm(path: "/x/v3/fav/resource/deal", form: form)
     }
 
+    func favorite(aid: Int, folderId: Int) async throws {
+        try await APIClient.shared.postForm(path: "/x/v3/fav/resource/deal", form: ["rid": "\(aid)", "type": "2", "add_media_ids": "\(folderId)", "del_media_ids": "", "platform": "web", "csrf": csrf()])
+    }
+
+    func favoriteFolders() async throws -> [FavFolder] {
+        guard let mid = APIClient.shared.cookies.dedeUserID.flatMap({ Int($0) }) else { throw APIError.biz(code: -101, message: "账号未登录") }
+        return try await LibraryService().favoriteFolders(mid: mid).list ?? []
+    }
+
     func hasLiked(aid: Int) async throws -> Bool {
         struct Payload: Decodable {
             let liked: Int?

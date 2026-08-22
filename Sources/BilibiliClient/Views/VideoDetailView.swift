@@ -16,6 +16,11 @@ struct VideoDetailView: View {
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
+    @State private var watchLaterAdded = false
+    @State private var favoriteFolders: [FavFolder] = []
+    @State private var showFavoritePicker = false
+    @State private var shareMessage: String?
+    @State private var isFollowing = false
     @State private var likeCount = 0
     @State private var coinCount = 0
     @State private var favCount = 0
@@ -71,6 +76,15 @@ struct VideoDetailView: View {
             danmaku.reset()
         }
         .sheet(isPresented: $showLogin) { LoginView() }
+        .sheet(isPresented: $showFavoritePicker) {
+            FavoritePickerView(folders: favoriteFolders) { folder in
+                Task { await saveFavorite(folderId: folder.id) }
+                showFavoritePicker = false
+            }
+        }
+        .alert("提示", isPresented: Binding(get: { shareMessage != nil }, set: { if !$0 { shareMessage = nil } })) {
+            Button("好", role: .cancel) {}
+        } message: { Text(shareMessage ?? "") }
         .alert("操作失败", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -101,9 +115,11 @@ struct VideoDetailView: View {
             if session.loggedIn {
                 async let likedTask = try? UserActionService().hasLiked(aid: data.view.aid)
                 async let coinedTask = try? UserActionService().coinCount(aid: data.view.aid)
-                let (likedResult, coinedResult) = await (likedTask, coinedTask)
+                async let relationTask = try? RelationService().relation(fid: data.view.owner.mid)
+                let (likedResult, coinedResult, relationResult) = await (likedTask, coinedTask, relationTask)
                 liked = likedResult ?? false
                 coined = (coinedResult ?? 0) > 0
+                isFollowing = relationResult?.isFollowing ?? false
             }
             async let commentsTask: Void = loadComments(aid: data.view.aid)
             async let playerTask: Void = player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
@@ -256,6 +272,12 @@ struct VideoDetailView: View {
                 }
             }
             .buttonStyle(.plain)
+            if isFollowing {
+                Text("已关注").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            } else {
+                Button("+关注") { Task { await follow(mid: view.owner.mid) } }
+                    .buttonStyle(.borderedProminent).tint(.pink).controlSize(.small)
+            }
             Spacer()
             stat(view.stat.view, "play.fill")
             stat(view.stat.danmaku, "text.bubble.fill")
@@ -275,7 +297,7 @@ struct VideoDetailView: View {
                     Text(Formatters.count(likeCount))
                         .font(.caption2)
                 }
-                .foregroundStyle(liked ? Color.pink : Color.secondary)
+                .foregroundStyle(liked ? Color.pink : Color.black)
             }
             .buttonStyle(.plain)
             .hoverScale(scale: 1.06)
@@ -301,21 +323,21 @@ struct VideoDetailView: View {
             .hoverScale(scale: 1.06)
 
             Button {
-                Task { await toggleFavorite() }
+                Task { await beginFavorite() }
             } label: {
                 VStack(spacing: 3) {
                     Image(systemName: faved ? "bookmark.fill" : "bookmark")
                     Text(Formatters.count(favCount))
                         .font(.caption2)
                 }
-                .foregroundStyle(faved ? Color.blue : Color.secondary)
+                .foregroundStyle(faved ? Color.blue : Color.black)
             }
             .buttonStyle(.plain)
             .hoverScale(scale: 1.06)
 
             Menu {
                 Button("复制链接") {
-                    copyLink()
+                    Task { await copyLink() }
                 }
                 Button("在浏览器打开") {
                     openInBrowser()
@@ -326,10 +348,17 @@ struct VideoDetailView: View {
                     Text("分享")
                         .font(.caption2)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.black)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+
+            Button { Task { await addToWatchLater() } } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: watchLaterAdded ? "clock.fill" : "clock")
+                    Text("稍后再看").font(.caption2)
+                }.foregroundStyle(watchLaterAdded ? .pink : .black)
+            }.buttonStyle(.plain).hoverScale(scale: 1.06)
 
             Spacer()
         }
@@ -361,16 +390,32 @@ struct VideoDetailView: View {
         }
     }
 
-    private func toggleFavorite() async {
+    private func beginFavorite() async {
         guard requireLogin() else { return }
         guard let view = detail?.view else { return }
+        if faved { return }
         do {
-            try await UserActionService().favorite(aid: view.aid, faved: !faved)
-            faved.toggle()
-            favCount += faved ? 1 : -1
+            favoriteFolders = try await UserActionService().favoriteFolders()
+            let behavior = FavoriteBehavior(rawValue: UserDefaults.standard.string(forKey: "favoriteBehavior") ?? "") ?? .defaultFolder
+            if behavior == .ask { showFavoritePicker = true }
+            else if let first = favoriteFolders.first { await saveFavorite(folderId: first.id) }
+        } catch { actionError = error.localizedDescription }
+    }
+
+    private func saveFavorite(folderId: Int) async {
+        guard let view = detail?.view else { return }
+        do {
+            try await UserActionService().favorite(aid: view.aid, folderId: folderId)
+            faved = true; favCount += 1
         } catch {
             actionError = error.localizedDescription
         }
+    }
+
+    private func addToWatchLater() async {
+        guard requireLogin(), let view = detail?.view else { return }
+        do { try await LibraryService().addToWatchLater(aid: view.aid, bvid: view.bvid); watchLaterAdded = true }
+        catch { actionError = error.localizedDescription }
     }
 
     private func requireLogin() -> Bool {
@@ -381,11 +426,19 @@ struct VideoDetailView: View {
         return true
     }
 
-    private func copyLink() {
+    private func copyLink() async {
         guard let bvid = detail?.view.bvid else { return }
+        let link = detail?.view.shortLinkV2 ?? "https://www.bilibili.com/video/\(bvid)"
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString("https://www.bilibili.com/video/\(bvid)", forType: .string)
+        pasteboard.setString(link, forType: .string)
+        shareMessage = "已将视频链接复制到剪贴板"
+    }
+
+    private func follow(mid: Int) async {
+        guard requireLogin() else { return }
+        do { try await RelationService().modify(fid: mid, follow: true); isFollowing = true }
+        catch { actionError = error.localizedDescription }
     }
 
     private func openInBrowser() {

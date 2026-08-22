@@ -72,6 +72,15 @@ struct FavoritesView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("从收藏夹移除", role: .destructive) {
+                                    Task {
+                                        guard let folderID = selectedFolderId else { return }
+                                        try? await LibraryService().removeFavorite(aid: media.id, folderId: folderID)
+                                        medias.removeAll { $0.id == media.id }
+                                    }
+                                }
+                            }
                         }
                     } rowContent: {
                         ForEach(usableMedias) { media in
@@ -85,6 +94,15 @@ struct FavoritesView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("从收藏夹移除", role: .destructive) {
+                                    Task {
+                                        guard let folderID = selectedFolderId else { return }
+                                        try? await LibraryService().removeFavorite(aid: media.id, folderId: folderID)
+                                        medias.removeAll { $0.id == media.id }
+                                    }
+                                }
+                            }
                         }
                     }
 

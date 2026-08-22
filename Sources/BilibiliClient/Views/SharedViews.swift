@@ -1,5 +1,28 @@
 import SwiftUI
 
+enum FavoriteBehavior: String, CaseIterable, Identifiable {
+    case defaultFolder, ask
+    var id: String { rawValue }
+    var label: String { self == .defaultFolder ? "默认收藏夹" : "每次选择" }
+}
+
+struct FavoritePickerView: View {
+    let folders: [FavFolder]
+    let onSelect: (FavFolder) -> Void
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("选择收藏夹").font(.headline)
+            ForEach(folders) { folder in
+                Button { onSelect(folder) } label: {
+                    HStack { Text(folder.title ?? "未命名"); Spacer(); if let count = folder.mediaCount { Text("\(count)").foregroundStyle(.secondary) } }
+                }.buttonStyle(.plain)
+            }
+            Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+        }.padding(24).frame(width: 360)
+    }
+}
+
 /// 视频展示模式（设置项）：卡片 / 单列列表 / 两列列表，全局统一生效。
 enum VideoDisplayMode: String, CaseIterable, Identifiable {
     case card

@@ -80,6 +80,7 @@ struct SettingsView: View {
     @AppStorage("cardStyle") private var cardStyle = CardStyle.solid.rawValue
     @AppStorage("upBarPosition") private var upBarPosition = UpBarPosition.top.rawValue
     @AppStorage("closeBehavior") private var closeBehavior = CloseBehavior.ask.rawValue
+    @AppStorage("favoriteBehavior") private var favoriteBehavior = FavoriteBehavior.defaultFolder.rawValue
     @State private var cacheCleared = false
 
     var body: some View {
@@ -92,6 +93,8 @@ struct SettingsView: View {
                 danmakuSection.padding(.vertical, 16)
                 Divider()
                 displaySection.padding(.vertical, 16)
+                Divider()
+                favoriteSection.padding(.vertical, 16)
                 Divider()
                 dynamicSection.padding(.vertical, 16)
                 Divider()
@@ -108,6 +111,17 @@ struct SettingsView: View {
     }
 
     // MARK: - 分组
+
+    private var favoriteSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("收藏")
+            optionRow("收藏位置") {
+                Picker("收藏位置", selection: $favoriteBehavior) {
+                    ForEach(FavoriteBehavior.allCases) { item in Text(item.label).tag(item.rawValue) }
+                }.pickerStyle(.menu).labelsHidden().fixedSize()
+            }
+        }
+    }
 
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 10) {

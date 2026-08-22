@@ -66,6 +66,15 @@ struct HistoryView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("删除历史记录", role: .destructive) {
+                                    Task {
+                                        guard let aid = item.history?.oid else { return }
+                                        try? await LibraryService().removeHistory(aid: aid)
+                                        items.removeAll { $0.id == item.id }
+                                    }
+                                }
+                            }
                         }
                     } rowContent: {
                         ForEach(usableItems) { item in
@@ -73,6 +82,15 @@ struct HistoryView: View {
                                 row(item)
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("删除历史记录", role: .destructive) {
+                                    Task {
+                                        guard let aid = item.history?.oid else { return }
+                                        try? await LibraryService().removeHistory(aid: aid)
+                                        items.removeAll { $0.id == item.id }
+                                    }
+                                }
+                            }
                         }
                     }
 

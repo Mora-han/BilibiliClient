@@ -73,6 +73,14 @@ struct WatchLaterView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("移出稍后再看", role: .destructive) {
+                                    Task {
+                                        try? await LibraryService().removeFromWatchLater(aid: item.aid)
+                                        items.removeAll { $0.id == item.id }
+                                    }
+                                }
+                            }
                         }
                     } rowContent: {
                         ForEach(usableItems) { item in
@@ -80,6 +88,14 @@ struct WatchLaterView: View {
                                 row(item)
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("移出稍后再看", role: .destructive) {
+                                    Task {
+                                        try? await LibraryService().removeFromWatchLater(aid: item.aid)
+                                        items.removeAll { $0.id == item.id }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

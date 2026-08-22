@@ -34,4 +34,23 @@ struct LibraryService {
     func watchLater() async throws -> ToViewData {
         try await APIClient.shared.get("/x/v2/history/toview")
     }
+
+    func addToWatchLater(aid: Int, bvid: String? = nil) async throws {
+        var form = ["csrf": APIClient.shared.cookies.biliJct ?? ""]
+        form["aid"] = "\(aid)"
+        if let bvid { form["bvid"] = bvid }
+        try await APIClient.shared.postForm(path: "/x/v2/history/toview/add", form: form)
+    }
+
+    func removeFromWatchLater(aid: Int) async throws {
+        try await APIClient.shared.postForm(path: "/x/v2/history/toview/del", form: ["aid": "\(aid)", "csrf": APIClient.shared.cookies.biliJct ?? ""])
+    }
+
+    func removeHistory(aid: Int) async throws {
+        try await APIClient.shared.postForm(path: "/x/v2/history/delete", form: ["kid": "archive_\(aid)", "csrf": APIClient.shared.cookies.biliJct ?? ""])
+    }
+
+    func removeFavorite(aid: Int, folderId: Int) async throws {
+        try await APIClient.shared.postForm(path: "/x/v3/fav/resource/deal", form: ["rid": "\(aid)", "type": "2", "del_media_ids": "\(folderId)", "platform": "web", "csrf": APIClient.shared.cookies.biliJct ?? ""])
+    }
 }
