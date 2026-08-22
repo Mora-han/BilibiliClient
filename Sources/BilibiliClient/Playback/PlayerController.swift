@@ -108,7 +108,6 @@ final class PlayerController: ObservableObject {
             let asset = AVURLAsset(url: url, options: httpAssetOptions())
             player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
             player?.automaticallyWaitsToMinimizeStalling = true
-            player?.play()
             state = .ready
             startReportLoop()
             return
@@ -143,7 +142,6 @@ final class PlayerController: ObservableObject {
             let url = try await proxy.start(video: videoMedia, audio: audioMedia)
             player = AVPlayer(url: url)
             player?.automaticallyWaitsToMinimizeStalling = true
-            player?.play()
             startReportLoop()
             return nil
         } catch {
@@ -191,7 +189,6 @@ final class PlayerController: ObservableObject {
             let streamURL = try await proxy.startProgressive(baseURL: url)
             player = AVPlayer(url: streamURL)
             player?.automaticallyWaitsToMinimizeStalling = true
-            player?.play()
             return true
         } catch {
             return false
