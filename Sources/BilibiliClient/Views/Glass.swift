@@ -1,25 +1,22 @@
 import SwiftUI
 
-struct GlassCardBackground: ViewModifier {
+/// App Store 风格普通内容卡片：实色背景（随浅/深色自适应）+ 圆角 + 轻阴影，
+/// 不再使用液态玻璃材质。
+struct SolidCardBackground: ViewModifier {
     var cornerRadius: CGFloat = 18
 
     func body(content: Content) -> some View {
         content.background {
-            if #available(macOS 26.0, *) {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.white.opacity(0.05))
-                    .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-            } else {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.ultraThinMaterial)
-            }
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(Color(nsColor: .controlBackgroundColor))
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .shadow(color: .black.opacity(0.07), radius: 9, x: 0, y: 2)
     }
 }
 
 extension View {
-    func glassCard(cornerRadius: CGFloat = 18) -> some View {
-        modifier(GlassCardBackground(cornerRadius: cornerRadius))
+    func solidCard(cornerRadius: CGFloat = 18) -> some View {
+        modifier(SolidCardBackground(cornerRadius: cornerRadius))
     }
 }

@@ -38,10 +38,10 @@ private struct ZoneCard: View {
         .foregroundStyle(.primary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 26)
-        .glassCard(cornerRadius: 18)
+        .solidCard(cornerRadius: 18)
         .overlay(
             RoundedRectangle(cornerRadius: 18)
-                .strokeBorder(.white.opacity(hovering ? 0.22 : 0), lineWidth: 1)
+                .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)
         )
         .scaleEffect(hovering ? 1.03 : 1)
         .animation(Motion.hover, value: hovering)

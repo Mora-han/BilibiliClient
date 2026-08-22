@@ -50,10 +50,10 @@ struct MediaListRow: View {
             Spacer()
         }
         .padding(10)
-        .glassCard(cornerRadius: 14)
+        .solidCard(cornerRadius: 14)
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(.white.opacity(hovering ? 0.18 : 0), lineWidth: 1)
+                .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)
         )
         .scaleEffect(hovering ? 1.01 : 1)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hovering)

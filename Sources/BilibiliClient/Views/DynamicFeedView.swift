@@ -199,7 +199,7 @@ struct DynamicCardView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(cornerRadius: 14)
+        .solidCard(cornerRadius: 14)
     }
 
     private var header: some View {
