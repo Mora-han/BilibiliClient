@@ -42,7 +42,7 @@ struct VideoCardView: View {
                 .strokeBorder(.primary.opacity(hovering ? 0.15 : 0), lineWidth: 1)
         )
         .scaleEffect(hovering ? 1.02 : 1)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hovering)
+        .animation(Motion.hover, value: hovering)
         .onHover { hovering = $0 }
     }
 

@@ -32,7 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static weak var shared: AppDelegate?
 
     private var menuBar: MenuBarController?
-    private var appIconManager: AppIconManager?
 
     /// 定位主窗口：优先按 Scene id “main”，并排除菜单栏 popover 等 NSPanel
     /// 与全屏窗口（AVKit 原生全屏会创建独立的 AVDetachedFullscreenWindow）。
@@ -47,7 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         NSApplication.shared.setActivationPolicy(.regular)
-        appIconManager = AppIconManager()
         let menuBar = MenuBarController()
         menuBar.install()
         self.menuBar = menuBar

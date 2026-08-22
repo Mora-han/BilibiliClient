@@ -43,7 +43,7 @@ final class APIClient {
             let data: Spi?
         }
         do {
-            var request = URLRequest(url: URL(string: "https://api.bilibili.com/x/frontend/finger/spi")!)
+            let request = URLRequest(url: URL(string: "https://api.bilibili.com/x/frontend/finger/spi")!)
             let (data, _) = try await session.data(for: request)
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase

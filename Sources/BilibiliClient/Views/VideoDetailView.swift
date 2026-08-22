@@ -491,11 +491,13 @@ struct VideoDetailView: View {
             object: nil,
             queue: .main
         ) { [self] note in
-            guard pendingFullscreenAttach,
-                  let window = note.object as? NSWindow,
-                  let avPlayer = player.player else { return }
-            pendingFullscreenAttach = false
-            fullscreenDanmaku.attach(engine: danmaku, player: avPlayer, to: window)
+            Task { @MainActor in
+                guard pendingFullscreenAttach,
+                      let window = note.object as? NSWindow,
+                      let avPlayer = player.player else { return }
+                pendingFullscreenAttach = false
+                fullscreenDanmaku.attach(engine: danmaku, player: avPlayer, to: window)
+            }
         }
     }
 

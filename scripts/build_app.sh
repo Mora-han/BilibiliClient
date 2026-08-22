@@ -7,6 +7,9 @@ APP_NAME="BilibiliClient"
 CONFIG="${1:-release}"
 VERSION="$(cat version.txt)"
 BUILD="${BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
+ICON_SOURCE="assets/Bilibiliclient.icon"
+ICON_NAME="Bilibiliclient"
+ACTOOL="${ACTOOL:-/Applications/Xcode-beta.app/Contents/Developer/usr/bin/actool}"
 
 # Prefer a CLT SDK that matches the installed compiler; fall back to xcrun.
 if [ -z "${SDKROOT:-}" ]; then
@@ -50,16 +53,28 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp ".build/$CONFIG/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
-cp "assets/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
-cp "assets/AppIcon-dark.icns" "$APP_DIR/Contents/Resources/AppIcon-dark.icns"
+# 发布 App 不需要调试符号；剥离后保留完整运行时功能并降低分发体积。
+if [ "$CONFIG" = "release" ]; then
+  strip -x "$APP_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+fi
+# 使用 Icon Composer 原生资源编译流程，保留 macOS 26 的分层、明暗和材质效果。
+ICON_BUILD_DIR="$(mktemp -d)"
+"$ACTOOL" --compile "$ICON_BUILD_DIR" \
+  --platform macosx \
+  --minimum-deployment-target 26.0 \
+  --app-icon "$ICON_NAME" \
+  --output-partial-info-plist "$ICON_BUILD_DIR/partial.plist" \
+  "$ICON_SOURCE" >/dev/null
+test -f "$ICON_BUILD_DIR/Assets.car"
+cp "$ICON_BUILD_DIR/Assets.car" "$APP_DIR/Contents/Resources/Assets.car"
 
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>${ICON_NAME}</string>
     <key>CFBundleExecutable</key>
     <string>BilibiliClient</string>
     <key>CFBundleIdentifier</key>

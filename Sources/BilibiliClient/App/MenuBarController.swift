@@ -6,7 +6,7 @@ import SwiftUI
 final class MenuBarController: NSObject {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
-    private var hostingController: NSHostingController<AnyView>?
+    private var hostingController: NSViewController?
 
     func install() {
         guard statusItem == nil else { return }
@@ -32,7 +32,7 @@ final class MenuBarController: NSObject {
             }
         )
         .environmentObject(SessionStore.shared)
-        let controller = NSHostingController(rootView: AnyView(rootView))
+        let controller = NSHostingController(rootView: rootView)
         hostingController = controller
 
         let popover = NSPopover()

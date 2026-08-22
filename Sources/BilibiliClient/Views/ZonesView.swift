@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// 分区页：官方主分区卡片
+@MainActor
 struct ZonesView: View {
     let columns = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 14)]
 
@@ -21,6 +22,7 @@ struct ZonesView: View {
 }
 
 /// 分区卡片：鼠标靠近时放大 + 高亮描边（与首页视频卡片同款动效）。
+@MainActor
 private struct ZoneCard: View {
     let zone: BiliZone
     @State private var hovering = false

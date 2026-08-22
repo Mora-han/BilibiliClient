@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct WatchLaterView: View {
     @EnvironmentObject private var session: SessionStore
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
