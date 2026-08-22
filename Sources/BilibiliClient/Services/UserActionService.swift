@@ -4,13 +4,15 @@ import Foundation
 struct UserActionService {
     private static var cachedDefaultFolderId: Int?
 
-    func like(aid: Int, liked: Bool) async throws {
+    func like(aid: Int, bvid: String? = nil, liked: Bool) async throws {
         await APIClient.shared.ensureBuvid()
-        try await APIClient.shared.postForm(path: "/x/web-interface/archive/like", form: [
+        var form: [String: String] = [
             "aid": "\(aid)",
             "like": liked ? "1" : "2",
             "csrf": csrf(),
-        ])
+        ]
+        if let bvid, !bvid.isEmpty { form["bvid"] = bvid }
+        try await APIClient.shared.postForm(path: "/x/web-interface/archive/like", form: form)
     }
 
     func coin(aid: Int, multiply: Int) async throws {

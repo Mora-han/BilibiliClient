@@ -370,7 +370,7 @@ struct VideoDetailView: View {
         guard requireLogin() else { return }
         guard let view = detail?.view else { return }
         do {
-            try await UserActionService().like(aid: view.aid, liked: !liked)
+            try await UserActionService().like(aid: view.aid, bvid: view.bvid, liked: !liked)
             liked.toggle()
             likeCount += liked ? 1 : -1
         } catch {
