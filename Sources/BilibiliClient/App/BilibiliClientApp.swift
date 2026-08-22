@@ -34,10 +34,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var menuBar: MenuBarController?
     private var appIconManager: AppIconManager?
 
-    /// 定位主窗口：优先按 Scene id “main”，并排除菜单栏 popover 等 NSPanel。
+    /// 定位主窗口：优先按 Scene id “main”，并排除菜单栏 popover 等 NSPanel
+    /// 与全屏窗口（AVKit 原生全屏会创建独立的 AVDetachedFullscreenWindow）。
     static func mainWindow() -> NSWindow? {
-        NSApp.windows.first { $0.identifier?.rawValue == "main" }
-            ?? NSApp.windows.first { !($0 is NSPanel) }
+        NSApp.windows.first {
+            $0.identifier?.rawValue == "main" && !$0.styleMask.contains(.fullScreen)
+        } ?? NSApp.windows.first {
+            !($0 is NSPanel) && !$0.styleMask.contains(.fullScreen)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -68,13 +72,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func reattachWindowDelegate(_ note: Notification) {
-        // 只对主窗口重挂 delegate，避免菜单栏 popover 面板也被接管
-        guard let window = note.object as? NSWindow, !(window is NSPanel) else { return }
+        // 只对主窗口重挂 delegate：菜单栏 popover 面板、AVKit 原生全屏窗口等
+        // 一律不接管，避免全屏窗口的退出/关闭流程被关闭行为拦截破坏。
+        guard let window = note.object as? NSWindow,
+              !(window is NSPanel),
+              !Self.isSystemFullscreenWindow(window) else { return }
         window.delegate = self
+    }
+
+    /// 判断窗口是否为系统/AVKit 管理的全屏窗口（类名含 Fullscreen）。
+    /// 这类窗口在进入全屏前才会收到 becameKey，此时 styleMask 还没有 .fullScreen，
+    /// 因此不能靠 styleMask 判断，必须按类名排除。
+    private static func isSystemFullscreenWindow(_ window: NSWindow) -> Bool {
+        let name = NSStringFromClass(type(of: window))
+        return name.localizedCaseInsensitiveContains("fullscreen")
     }
 
     /// 关闭主窗口时按用户设置处理：完全退出 / 菜单栏模式 / 每次询问。
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // 全屏窗口的关闭由系统/AVKit 管理，不走关闭行为拦截
+        guard !Self.isSystemFullscreenWindow(sender) else { return true }
         switch CloseBehavior.current {
         case .quit:
             return true
