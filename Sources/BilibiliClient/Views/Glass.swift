@@ -20,14 +20,9 @@ struct CardBackground: ViewModifier {
     @ViewBuilder
     private func glassBody(_ content: Content) -> some View {
         content.background {
-            if #available(macOS 26.0, *) {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.white.opacity(0.05))
-                    .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-            } else {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.ultraThinMaterial)
-            }
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(.white.opacity(0.05))
+                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
     }

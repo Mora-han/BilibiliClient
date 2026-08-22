@@ -26,13 +26,9 @@ struct GlassSearchField: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background {
-            if #available(macOS 26.0, *) {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(.white.opacity(0.06))
-                    .glassEffect(.regular, in: .rect(cornerRadius: 14))
-            } else {
-                RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial)
-            }
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.white.opacity(0.06))
+                .glassEffect(.regular, in: .rect(cornerRadius: 14))
         }
         .overlay(
             RoundedRectangle(cornerRadius: 14)

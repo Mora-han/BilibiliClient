@@ -128,12 +128,9 @@ struct DanmakuToggleButton: View {
                 Capsule()
                     .fill(.black.opacity(0.35))
                     .overlay {
-                        if #available(macOS 26.0, *) {
-                            Capsule().stroke(.white.opacity(0.25), lineWidth: 1)
-                                .glassEffect(.regular, in: .capsule)
-                        } else {
-                            Capsule().stroke(.white.opacity(0.25), lineWidth: 1)
-                        }
+                        Capsule()
+                            .stroke(.white.opacity(0.25), lineWidth: 1)
+                            .glassEffect(.regular, in: .capsule)
                     }
             }
         }
