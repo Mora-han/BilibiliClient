@@ -18,6 +18,7 @@ final class AppRouter: ObservableObject {
     /// 回到主界面：激活并前置主窗口。
     func openMain() {
         // 始终唤回同一个主窗口（排除菜单栏 popover 面板）
+        AppDelegate.shared?.showDockIcon()
         AppDelegate.mainWindow()?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

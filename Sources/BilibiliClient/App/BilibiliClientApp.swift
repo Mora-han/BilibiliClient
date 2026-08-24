@@ -33,6 +33,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private var menuBar: MenuBarController?
 
+    func showDockIcon() {
+        NSApp.setActivationPolicy(.regular)
+    }
+
+    private func hideDockIcon() {
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    /// 先完成窗口隐藏，再切换应用类型。SwiftUI 会在关闭事件处理中短暂恢复
+    /// `.regular`，因此必须在下一个主线程周期设置 `.accessory`。
+    private func enterMenuBarMode(hiding window: NSWindow? = nil) {
+        window?.orderOut(nil)
+        NSApp.deactivate()
+        DispatchQueue.main.async { [weak self] in
+            guard Self.mainWindow()?.isVisible != true else { return }
+            self?.hideDockIcon()
+        }
+    }
+
     /// 定位主窗口：优先按 Scene id “main”，并排除菜单栏 popover 等 NSPanel
     /// 与全屏窗口（AVKit 原生全屏会创建独立的 AVDetachedFullscreenWindow）。
     static func mainWindow() -> NSWindow? {
@@ -92,9 +111,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard !Self.isSystemFullscreenWindow(sender) else { return true }
         switch CloseBehavior.current {
         case .quit:
+            showDockIcon()
             return true
         case .menuBar:
-            sender.orderOut(nil)
+            enterMenuBarMode(hiding: sender)
             return false
         case .ask:
             showClosePrompt(for: sender)
@@ -105,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 点击 Dock 图标时，若窗口被隐藏（菜单栏模式）则重新显示。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
+            showDockIcon()
             Self.mainWindow()?.makeKeyAndOrderFront(nil)
         }
         return true
@@ -114,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         switch CloseBehavior.current {
         case .quit:
+            showDockIcon()
             return true
         case .menuBar:
             return false
@@ -141,9 +163,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 )
             }
             if quit {
+                self.showDockIcon()
                 NSApp.terminate(nil)
             } else {
-                window.orderOut(nil)
+                self.enterMenuBarMode(hiding: window)
             }
         }
     }
@@ -165,7 +188,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
         }
         if quit {
+            showDockIcon()
             NSApp.terminate(nil)
+        } else {
+            enterMenuBarMode()
         }
     }
 }
