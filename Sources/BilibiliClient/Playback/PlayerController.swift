@@ -31,10 +31,6 @@ final class PlayerController: ObservableObject {
     private var loadedKey: String?
     private var reportTask: Task<Void, Never>?
 
-    static func stopActive() {
-        activeController?.stop()
-    }
-
     var currentQualityName: String? {
         guard let currentQualityId else { return nil }
         return qualities.first { $0.id == currentQualityId }?.name

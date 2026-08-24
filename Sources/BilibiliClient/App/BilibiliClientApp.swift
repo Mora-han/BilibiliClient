@@ -27,7 +27,6 @@ struct BilibiliClientApp: App {
     }
 }
 
-@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 供 RootView 将主窗口代理绑定到本对象。
     static weak var shared: AppDelegate?
@@ -45,8 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 先完成窗口隐藏，再切换应用类型。SwiftUI 会在关闭事件处理中短暂恢复
     /// `.regular`，因此必须在下一个主线程周期设置 `.accessory`。
     private func enterMenuBarMode(hiding window: NSWindow? = nil) {
-        PlayerController.stopActive()
-        URLCache.shared.removeAllCachedResponses()
         window?.orderOut(nil)
         NSApp.deactivate()
         DispatchQueue.main.async { [weak self] in
