@@ -280,6 +280,10 @@ struct VideoDetailView: View {
                 }
             }
             .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture().onEnded {
+                player.stop()
+                danmaku.reset()
+            })
             if !session.loggedIn || !relationLoaded {
                 EmptyView()
             } else if isFollowing {

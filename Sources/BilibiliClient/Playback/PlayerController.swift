@@ -3,6 +3,8 @@ import Foundation
 
 @MainActor
 final class PlayerController: ObservableObject {
+    /// 应用内同时只允许一个视频播放器工作，避免导航切换时旧页面仍有声音。
+    private static weak var activeController: PlayerController?
     @Published var player: AVPlayer?
     @Published var state: LoadState = .idle
     @Published var errorMessage: String?
@@ -36,6 +38,10 @@ final class PlayerController: ObservableObject {
 
     func load(aid: Int, bvid: String, cid: Int) async {
         let key = "\(bvid):\(cid)"
+        if Self.activeController !== self {
+            Self.activeController?.stop()
+            Self.activeController = self
+        }
         guard loadedKey != key else { return }
         loadedKey = key
         self.aid = aid
@@ -77,6 +83,11 @@ final class PlayerController: ObservableObject {
             }
         }
         teardownPlayer()
+        loadedKey = nil
+        state = .idle
+        if Self.activeController === self {
+            Self.activeController = nil
+        }
     }
 
     // MARK: - Private
