@@ -19,6 +19,15 @@ final class MenuBarController: NSObject {
         }
         statusItem = item
 
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.delegate = self
+        popover.contentSize = NSSize(width: 380, height: 540)
+        self.popover = popover
+    }
+
+    private func makePanelController() -> NSViewController {
         let rootView = MenuBarPanelView(
             session: SessionStore.shared,
             router: AppRouter.shared,
@@ -32,15 +41,7 @@ final class MenuBarController: NSObject {
             }
         )
         .environmentObject(SessionStore.shared)
-        let controller = NSHostingController(rootView: rootView)
-        hostingController = controller
-
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentViewController = controller
-        popover.contentSize = NSSize(width: 380, height: 540)
-        self.popover = popover
+        return NSHostingController(rootView: rootView)
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -48,7 +49,21 @@ final class MenuBarController: NSObject {
         if popover.isShown {
             popover.performClose(sender)
         } else if let button = statusItem.button {
+            if popover.contentViewController == nil {
+                let controller = makePanelController()
+                hostingController = controller
+                popover.contentViewController = controller
+            }
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
+    }
+}
+
+extension MenuBarController: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        // 菜单栏图标继续常驻，但关闭面板后释放 SwiftUI 视图树、动态数据和图片引用。
+        popover?.contentViewController = nil
+        hostingController = nil
+        URLCache.shared.removeAllCachedResponses()
     }
 }
