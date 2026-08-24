@@ -9,8 +9,8 @@ struct BilibiliClientApp: App {
 
     init() {
         // 适中的内存/磁盘图片缓存：兼顾列表滚动流畅度与低配机器的内存占用
-        URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024,
-                                   diskCapacity: 256 * 1024 * 1024)
+        URLCache.shared = URLCache(memoryCapacity: 8 * 1024 * 1024,
+                                   diskCapacity: 128 * 1024 * 1024)
     }
 
     var body: some Scene {
@@ -27,6 +27,7 @@ struct BilibiliClientApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 供 RootView 将主窗口代理绑定到本对象。
     static weak var shared: AppDelegate?
@@ -44,6 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 先完成窗口隐藏，再切换应用类型。SwiftUI 会在关闭事件处理中短暂恢复
     /// `.regular`，因此必须在下一个主线程周期设置 `.accessory`。
     private func enterMenuBarMode(hiding window: NSWindow? = nil) {
+        PlayerController.stopActive()
+        URLCache.shared.removeAllCachedResponses()
         window?.orderOut(nil)
         NSApp.deactivate()
         DispatchQueue.main.async { [weak self] in
