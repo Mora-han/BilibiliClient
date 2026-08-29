@@ -109,9 +109,10 @@ final class DanmakuOverlayNSView: NSView {
         }
 
         let raw = player.currentTime().seconds
-        let t = raw.isFinite ? raw : 0
-        engine.tick(playerTime: t, size: size)
-        syncLayers(size: size, scale: scale, time: t)
+        // seek 瞬间可能返回非有限值：跳过本帧，由引擎的 seek 检测接管
+        guard raw.isFinite else { return }
+        engine.tick(playerTime: raw, size: size)
+        syncLayers(size: size, scale: scale, time: raw)
     }
 
     // MARK: - 层同步

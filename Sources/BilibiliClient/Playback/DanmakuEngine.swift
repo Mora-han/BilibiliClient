@@ -107,6 +107,10 @@ final class DanmakuEngine {
     private var all: [DanmakuItem] = []
     private var nextIndex = 0
     private var configuredSize: CGSize = .zero
+    /// 上一帧播放时间：用于侦测 seek 跳变
+    private var lastTickTime: Double = 0
+    /// 时间差超过该值视为 seek（快进/快退/拖进度条）
+    private static let seekThreshold: Double = 3.0
 
     private struct LaneState {
         /// 该轨道可被复用的最早时间（滚动=尾端进入+0.35s；固定=上一条结束+0.2s）
@@ -126,6 +130,7 @@ final class DanmakuEngine {
     func reset() {
         active = []
         nextIndex = 0
+        lastTickTime = 0
         scrollLanes = []
         topLanes = []
         bottomLanes = []
@@ -141,12 +146,27 @@ final class DanmakuEngine {
 
     func tick(playerTime: Double, size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
+        // seek 瞬时的非有限时间（如 kCMTimeInvalid）：跳过本帧，避免误当成 0 秒
+        guard playerTime.isFinite else { return }
+        let t = playerTime
+
+        // 侦测 seek：时间回退或大步前进时，清空画面、重置轨道并把指针回退到
+        // 目标时间附近，让新位置附近的弹幕重新生成。否则旧弹幕 startTime 在未来，
+        // 永不回收、占着轨道，表现为画面冻住。
+        let jump = t - lastTickTime
+        if t < lastTickTime || jump > Self.seekThreshold {
+            active = []
+            rebuildLanes(size: size)
+            nextIndex = firstIndex(atOrAfter: t - 2.5)
+            lastTickTime = t
+            return
+        }
+        lastTickTime = t
+
         if size != configuredSize {
             configuredSize = size
             rebuildLanes(size: size)
         }
-
-        let t = playerTime.isFinite ? playerTime : 0
 
         // 生成新弹幕（跳过时间跨度大于 2.5s 的，避免拖动进度条时瞬间堆满）。
         // 每帧最多生成 6 条：seek 后摊开铺满，避免单帧压力瞬间爆表。
@@ -164,6 +184,21 @@ final class DanmakuEngine {
         if !active.isEmpty {
             active.removeAll { $0.isFinished(at: t) }
         }
+    }
+
+    /// all 按时间升序，二分查找第一条 time >= 给定时间的下标
+    private func firstIndex(atOrAfter time: Double) -> Int {
+        var lo = 0
+        var hi = all.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if all[mid].time < time {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        return lo
     }
 
     // MARK: - 轨道与生成
