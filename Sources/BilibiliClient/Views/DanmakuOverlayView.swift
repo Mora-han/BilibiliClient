@@ -1,11 +1,12 @@
 import AppKit
 import AVFoundation
+import CoreText
 import QuartzCore
 import SwiftUI
 
 /// 弹幕渲染层：完全脱离 SwiftUI 渲染管线。
-/// 每条弹幕 = 一个 CATextLayer（文本位图由 GPU 缓存），独立 NSView 上的
-/// CADisplayLink 每帧只做轻量位置计算与 layer 属性赋值（30fps），
+/// 每条弹幕 = 一个 CALayer（文字预渲染成带外侧描边的位图，由 GPU 缓存），
+/// 独立 NSView 上的 CADisplayLink 每帧只做轻量位置计算与 layer 属性赋值，
 /// 不触发任何 SwiftUI 视图更新或 Canvas 重绘，对视频渲染几乎零干扰。
 struct DanmakuOverlayView: NSViewRepresentable {
     let engine: DanmakuEngine
@@ -42,7 +43,7 @@ final class DanmakuOverlayNSView: NSView {
     }
 
     private var link: CADisplayLink?
-    private var layers: [Int: CATextLayer] = [:]
+    private var layers: [Int: CALayer] = [:]
     private var lastSize: CGSize = .zero
     private var lastScale: CGFloat = 0
 
@@ -146,34 +147,66 @@ final class DanmakuOverlayNSView: NSView {
 
     private func addLayer(for item: DanmakuEngine.Active, size: CGSize, scale: CGFloat, time: Double) {
         let fontSize = item.fontSize(for: size.width)
-        let layer = CATextLayer()
-        // 黑色描边提高可读性：strokeWidth 为负值 = 填充前景色 + 描边黑色，
-        // 数值按字号百分比缩放，全屏放大后描边自动跟随变粗
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
-            .foregroundColor: item.color,
-            .strokeColor: NSColor.black,
-            .strokeWidth: -3.5,
-        ]
-        layer.string = NSAttributedString(string: item.text, attributes: attrs)
-        layer.foregroundColor = item.color
-        layer.alignmentMode = .center
-        layer.truncationMode = .end
+        // 文字预渲染成带外侧描边的位图：黑色字 8 方向偏移 + 中心前景色字，
+        // 描边只出现在字形最外侧，笔画交叉处不会被描边切断填充
+        let image = Self.makeOutlineImage(text: item.text,
+                                          color: item.color,
+                                          fontSize: fontSize,
+                                          scale: scale)
+        let layer = CALayer()
+        layer.contents = image
         layer.contentsScale = scale
-        // 描边会略超出文字宽度，层宽多留余量防止边缘被裁
-        layer.bounds = CGRect(x: 0, y: 0,
-                              width: max(item.width(for: size.width) + 8, 1),
-                              height: max(fontSize * 1.35 + 4, 1))
+        if let image {
+            layer.bounds = CGRect(x: 0, y: 0,
+                                  width: CGFloat(image.width) / scale,
+                                  height: CGFloat(image.height) / scale)
+        } else {
+            layer.bounds = CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
         layer.position = layerPosition(for: item, in: size, time: time)
         layer.actions = [
             "position": NSNull(),
-            "bounds": NSNull(),
-            "fontSize": NSNull(),
-            "foregroundColor": NSNull(),
             "contents": NSNull(),
         ]
         self.layer?.addSublayer(layer)
         layers[item.id] = layer
+    }
+
+    /// 预渲染文字位图：8 方向偏移的黑色描边 + 中心填充，返回已按 scale 放大的图。
+    private static func makeOutlineImage(text: String, color: CGColor,
+                                         fontSize: CGFloat, scale: CGFloat) -> CGImage? {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let fillColor = NSColor(cgColor: color) ?? .white
+        let fill = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: fillColor
+        ]))
+        let outline = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: NSColor.black
+        ]))
+        let bounds = CTLineGetBoundsWithOptions(fill, [])
+        let offset = max(1.2, fontSize * 0.07)
+        let w = Int(ceil((bounds.width + offset * 2) * scale))
+        let h = Int(ceil((bounds.height + offset * 2) * scale))
+        guard w > 0, h > 0,
+              let ctx = CGContext(data: nil, width: w, height: h,
+                                  bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return nil
+        }
+        ctx.scaleBy(x: scale, y: scale)
+        let origin = CGPoint(x: offset - bounds.origin.x, y: offset - bounds.origin.y)
+        for dx in [-1.0, 0.0, 1.0] {
+            for dy in [-1.0, 0.0, 1.0] {
+                if dx == 0 && dy == 0 { continue }
+                ctx.textPosition = CGPoint(x: origin.x + offset * dx,
+                                           y: origin.y + offset * dy)
+                CTLineDraw(outline, ctx)
+            }
+        }
+        ctx.textPosition = origin
+        CTLineDraw(fill, ctx)
+        return ctx.makeImage()
     }
 
     private func removeAllLayers() {

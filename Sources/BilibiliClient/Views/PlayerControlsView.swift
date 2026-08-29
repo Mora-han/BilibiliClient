@@ -67,8 +67,9 @@ struct PlayerControlsView: View {
                                        startPoint: .bottom, endPoint: .top)
                     }
                 }
-                .padding(.horizontal, barStyle == PlayerBarStyle.floating.rawValue ? 12 : 0)
-                .padding(.bottom, barStyle == PlayerBarStyle.floating.rawValue ? 10 : 0)
+                // 悬浮：收窄成居中胶囊并抬高；沉底：贴底通栏
+                .frame(maxWidth: barStyle == PlayerBarStyle.floating.rawValue ? 580 : .infinity)
+                .padding(.bottom, barStyle == PlayerBarStyle.floating.rawValue ? 18 : 0)
         }
     }
 
