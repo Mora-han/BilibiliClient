@@ -4,6 +4,7 @@ import SwiftUI
 /// 鼠标活动时显示，静止数秒后淡出；所有交互都走 PlayerController。
 struct PlayerControlsView: View {
     @ObservedObject var player: PlayerController
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @AppStorage("playerBarStyle") private var barStyle = PlayerBarStyle.floating.rawValue
     /// 当前是否在全屏窗口内（决定全屏按钮图标与动作方向）
@@ -16,6 +17,8 @@ struct PlayerControlsView: View {
     @State private var scrubValue: Double = 0
     /// 鼠标活动时间戳（普通引用，不触发 SwiftUI 更新，避免高频 hover 重绘）
     @State private var monitor = InteractionMonitor()
+
+    private var isDark: Bool { colorScheme == .dark }
 
     var body: some View {
         ZStack {
@@ -55,15 +58,17 @@ struct PlayerControlsView: View {
                     if barStyle == PlayerBarStyle.floating.rawValue {
                         // 悬浮样式：圆角液态玻璃
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(.black.opacity(0.35))
+                            .fill(isDark ? .black.opacity(0.35) : .white.opacity(0.25))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(.primary.opacity(0.12), lineWidth: 1)
                                     .glassEffect(.regular, in: .rect(cornerRadius: 16))
                             }
                     } else {
                         // 沉底样式：经典渐变贴边
-                        LinearGradient(colors: [.black.opacity(0.65), .black.opacity(0.2)],
+                        LinearGradient(colors: isDark
+                                       ? [.black.opacity(0.65), .black.opacity(0.2)]
+                                       : [.white.opacity(0.8), .white.opacity(0.3)],
                                        startPoint: .bottom, endPoint: .top)
                     }
                 }
@@ -79,13 +84,13 @@ struct PlayerControlsView: View {
 
             Text(Formatters.duration(Int(player.currentTime)))
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
             Text("/")
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(.secondary)
             Text(Formatters.duration(Int(max(player.duration, 0))))
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(.secondary)
 
             progressSlider
 
@@ -102,7 +107,7 @@ struct PlayerControlsView: View {
         } label: {
             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)
@@ -128,7 +133,7 @@ struct PlayerControlsView: View {
             }
         )
         .controlSize(.small)
-        .tint(.white)
+        .tint(.primary)
         .frame(maxWidth: .infinity)
     }
 
@@ -148,10 +153,10 @@ struct PlayerControlsView: View {
         } label: {
             Text(player.currentQualityName ?? "清晰度")
                 .font(.caption)
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(.white.opacity(0.18)))
+                .background(Capsule().fill(.primary.opacity(0.12)))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -167,7 +172,7 @@ struct PlayerControlsView: View {
                   ? "arrow.down.right.and.arrow.up.left"
                   : "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)

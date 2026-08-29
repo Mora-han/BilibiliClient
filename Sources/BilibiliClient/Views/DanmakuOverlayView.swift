@@ -184,7 +184,8 @@ final class DanmakuOverlayNSView: NSView {
             .font: font, .foregroundColor: NSColor.black
         ]))
         let bounds = CTLineGetBoundsWithOptions(fill, [])
-        let offset = max(1.2, fontSize * 0.07)
+        // 描边尽可能细：8 方向偏移距离即描边厚度
+        let offset = max(0.6, fontSize * 0.035)
         let w = Int(ceil((bounds.width + offset * 2) * scale))
         let h = Int(ceil((bounds.height + offset * 2) * scale))
         guard w > 0, h > 0,
@@ -229,6 +230,7 @@ final class DanmakuOverlayNSView: NSView {
 /// 播放器右上角的弹幕开关（液态玻璃胶囊样式）。
 struct DanmakuToggleButton: View {
     @Binding var isOn: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button {
@@ -239,15 +241,15 @@ struct DanmakuToggleButton: View {
                 Text("弹幕")
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(isOn ? Color.white : Color.white.opacity(0.55))
+            .foregroundStyle(isOn ? Color.primary : Color.primary.opacity(0.55))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background {
                 Capsule()
-                    .fill(.black.opacity(0.35))
+                    .fill(colorScheme == .dark ? .black.opacity(0.35) : .white.opacity(0.25))
                     .overlay {
                         Capsule()
-                            .stroke(.white.opacity(0.25), lineWidth: 1)
+                            .stroke(.primary.opacity(0.15), lineWidth: 1)
                             .glassEffect(.regular, in: .capsule)
                     }
             }

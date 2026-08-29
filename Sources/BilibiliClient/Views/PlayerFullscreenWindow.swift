@@ -80,7 +80,11 @@ final class PlayerFullscreenWindow {
 
 /// 全屏窗口子类：类名包含 Fullscreen，让 AppDelegate 的窗口特判自动生效
 /// （不接管 delegate、关闭放行、排除出 mainWindow 查找）。
-private final class CustomFullscreenWindow: NSWindow {}
+private final class CustomFullscreenWindow: NSWindow {
+    /// 无边框窗口默认不能成为 key 窗口，导致全屏下收不到键盘事件
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
 
 /// 全屏窗口内容：渲染层 + 弹幕层 + 控制条，共用主窗口的 PlayerController 与弹幕引擎。
 private struct FullscreenPlayerView: View {

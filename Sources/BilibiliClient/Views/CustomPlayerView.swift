@@ -50,6 +50,7 @@ final class PlayerLayerView: NSView {
     /// 右方向键长按 2 倍速快进
     private var holdTask: Task<Void, Never>?
     private var resignObserver: NSObjectProtocol?
+    private var becomeKeyObserver: NSObjectProtocol?
     private var rightKeyHeld = false
     private var holdTriggered = false
     private var rateBeforeHold: Float = 1
@@ -77,6 +78,9 @@ final class PlayerLayerView: NSView {
         if let resignObserver {
             NotificationCenter.default.removeObserver(resignObserver)
         }
+        if let becomeKeyObserver {
+            NotificationCenter.default.removeObserver(becomeKeyObserver)
+        }
     }
 
     override func layout() {
@@ -94,13 +98,37 @@ final class PlayerLayerView: NSView {
             ) { [weak self] _ in
                 self?.cancelHold()
             }
+            // 窗口成为 key 时把键盘焦点给播放器：全屏下无需先点击即可用快捷键
+            becomeKeyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.makeFirstResponderIfNeeded()
+            }
+            if window.isKeyWindow {
+                makeFirstResponderIfNeeded()
+            }
         } else {
             if let resignObserver {
                 NotificationCenter.default.removeObserver(resignObserver)
             }
             resignObserver = nil
+            if let becomeKeyObserver {
+                NotificationCenter.default.removeObserver(becomeKeyObserver)
+            }
+            becomeKeyObserver = nil
             cancelHold()
         }
+    }
+
+    /// 键盘焦点给播放器视图，保证全屏下快捷键立即可用；不抢正在编辑的输入框。
+    private func makeFirstResponderIfNeeded() {
+        guard let window, window.firstResponder !== self else { return }
+        if let current = window.firstResponder as? NSView {
+            if current is NSTextField || current is NSTextView { return }
+        }
+        window.makeFirstResponder(self)
     }
 
     // MARK: - 键盘与点击
