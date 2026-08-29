@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// 自定义全屏播放窗口：进入系统全屏 space，窗口内自带渲染层/控制条/弹幕层。
-/// 不再使用 AVKit 原生全屏，从根上避免视图搬移与双驱动导致的全屏卡顿。
+/// 自定义全屏播放窗口：窗口先落在视频原位，再调用系统原生 toggleFullScreen，
+/// 由系统动画从当前位置丝滑放大到全屏 space；窗口内自带渲染层/控制条/弹幕层。
+/// 不使用 AVKit 的 AVPlayerView，从根上避免视图搬移与双驱动导致的全屏卡顿。
 @MainActor
 final class PlayerFullscreenWindow {
     private var window: NSWindow?
@@ -12,12 +13,18 @@ final class PlayerFullscreenWindow {
 
     func open(playerController: PlayerController,
               engine: DanmakuEngine,
+              startFrame: CGRect = .zero,
               onClose: @escaping () -> Void) {
         close()
         self.onClose = onClose
 
+        // 起始 frame 取视频原位；未取到时退回整屏，保证全屏仍可用
+        let frame = startFrame.width >= 8 && startFrame.height >= 8
+            ? startFrame
+            : (NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1280, height: 720))
+
         let window = CustomFullscreenWindow(
-            contentRect: NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1280, height: 720),
+            contentRect: frame,
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -46,8 +53,12 @@ final class PlayerFullscreenWindow {
             }
         }
 
+        // 先让窗口出现在视频原位，下一主线程周期再触发系统原生全屏动画
         window.makeKeyAndOrderFront(nil)
-        window.toggleFullScreen(nil)
+        Task { @MainActor [weak self] in
+            guard let self, let w = self.window, w === window, w.isVisible else { return }
+            w.toggleFullScreen(nil)
+        }
     }
 
     /// 关闭全屏窗口（退出系统全屏 space 后由通知收尾）。

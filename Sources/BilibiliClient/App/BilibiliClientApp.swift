@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             $0.identifier?.rawValue == "main" && !$0.styleMask.contains(.fullScreen)
         } ?? NSApp.windows.first {
             !($0 is NSPanel) && !$0.styleMask.contains(.fullScreen)
+                && !Self.isSystemFullscreenWindow($0)
         }
     }
 

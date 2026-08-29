@@ -11,6 +11,8 @@ struct VideoDetailView: View {
     @State private var isFullscreen = false
     @State private var controlsVisible = true
     @State private var fullscreenPlayer: PlayerFullscreenWindow?
+    /// 视频区域在屏幕坐标中的 frame：作为系统全屏动画的起始位置
+    @State private var playerScreenFrame = CGRect.zero
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
@@ -259,6 +261,13 @@ struct VideoDetailView: View {
         }
         .aspectRatio(16 / 9, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(
+            ScreenFrameAnchor { frame in
+                if playerScreenFrame != frame {
+                    playerScreenFrame = frame
+                }
+            }
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
@@ -570,14 +579,17 @@ struct VideoDetailView: View {
         isLoadingComments = false
     }
 
-    /// 切换自定义全屏：全屏窗口复用主窗口的 PlayerController 与弹幕引擎。
+    /// 切换全屏：全屏窗口复用主窗口的 PlayerController 与弹幕引擎，
+    /// 起始 frame 取视频原位，由系统原生动画从当前位置放大到全屏。
     private func toggleFullscreen() {
         guard player.state == .ready, player.player != nil else { return }
         if isFullscreen {
             fullscreenPlayer?.close()
         } else {
             let window = PlayerFullscreenWindow()
-            window.open(playerController: player, engine: danmaku) {
+            window.open(playerController: player,
+                        engine: danmaku,
+                        startFrame: playerScreenFrame) {
                 self.isFullscreen = false
             }
             fullscreenPlayer = window
@@ -597,5 +609,42 @@ struct VideoDetailView: View {
     private func retryPlayer() async {
         guard let view = detail?.view else { return }
         await player.retry(aid: view.aid, bvid: view.bvid, cid: view.cid)
+    }
+}
+
+/// 捕获视图在屏幕坐标中的 frame，作为系统全屏动画的起始位置。
+private struct ScreenFrameAnchor: NSViewRepresentable {
+    let onFrame: (CGRect) -> Void
+
+    func makeNSView(context: Context) -> FrameView {
+        FrameView(onFrame: onFrame)
+    }
+
+    func updateNSView(_ nsView: FrameView, context: Context) {
+        nsView.onFrame = onFrame
+        nsView.report()
+    }
+
+    final class FrameView: NSView {
+        var onFrame: (CGRect) -> Void
+
+        init(onFrame: @escaping (CGRect) -> Void) {
+            self.onFrame = onFrame
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func layout() {
+            super.layout()
+            report()
+        }
+
+        func report() {
+            guard let window else { return }
+            onFrame(window.convertToScreen(convert(bounds, to: nil)))
+        }
     }
 }
