@@ -10,6 +10,10 @@ final class PlayerController: ObservableObject {
     @Published var errorMessage: String?
     @Published var qualities: [Quality] = []
     @Published var currentQualityId: Int?
+    /// 控制条展示用：当前播放时间 / 总时长 / 播放状态
+    @Published var currentTime: Double = 0
+    @Published var duration: Double = 0
+    @Published var isPlaying = false
 
     enum LoadState {
         case idle
@@ -30,10 +34,51 @@ final class PlayerController: ObservableObject {
     private var cid = 0
     private var loadedKey: String?
     private var reportTask: Task<Void, Never>?
+    /// 当前播放流地址：大幅 seek 后自动刷新播放状态时，用同一地址重建播放条目。
+    private var currentStreamURL: URL?
+    /// 大幅 seek 自动刷新：轮询播放时间，检测大跳变后重建播放条目，避免 seek 后解码状态异常卡顿。
+    private var seekMonitorTimer: Timer?
+    private var lastSeenPlaybackTime: Double = 0
+    private var isSeekRecovering = false
+    private var seekRecoveryTask: Task<Void, Never>?
+    /// 控制条时间/状态观察者
+    private var playbackObserver: Any?
+    private var statusObservation: NSKeyValueObservation?
+    private var durationObservation: NSKeyValueObservation?
+    /// 播放时间跳变超过该秒数视为大幅快进/快退，触发一次自动刷新
+    private static let seekJumpThreshold: Double = 15
 
     var currentQualityName: String? {
         guard let currentQualityId else { return nil }
         return qualities.first { $0.id == currentQualityId }?.name
+    }
+
+    // MARK: - 控制条操作
+
+    func togglePlay() {
+        guard let player else { return }
+        if player.timeControlStatus == .playing {
+            player.pause()
+        } else {
+            player.play()
+        }
+    }
+
+    func seek(to seconds: Double) {
+        guard let player else { return }
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600),
+                    toleranceBefore: .zero,
+                    toleranceAfter: .zero)
+    }
+
+    func skip(by seconds: Double) {
+        guard let player else { return }
+        let target = player.currentTime().seconds + seconds
+        seek(to: max(target, 0))
+    }
+
+    func setVolume(_ value: Double) {
+        player?.volume = Float(value)
     }
 
     func load(aid: Int, bvid: String, cid: Int) async {
@@ -120,6 +165,9 @@ final class PlayerController: ObservableObject {
             player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
+            currentStreamURL = url
+            startSeekRecoveryMonitoring()
+            startPlaybackMonitoring()
             state = .ready
             startReportLoop()
             return
@@ -155,6 +203,9 @@ final class PlayerController: ObservableObject {
             player = AVPlayer(url: url)
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
+            currentStreamURL = url
+            startSeekRecoveryMonitoring()
+            startPlaybackMonitoring()
             startReportLoop()
             return nil
         } catch {
@@ -185,9 +236,136 @@ final class PlayerController: ObservableObject {
     }
 
     private func teardownPlayer() {
+        stopSeekRecoveryMonitoring()
+        stopPlaybackMonitoring()
         player?.pause()
         player = nil
         proxy.stop()
+        currentStreamURL = nil
+    }
+
+    // MARK: - 大幅 seek 自动刷新
+
+    /// 每 0.5s 采样一次播放时间；发现大幅跳变（快进/快退）后，
+    /// 等待时间稳定，再用同一流地址重建播放条目并回到目标时间继续播放，
+    /// 等价于一次“刷新”，避免 seek 后解码/代理状态异常导致长时间卡顿。
+    private func startSeekRecoveryMonitoring() {
+        stopSeekRecoveryMonitoring()
+        lastSeenPlaybackTime = 0
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.checkPlaybackTimeJump()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        seekMonitorTimer = timer
+    }
+
+    private func stopSeekRecoveryMonitoring() {
+        seekMonitorTimer?.invalidate()
+        seekMonitorTimer = nil
+        seekRecoveryTask?.cancel()
+        seekRecoveryTask = nil
+        isSeekRecovering = false
+    }
+
+    /// 控制条数据观察：播放时间（0.25s）、播放状态、总时长。
+    private func startPlaybackMonitoring() {
+        stopPlaybackMonitoring()
+        guard let player else { return }
+        playbackObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
+            let seconds = time.seconds
+            Task { @MainActor in
+                self?.currentTime = seconds
+            }
+        }
+        statusObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
+            let playing = player.timeControlStatus == .playing
+            Task { @MainActor in
+                self?.isPlaying = playing
+            }
+        }
+        durationObservation = player.currentItem?.observe(\.duration, options: [.initial, .new]) { [weak self] item, _ in
+            let d = item.duration.seconds
+            Task { @MainActor in
+                self?.duration = d.isFinite ? d : 0
+            }
+        }
+        if let d = player.currentItem?.duration.seconds, d.isFinite {
+            duration = d
+        }
+    }
+
+    private func stopPlaybackMonitoring() {
+        if let playbackObserver, let player {
+            player.removeTimeObserver(playbackObserver)
+        }
+        playbackObserver = nil
+        statusObservation?.invalidate()
+        statusObservation = nil
+        durationObservation?.invalidate()
+        durationObservation = nil
+    }
+
+    private func checkPlaybackTimeJump() {
+        guard !isSeekRecovering, let player else { return }
+        let time = player.currentTime().seconds
+        guard time.isFinite, time >= 0 else { return }
+        guard lastSeenPlaybackTime > 0 else {
+            lastSeenPlaybackTime = time
+            return
+        }
+        let jump = abs(time - lastSeenPlaybackTime)
+        lastSeenPlaybackTime = time
+        guard jump >= Self.seekJumpThreshold else { return }
+        scheduleSeekRecovery(to: time)
+    }
+
+    private func scheduleSeekRecovery(to target: Double) {
+        guard !isSeekRecovering else { return }
+        isSeekRecovering = true
+        seekRecoveryTask?.cancel()
+        seekRecoveryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // 等 seek 完成、播放时间稳定后再刷新，避免打断连续拖动
+            var settled = target
+            for _ in 0..<10 {
+                try? await Task.sleep(for: .milliseconds(150))
+                guard !Task.isCancelled else { return }
+                guard let player = self.player else {
+                    self.isSeekRecovering = false
+                    return
+                }
+                let t = player.currentTime().seconds
+                if t.isFinite, abs(t - settled) < 1 {
+                    break
+                }
+                settled = t
+            }
+            await self.performSeekRecovery(to: settled)
+        }
+    }
+
+    /// 用同一流地址重建播放条目并回到目标时间，保持原播放/暂停状态。
+    private func performSeekRecovery(to target: Double) async {
+        guard let player, let url = currentStreamURL else {
+            isSeekRecovering = false
+            return
+        }
+        let wasPlaying = player.timeControlStatus == .playing
+        player.pause()
+        let item = AVPlayerItem(asset: AVURLAsset(url: url, options: httpAssetOptions()))
+        player.replaceCurrentItem(with: item)
+        startPlaybackMonitoring()
+        await player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        if wasPlaying {
+            player.play()
+        }
+        lastSeenPlaybackTime = target
+        isSeekRecovering = false
     }
 
     /// 在线流式兜底：通过本地代理把 CDN 字节流持续转发给 AVPlayer，
@@ -203,6 +381,9 @@ final class PlayerController: ObservableObject {
             player = AVPlayer(url: streamURL)
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
+            currentStreamURL = streamURL
+            startSeekRecoveryMonitoring()
+            startPlaybackMonitoring()
             return true
         } catch {
             return false
