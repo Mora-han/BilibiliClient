@@ -55,11 +55,22 @@ final class PlayerController: ObservableObject {
         }
     }
 
-    func seek(to seconds: Double) {
-        guard let player else { return }
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600),
-                    toleranceBefore: .zero,
-                    toleranceAfter: .zero)
+    func seek(to seconds: Double, completion: ((Bool) -> Void)? = nil) {
+        guard let player else {
+            completion?(false)
+            return
+        }
+        let time = CMTime(seconds: seconds, preferredTimescale: 600)
+        if let completion {
+            player.seek(to: time,
+                        toleranceBefore: .zero,
+                        toleranceAfter: .zero,
+                        completionHandler: completion)
+        } else {
+            player.seek(to: time,
+                        toleranceBefore: .zero,
+                        toleranceAfter: .zero)
+        }
     }
 
     func skip(by seconds: Double) {

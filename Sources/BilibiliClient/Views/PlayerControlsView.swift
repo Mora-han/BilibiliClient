@@ -17,7 +17,9 @@ struct PlayerControlsView: View {
     @State private var scrubValue: Double = 0
     /// 松开滑块后等待 seek 完成期间，滑块保持显示的目标位置
     @State private var pendingSeek: Double?
-    @State private var seekTask: Task<Void, Never>?
+    /// seek 序号：用于忽略被新 seek 打断的旧回调
+    @State private var seekGeneration = 0
+    @State private var seekTimeoutTask: Task<Void, Never>?
     /// 鼠标活动时间戳（普通引用，不触发 SwiftUI 更新，避免高频 hover 重绘）
     @State private var monitor = InteractionMonitor()
 
@@ -44,8 +46,8 @@ struct PlayerControlsView: View {
         .onDisappear {
             hideTimer?.invalidate()
             hideTimer = nil
-            seekTask?.cancel()
-            seekTask = nil
+            seekTimeoutTask?.cancel()
+            seekTimeoutTask = nil
         }
     }
 
@@ -134,13 +136,13 @@ struct PlayerControlsView: View {
             onEditingChanged: { editing in
                 if editing {
                     isScrubbing = true
-                    seekTask?.cancel()
-                    seekTask = nil
+                    seekTimeoutTask?.cancel()
+                    seekTimeoutTask = nil
+                    seekGeneration += 1
                     pendingSeek = nil
                     scrubValue = player.currentTime
                 } else {
                     isScrubbing = false
-                    player.seek(to: scrubValue)
                     waitForSeek(to: scrubValue)
                 }
                 bumpActivity()
@@ -151,18 +153,26 @@ struct PlayerControlsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// 轮询播放时间直到到达目标位置后清除 pendingSeek，让滑块平滑停在目标处。
+    /// 发起 seek，并在 seek 真正完成后释放滑块：首帧 seek 需要缓冲，
+    /// 以完成回调为准，避免松开后滑块先回跳再瞬移。
     private func waitForSeek(to target: Double) {
-        seekTask?.cancel()
+        seekTimeoutTask?.cancel()
+        seekGeneration += 1
+        let gen = seekGeneration
         pendingSeek = target
-        seekTask = Task { @MainActor in
-            for _ in 0..<40 {
-                try? await Task.sleep(for: .milliseconds(50))
-                if Task.isCancelled { return }
-                let t = player.player?.currentTime().seconds ?? 0
-                if t.isFinite, abs(t - target) < 0.15 { break }
+        player.seek(to: target) { _ in
+            Task { @MainActor in
+                if gen == seekGeneration {
+                    pendingSeek = nil
+                }
             }
-            pendingSeek = nil
+        }
+        // 兜底：seek 无法完成（如目标不可达）时也释放滑块
+        seekTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled, gen == seekGeneration {
+                pendingSeek = nil
+            }
         }
     }
 
