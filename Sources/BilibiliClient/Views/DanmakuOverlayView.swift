@@ -83,8 +83,9 @@ final class DanmakuOverlayNSView: NSView {
         if shouldRun {
             guard link == nil else { return }
             let newLink = displayLink(target: self, selector: #selector(frameTick))
-            // 30fps 足够：弹幕位置只做图层位移，观感平滑且几乎不占性能
-            newLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 30)
+            // 跟随显示器原生刷新率（60/120/160Hz）：弹幕只是图层位移，
+            // 高刷下每帧开销依然极低，不影响视频渲染
+            newLink.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 160)
             newLink.add(to: .main, forMode: .common)
             link = newLink
         } else {
