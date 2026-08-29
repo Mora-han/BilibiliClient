@@ -7,11 +7,12 @@ struct PlayerControlsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @AppStorage("playerBarStyle") private var barStyle = PlayerBarStyle.floating.rawValue
+    /// 控制条可见性：由外部持有，单击视频画面可切换
+    @Binding var controlsVisible: Bool
     /// 当前是否在全屏窗口内（决定全屏按钮图标与动作方向）
     let isFullscreen: Bool
     let onToggleFullscreen: () -> Void
 
-    @State private var controlsVisible = true
     @State private var hideTimer: Timer?
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
@@ -234,7 +235,7 @@ struct PlayerControlsView: View {
         hideTimer = Timer(timeInterval: 1, repeats: true) { _ in
             Task { @MainActor in
                 guard controlsVisible, !isScrubbing else { return }
-                if Date().timeIntervalSince(monitor.lastActivity) > 3 {
+                if Date().timeIntervalSince(monitor.lastActivity) > 5 {
                     withAnimation(.easeOut(duration: 0.25)) {
                         controlsVisible = false
                     }

@@ -9,6 +9,7 @@ struct VideoDetailView: View {
     @State private var danmaku = DanmakuEngine()
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @State private var isFullscreen = false
+    @State private var controlsVisible = true
     @State private var fullscreenPlayer: PlayerFullscreenWindow?
     @State private var liked = false
     @State private var coined = false
@@ -232,14 +233,16 @@ struct VideoDetailView: View {
                         } else {
                             ZStack {
                                 CustomPlayerView(player: avPlayer,
+                                                 autofocus: true,
                                                  onSpace: { player.togglePlay() },
                                                  onSkip: { player.skip(by: $0) },
-                                                 onSingleClick: { player.togglePlay() },
+                                                 onSingleClick: { controlsVisible.toggle() },
                                                  onDoubleClick: { toggleFullscreen() })
                                 DanmakuOverlayView(engine: danmaku,
                                                    player: avPlayer,
                                                    enabled: danmakuEnabled)
                                 PlayerControlsView(player: player,
+                                                   controlsVisible: $controlsVisible,
                                                    isFullscreen: false,
                                                    onToggleFullscreen: toggleFullscreen)
                             }

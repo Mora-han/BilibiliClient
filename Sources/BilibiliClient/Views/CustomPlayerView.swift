@@ -6,6 +6,8 @@ import SwiftUI
 /// 完全绕开 AVKit 的 AVPlayerView（系统控制条与系统全屏黑盒行为）。
 struct CustomPlayerView: NSViewRepresentable {
     let player: AVPlayer
+    /// 挂载后自动把键盘焦点给播放器（进入视频即可用快捷键）
+    var autofocus: Bool = false
     /// 空格键：播放/暂停
     var onSpace: (() -> Void)? = nil
     /// 左右方向键：快进/快退（正负秒数）
@@ -18,6 +20,7 @@ struct CustomPlayerView: NSViewRepresentable {
     func makeNSView(context: Context) -> PlayerLayerView {
         let view = PlayerLayerView()
         view.player = player
+        view.autofocus = autofocus
         view.onSpace = onSpace
         view.onSkip = onSkip
         view.onSingleClick = onSingleClick
@@ -29,6 +32,7 @@ struct CustomPlayerView: NSViewRepresentable {
         if nsView.player !== player {
             nsView.player = player
         }
+        nsView.autofocus = autofocus
         nsView.onSpace = onSpace
         nsView.onSkip = onSkip
         nsView.onSingleClick = onSingleClick
@@ -46,6 +50,13 @@ final class PlayerLayerView: NSView {
     var onSkip: ((Double) -> Void)?
     var onSingleClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
+    var autofocus = false {
+        didSet {
+            if autofocus && !oldValue {
+                makeFirstResponderIfNeeded()
+            }
+        }
+    }
     private var singleClickTask: Task<Void, Never>?
     /// 右方向键长按 2 倍速快进
     private var holdTask: Task<Void, Never>?
@@ -91,6 +102,10 @@ final class PlayerLayerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let window {
+            if autofocus {
+                // 视图挂载即聚焦（窗口尚未成为 key 时先设定 firstResponder）
+                makeFirstResponderIfNeeded()
+            }
             resignObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didResignKeyNotification,
                 object: window,

@@ -91,6 +91,7 @@ private struct FullscreenPlayerView: View {
     @ObservedObject var playerController: PlayerController
     let engine: DanmakuEngine
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
+    @State private var controlsVisible = true
     let onExit: () -> Void
 
     var body: some View {
@@ -98,13 +99,15 @@ private struct FullscreenPlayerView: View {
             Color.black
             if let player = playerController.player {
                 CustomPlayerView(player: player,
+                                 autofocus: true,
                                  onSpace: { playerController.togglePlay() },
                                  onSkip: { playerController.skip(by: $0) },
-                                 onSingleClick: { playerController.togglePlay() },
+                                 onSingleClick: { controlsVisible.toggle() },
                                  onDoubleClick: onExit)
                 DanmakuOverlayView(engine: engine, player: player, enabled: danmakuEnabled)
             }
             PlayerControlsView(player: playerController,
+                               controlsVisible: $controlsVisible,
                                isFullscreen: true,
                                onToggleFullscreen: onExit)
         }

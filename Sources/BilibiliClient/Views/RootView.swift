@@ -106,6 +106,11 @@ struct RootView: View {
             // 绑定主窗口代理，用于“关闭窗口”行为（完全退出 / 菜单栏模式 / 询问）
             if let window = NSApp.windows.first(where: { $0.isVisible && !($0 is NSPanel) }) {
                 window.delegate = AppDelegate.shared
+                // macOS 会把窗口内第一个输入框（顶部搜索框）自动设为焦点，
+                // 启动时清掉，避免键盘快捷键被搜索框吞掉
+                DispatchQueue.main.async {
+                    window.makeFirstResponder(nil)
+                }
             }
         }
     }
