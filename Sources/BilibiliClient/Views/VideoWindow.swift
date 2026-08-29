@@ -1,16 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// 视频独立窗口：日常以“子窗口”形式嵌入主窗口的视频区域（随主窗口移动/缩放/
-/// 隐藏，像嵌在主窗口里一样）；全屏时直接对该窗口调用系统原生 toggleFullScreen，
+/// 视频独立窗口：日常以“子窗口”形式嵌入主窗口的视频区域（随滚动/缩放/移动对齐，
+/// 滚出屏幕自动隐藏）；全屏时直接对该窗口调用系统原生 toggleFullScreen，
 /// 由系统动画从视频当前位置丝滑放大到全屏 Space。渲染层/弹幕/控制条都在
 /// 同一个窗口里，未来可直接扩展为独立窗口模式。
+///
+/// 内容布局与原来页面内嵌播放器完全一致（CustomPlayerView + 弹幕层 + 控制条 +
+/// 右上角弹幕开关），窗口只负责承载，不改变任何 UI 或交互。
 @MainActor
 final class VideoWindow {
     private var window: NSWindow?
     private var contentHost: NSHostingView<VideoWindowContent>?
     private weak var parentWindow: NSWindow?
     private var lastEmbedFrame: CGRect = .zero
+    private var lastVisible = false
     private var observers: [NSObjectProtocol] = []
     private let closeGuard = VideoWindowCloseGuard()
     /// 正在退出全屏并销毁窗口，避免退出全屏回调又把它“重新嵌入”
@@ -21,14 +25,20 @@ final class VideoWindow {
     var isFullscreen: Bool { window?.styleMask.contains(.fullScreen) ?? false }
 
     /// 打开：以子窗口形式嵌入主窗口的视频区域（frame 为屏幕坐标）。
+    /// 幂等：已打开时只校准位置，不会重复建窗（避免残留黑窗口）。
     func open(playerController: PlayerController,
               engine: DanmakuEngine,
               parent: NSWindow,
               frame: CGRect) {
+        if isOpen {
+            updateEmbedFrame(frame)
+            return
+        }
         forceClose()
         closing = false
         self.parentWindow = parent
         lastEmbedFrame = frame
+        lastVisible = false
 
         let window = VideoFullscreenWindow(
             contentRect: frame,
@@ -51,9 +61,6 @@ final class VideoWindow {
             state: state,
             onToggleFullscreen: { [weak self] in self?.toggleFullscreen() }
         ))
-        host.wantsLayer = true
-        host.layer?.cornerRadius = 16
-        host.layer?.masksToBounds = true
         window.contentView = host
         contentHost = host
         self.window = window
@@ -65,7 +72,6 @@ final class VideoWindow {
                 guard let self, let window, self.window === window else { return }
                 self.closing = false
                 self.state.isFullscreen = true
-                self.contentHost?.layer?.cornerRadius = 0
             }
         })
         observers.append(NotificationCenter.default.addObserver(
@@ -78,7 +84,6 @@ final class VideoWindow {
                     self.finish(window)
                 } else {
                     self.state.isFullscreen = false
-                    self.contentHost?.layer?.cornerRadius = 16
                     self.reattachEmbed()
                 }
             }
@@ -98,6 +103,9 @@ final class VideoWindow {
     }
 
     /// 主窗口视频区域位置变化（滚动/缩放/移动）时更新嵌入位置。
+    /// 仅在 frame 真正变化时才动窗口：纯移动用 setFrameOrigin（轻量，
+    /// 不触发重绘），尺寸变化才 setFrame(display: false)，避免连续
+    /// 重绘导致的卡顿与闪烁。
     func updateEmbedFrame(_ screenFrame: CGRect) {
         guard screenFrame.width >= 4, screenFrame.height >= 4 else {
             lastEmbedFrame = .zero
@@ -106,8 +114,15 @@ final class VideoWindow {
         }
         lastEmbedFrame = screenFrame
         guard let window, !isFullscreen else { return }
-        window.setFrame(screenFrame, display: true)
-        updateVisibility()
+        let current = window.frame
+        if !framesEqual(current, screenFrame) {
+            if sizesEqual(current.size, screenFrame.size) {
+                window.setFrameOrigin(screenFrame.origin)
+            } else {
+                window.setFrame(screenFrame, display: false)
+            }
+            updateVisibility()
+        }
     }
 
     /// 切换系统原生全屏（进入/退出都由系统动画处理）。
@@ -123,17 +138,20 @@ final class VideoWindow {
 
     // MARK: - 内部
 
+    /// 嵌入区域是否仍在主窗口可视范围内；状态不变时不重复 orderFront/orderOut。
     private func updateVisibility() {
         guard let window, let parent = parentWindow else { return }
         if isFullscreen {
             if !window.isVisible { window.orderFront(nil) }
+            lastVisible = true
             return
         }
-        // 视频区域仍在主窗口可视范围内才显示，滚出屏幕即隐藏
         let visible = lastEmbedFrame.width > 0 && lastEmbedFrame.intersects(parent.frame)
+        guard visible != lastVisible else { return }
+        lastVisible = visible
         if visible {
-            if !window.isVisible { window.orderFront(nil) }
-        } else if window.isVisible {
+            window.orderFront(nil)
+        } else {
             window.orderOut(nil)
         }
     }
@@ -145,7 +163,7 @@ final class VideoWindow {
             parent.addChildWindow(window, ordered: .above)
         }
         if lastEmbedFrame.width > 0 {
-            window.setFrame(lastEmbedFrame, display: true)
+            window.setFrame(lastEmbedFrame, display: false)
         }
         updateVisibility()
     }
@@ -167,12 +185,14 @@ final class VideoWindow {
         finish(window)
     }
 
+    /// 统一收尾：移除父子关系 → 隐藏 → 关闭 → 清空引用与观察者。
     private func finish(_ window: NSWindow) {
         guard self.window === window else { return }
         self.window = nil
         contentHost = nil
         parentWindow = nil
         closing = false
+        lastVisible = false
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -180,7 +200,20 @@ final class VideoWindow {
         if window.parent != nil {
             window.parent?.removeChildWindow(window)
         }
+        if window.isVisible {
+            window.orderOut(nil)
+        }
         window.close()
+    }
+
+    private func framesEqual(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.origin.x - b.origin.x) < 0.5
+            && abs(a.origin.y - b.origin.y) < 0.5
+            && sizesEqual(a.size, b.size)
+    }
+
+    private func sizesEqual(_ a: CGSize, _ b: CGSize) -> Bool {
+        abs(a.width - b.width) < 0.5 && abs(a.height - b.height) < 0.5
     }
 }
 
@@ -190,7 +223,8 @@ final class VideoWindowState: ObservableObject {
     @Published var isFullscreen = false
 }
 
-/// 视频窗口内容：渲染层 + 弹幕层 + 控制条 + 弹幕开关。
+/// 视频窗口内容：与原来页面内嵌播放器完全一致——
+/// 渲染层 + 弹幕层 + 控制条 + 右上角弹幕开关，仅改变承载容器。
 private struct VideoWindowContent: View {
     @ObservedObject var playerController: PlayerController
     let engine: DanmakuEngine
@@ -229,12 +263,12 @@ private struct VideoWindowContent: View {
             }
         }
         .overlay {
-            // 嵌入态才描边；全屏后由窗口内容铺满，不再保留描边
             if !state.isFullscreen {
                 RoundedRectangle(cornerRadius: 16)
                     .strokeBorder(.white.opacity(0.08), lineWidth: 1)
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: state.isFullscreen ? 0 : 16))
         .clipped()
     }
 }
@@ -263,7 +297,8 @@ private final class VideoWindowCloseGuard: NSObject, NSWindowDelegate {
 }
 
 /// 锚点：实时上报视频区域在屏幕坐标中的 frame（含滚动/窗口移动/缩放），
-/// 用于把视频窗口钉在主窗口的视频区域上。
+/// 用于把视频窗口钉在主窗口的视频区域上。仅在 frame 真正变化时上报，
+/// 避免布局/重绘触发的大量重复 setFrame。
 struct FrameReporter: NSViewRepresentable {
     let onFrame: (CGRect) -> Void
 
@@ -280,6 +315,7 @@ struct FrameReporter: NSViewRepresentable {
 
     final class FrameView: NSView {
         var onFrame: (CGRect) -> Void = { _ in }
+        private var lastReported: CGRect?
         private var windowObservers: [NSObjectProtocol] = []
         private var scrollObserver: NSObjectProtocol?
 
@@ -332,7 +368,22 @@ struct FrameReporter: NSViewRepresentable {
 
         func report() {
             guard let window else { return }
-            onFrame(window.convertToScreen(convert(bounds, to: nil)))
+            let frame = window.convertToScreen(convert(bounds, to: nil))
+            guard frame.width >= 4, frame.height >= 4 else {
+                lastReported = nil
+                return
+            }
+            // 与上次一致时跳过，避免重复 setFrame 造成卡顿/闪烁
+            if let lastReported, framesEqual(lastReported, frame) { return }
+            lastReported = frame
+            onFrame(frame)
+        }
+
+        private func framesEqual(_ a: CGRect, _ b: CGRect) -> Bool {
+            abs(a.origin.x - b.origin.x) < 0.5
+                && abs(a.origin.y - b.origin.y) < 0.5
+                && abs(a.width - b.width) < 0.5
+                && abs(a.height - b.height) < 0.5
         }
     }
 }

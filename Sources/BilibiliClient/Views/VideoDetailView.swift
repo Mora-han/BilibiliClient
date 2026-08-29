@@ -552,9 +552,14 @@ struct VideoDetailView: View {
     }
 
     /// 打开视频子窗口并钉在播放区域（由 FrameReporter 持续校准位置）。
+    /// 幂等：已打开时只更新位置，避免重复建窗导致残留黑窗口与双渲染卡顿。
     private func openVideoWindow(at frame: CGRect) {
         guard player.state == .ready, player.player != nil,
               let window = AppDelegate.mainWindow() else { return }
+        if let existing = videoWindow, existing.isOpen {
+            existing.updateEmbedFrame(frame)
+            return
+        }
         let vw = VideoWindow()
         videoWindow = vw
         vw.open(playerController: player, engine: danmaku, parent: window, frame: frame)
