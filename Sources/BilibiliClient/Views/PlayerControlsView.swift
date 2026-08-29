@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 自研播放器控制条：替换 AVKit 系统控制条。
-/// 鼠标活动时显示，静止数秒后淡出；所有交互都走 PlayerController。
+/// 显示后 5 秒自动淡出；鼠标移动不唤起，仅点击画面可切换显隐。
 struct PlayerControlsView: View {
     @ObservedObject var player: PlayerController
     @Environment(\.colorScheme) private var colorScheme
@@ -21,15 +21,14 @@ struct PlayerControlsView: View {
     /// seek 序号：用于忽略被新 seek 打断的旧回调
     @State private var seekGeneration = 0
     @State private var seekTimeoutTask: Task<Void, Never>?
-    /// 鼠标活动时间戳（普通引用，不触发 SwiftUI 更新，避免高频 hover 重绘）
-    @State private var monitor = InteractionMonitor()
+    /// 控制条本次可见的起始时间：5 秒后自动隐藏
+    @State private var visibleSince: Date = .now
 
     private var isDark: Bool { colorScheme == .dark }
 
     var body: some View {
         ZStack {
-            // 透明占位：点击穿透到视频层（PlayerLayerView 处理单击/双击），
-            // 同时保持 hover 区域覆盖整个播放器
+            // 透明占位：点击穿透到视频层（PlayerLayerView 处理单击/双击）
             Color.clear
                 .allowsHitTesting(false)
 
@@ -37,13 +36,13 @@ struct PlayerControlsView: View {
                 controlBar
             }
         }
-        .onContinuousHover { phase in
-            switch phase {
-            case .active, .ended:
-                bumpActivity()
-            }
+        .onChange(of: controlsVisible) { _, newValue in
+            if newValue { visibleSince = .now }
         }
-        .onAppear(perform: startHideTimer)
+        .onAppear {
+            visibleSince = .now
+            startHideTimer()
+        }
         .onDisappear {
             hideTimer?.invalidate()
             hideTimer = nil
@@ -222,7 +221,8 @@ struct PlayerControlsView: View {
     // MARK: - 自动隐藏
 
     private func bumpActivity() {
-        monitor.lastActivity = Date()
+        // 交互（点按钮/拖进度条）重置隐藏计时；鼠标悬停不再触发
+        visibleSince = .now
         if !controlsVisible {
             withAnimation(.easeOut(duration: 0.15)) {
                 controlsVisible = true
@@ -235,17 +235,12 @@ struct PlayerControlsView: View {
         hideTimer = Timer(timeInterval: 1, repeats: true) { _ in
             Task { @MainActor in
                 guard controlsVisible, !isScrubbing else { return }
-                if Date().timeIntervalSince(monitor.lastActivity) > 5 {
+                if Date().timeIntervalSince(visibleSince) > 5 {
                     withAnimation(.easeOut(duration: 0.25)) {
                         controlsVisible = false
                     }
                 }
             }
         }
-    }
-
-    /// 鼠标活动记录：普通类实例，修改属性不会触发视图更新。
-    private final class InteractionMonitor {
-        var lastActivity = Date()
     }
 }
