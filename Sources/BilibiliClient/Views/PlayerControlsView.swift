@@ -15,6 +15,9 @@ struct PlayerControlsView: View {
     @State private var hideTimer: Timer?
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
+    /// 松开滑块后等待 seek 完成期间，滑块保持显示的目标位置
+    @State private var pendingSeek: Double?
+    @State private var seekTask: Task<Void, Never>?
     /// 鼠标活动时间戳（普通引用，不触发 SwiftUI 更新，避免高频 hover 重绘）
     @State private var monitor = InteractionMonitor()
 
@@ -41,6 +44,8 @@ struct PlayerControlsView: View {
         .onDisappear {
             hideTimer?.invalidate()
             hideTimer = nil
+            seekTask?.cancel()
+            seekTask = nil
         }
     }
 
@@ -117,17 +122,26 @@ struct PlayerControlsView: View {
     private var progressSlider: some View {
         Slider(
             value: Binding(
-                get: { isScrubbing ? scrubValue : player.currentTime },
+                get: {
+                    // 松开后目标位置未确认前保持显示拖到的位置，避免滑块回跳再瞬移
+                    if isScrubbing { return scrubValue }
+                    if let target = pendingSeek { return target }
+                    return player.currentTime
+                },
                 set: { scrubValue = $0 }
             ),
             in: 0...max(player.duration, 1),
             onEditingChanged: { editing in
                 if editing {
                     isScrubbing = true
+                    seekTask?.cancel()
+                    seekTask = nil
+                    pendingSeek = nil
                     scrubValue = player.currentTime
                 } else {
                     isScrubbing = false
                     player.seek(to: scrubValue)
+                    waitForSeek(to: scrubValue)
                 }
                 bumpActivity()
             }
@@ -135,6 +149,21 @@ struct PlayerControlsView: View {
         .controlSize(.small)
         .tint(.primary)
         .frame(maxWidth: .infinity)
+    }
+
+    /// 轮询播放时间直到到达目标位置后清除 pendingSeek，让滑块平滑停在目标处。
+    private func waitForSeek(to target: Double) {
+        seekTask?.cancel()
+        pendingSeek = target
+        seekTask = Task { @MainActor in
+            for _ in 0..<40 {
+                try? await Task.sleep(for: .milliseconds(50))
+                if Task.isCancelled { return }
+                let t = player.player?.currentTime().seconds ?? 0
+                if t.isFinite, abs(t - target) < 0.15 { break }
+            }
+            pendingSeek = nil
+        }
     }
 
     private var qualityMenu: some View {
