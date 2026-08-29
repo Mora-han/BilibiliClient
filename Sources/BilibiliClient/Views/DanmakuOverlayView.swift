@@ -147,16 +147,23 @@ final class DanmakuOverlayNSView: NSView {
     private func addLayer(for item: DanmakuEngine.Active, size: CGSize, scale: CGFloat, time: Double) {
         let fontSize = item.fontSize(for: size.width)
         let layer = CATextLayer()
-        layer.string = item.text
-        layer.font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
-        layer.fontSize = fontSize
+        // 黑色描边提高可读性：strokeWidth 为负值 = 填充前景色 + 描边黑色，
+        // 数值按字号百分比缩放，全屏放大后描边自动跟随变粗
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
+            .foregroundColor: item.color,
+            .strokeColor: NSColor.black,
+            .strokeWidth: -3.5,
+        ]
+        layer.string = NSAttributedString(string: item.text, attributes: attrs)
         layer.foregroundColor = item.color
         layer.alignmentMode = .center
         layer.truncationMode = .end
         layer.contentsScale = scale
+        // 描边会略超出文字宽度，层宽多留余量防止边缘被裁
         layer.bounds = CGRect(x: 0, y: 0,
-                              width: max(item.width(for: size.width), 1),
-                              height: max(fontSize * 1.35, 1))
+                              width: max(item.width(for: size.width) + 8, 1),
+                              height: max(fontSize * 1.35 + 4, 1))
         layer.position = layerPosition(for: item, in: size, time: time)
         layer.actions = [
             "position": NSNull(),

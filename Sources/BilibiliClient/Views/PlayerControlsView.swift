@@ -5,6 +5,7 @@ import SwiftUI
 struct PlayerControlsView: View {
     @ObservedObject var player: PlayerController
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
+    @AppStorage("playerBarStyle") private var barStyle = PlayerBarStyle.floating.rawValue
     /// 当前是否在全屏窗口内（决定全屏按钮图标与动作方向）
     let isFullscreen: Bool
     let onToggleFullscreen: () -> Void
@@ -13,7 +14,6 @@ struct PlayerControlsView: View {
     @State private var hideTimer: Timer?
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
-    @State private var volume: Double = 1
     /// 鼠标活动时间戳（普通引用，不触发 SwiftUI 更新，避免高频 hover 重绘）
     @State private var monitor = InteractionMonitor()
 
@@ -34,10 +34,7 @@ struct PlayerControlsView: View {
                 bumpActivity()
             }
         }
-        .onAppear {
-            volume = Double(player.player?.volume ?? 1)
-            startHideTimer()
-        }
+        .onAppear(perform: startHideTimer)
         .onDisappear {
             hideTimer?.invalidate()
             hideTimer = nil
@@ -49,36 +46,51 @@ struct PlayerControlsView: View {
     private var controlBar: some View {
         VStack {
             Spacer()
-            HStack(spacing: 10) {
-                playbackButton
-                skipButton(-15)
-                skipButton(15)
+            barContent
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+                .onTapGesture { bumpActivity() }
+                .background {
+                    if barStyle == PlayerBarStyle.floating.rawValue {
+                        // 悬浮样式：圆角液态玻璃
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.black.opacity(0.35))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(.white.opacity(0.2), lineWidth: 1)
+                                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                            }
+                    } else {
+                        // 沉底样式：经典渐变贴边
+                        LinearGradient(colors: [.black.opacity(0.65), .black.opacity(0.2)],
+                                       startPoint: .bottom, endPoint: .top)
+                    }
+                }
+                .padding(.horizontal, barStyle == PlayerBarStyle.floating.rawValue ? 12 : 0)
+                .padding(.bottom, barStyle == PlayerBarStyle.floating.rawValue ? 10 : 0)
+        }
+    }
 
-                Text(Formatters.duration(Int(player.currentTime)))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white)
-                Text("/")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
-                Text(Formatters.duration(Int(max(player.duration, 0))))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.6))
+    private var barContent: some View {
+        HStack(spacing: 10) {
+            playbackButton
 
-                progressSlider
+            Text(Formatters.duration(Int(player.currentTime)))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.white)
+            Text("/")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.6))
+            Text(Formatters.duration(Int(max(player.duration, 0))))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.6))
 
-                volumeControl
-                qualityMenu
-                DanmakuToggleButton(isOn: $danmakuEnabled)
-                fullscreenButton
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .onTapGesture { bumpActivity() }
-            .background {
-                LinearGradient(colors: [.black.opacity(0.65), .black.opacity(0.2)],
-                               startPoint: .bottom, endPoint: .top)
-            }
+            progressSlider
+
+            qualityMenu
+            DanmakuToggleButton(isOn: $danmakuEnabled)
+            fullscreenButton
         }
     }
 
@@ -94,20 +106,6 @@ struct PlayerControlsView: View {
         }
         .buttonStyle(.plain)
         .help(player.isPlaying ? "暂停" : "播放")
-    }
-
-    private func skipButton(_ seconds: Double) -> some View {
-        Button {
-            bumpActivity()
-            player.skip(by: seconds)
-        } label: {
-            Image(systemName: seconds < 0 ? "gobackward.15" : "goforward.15")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
-        }
-        .buttonStyle(.plain)
-        .help(seconds < 0 ? "后退 15 秒" : "前进 15 秒")
     }
 
     private var progressSlider: some View {
@@ -131,25 +129,6 @@ struct PlayerControlsView: View {
         .controlSize(.small)
         .tint(.white)
         .frame(maxWidth: .infinity)
-    }
-
-    private var volumeControl: some View {
-        HStack(spacing: 4) {
-            Image(systemName: volume == 0
-                  ? "speaker.slash.fill"
-                  : (volume < 0.5 ? "speaker.wave.1.fill" : "speaker.wave.2.fill"))
-                .font(.system(size: 11))
-                .foregroundStyle(.white)
-            Slider(value: $volume, in: 0...1, onEditingChanged: { editing in
-                if !editing { bumpActivity() }
-            })
-            .onChange(of: volume) { _, newValue in
-                player.setVolume(newValue)
-            }
-            .controlSize(.small)
-            .tint(.white)
-            .frame(width: 70)
-        }
     }
 
     private var qualityMenu: some View {

@@ -47,6 +47,13 @@ final class PlayerLayerView: NSView {
     var onSingleClick: (() -> Void)?
     var onDoubleClick: (() -> Void)?
     private var singleClickTask: Task<Void, Never>?
+    /// 右方向键长按 2 倍速快进
+    private var holdTask: Task<Void, Never>?
+    private var resignObserver: NSObjectProtocol?
+    private var rightKeyHeld = false
+    private var holdTriggered = false
+    private var rateBeforeHold: Float = 1
+    private var wasPlayingBeforeHold = false
 
     private let playerLayer = AVPlayerLayer()
 
@@ -66,11 +73,34 @@ final class PlayerLayerView: NSView {
 
     deinit {
         singleClickTask?.cancel()
+        holdTask?.cancel()
+        if let resignObserver {
+            NotificationCenter.default.removeObserver(resignObserver)
+        }
     }
 
     override func layout() {
         super.layout()
         playerLayer.frame = bounds
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window {
+            resignObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.cancelHold()
+            }
+        } else {
+            if let resignObserver {
+                NotificationCenter.default.removeObserver(resignObserver)
+            }
+            resignObserver = nil
+            cancelHold()
+        }
     }
 
     // MARK: - 键盘与点击
@@ -101,9 +131,70 @@ final class PlayerLayerView: NSView {
         case 123:  // ←
             onSkip?(-15)
         case 124:  // →
-            onSkip?(15)
+            // 按住期间的自动重复 keyDown 不重置长按计时
+            guard !event.isARepeat else { return }
+            rightKeyHeld = true
+            holdTriggered = false
+            holdTask?.cancel()
+            // 按住超过 400ms 判定为长按：进入 2 倍速快进；短按仍快进 15 秒
+            holdTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let self, self.rightKeyHeld, !self.holdTriggered else { return }
+                self.holdTriggered = true
+                self.beginFastForward()
+            }
         default:
             super.keyDown(with: event)
         }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        if event.keyCode == 124 {
+            holdTask?.cancel()
+            holdTask = nil
+            if holdTriggered {
+                endFastForward()
+            } else {
+                onSkip?(15)
+            }
+            rightKeyHeld = false
+            holdTriggered = false
+        } else {
+            super.keyUp(with: event)
+        }
+    }
+
+    /// 长按右方向键：进入 2 倍速（暂停时也以 2 倍速开始播放）
+    private func beginFastForward() {
+        guard let player else { return }
+        rateBeforeHold = player.rate
+        wasPlayingBeforeHold = player.timeControlStatus == .playing
+        if wasPlayingBeforeHold {
+            player.rate = 2
+        } else {
+            player.playImmediately(atRate: 2)
+        }
+    }
+
+    /// 松开右方向键：恢复按住前的播放状态
+    private func endFastForward() {
+        guard let player else { return }
+        if wasPlayingBeforeHold {
+            player.rate = rateBeforeHold > 0 ? rateBeforeHold : 1
+        } else {
+            player.pause()
+        }
+    }
+
+    /// 窗口失去焦点/移除：取消长按快进，避免倍速卡住
+    private func cancelHold() {
+        guard rightKeyHeld else { return }
+        holdTask?.cancel()
+        holdTask = nil
+        if holdTriggered {
+            endFastForward()
+        }
+        rightKeyHeld = false
+        holdTriggered = false
     }
 }

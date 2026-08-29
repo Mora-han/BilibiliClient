@@ -68,6 +68,21 @@ enum UpBarPosition: String, CaseIterable, Identifiable {
     }
 }
 
+/// 播放器底栏样式（设置项）：悬浮（液态玻璃） / 沉底（经典渐变贴边）。
+enum PlayerBarStyle: String, CaseIterable, Identifiable {
+    case floating
+    case docked
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .floating: return "悬浮"
+        case .docked: return "沉底"
+        }
+    }
+}
+
 /// 软件设置页：外观、窗口、弹幕、视频显示、缓存与关于。
 /// 采用 macOS 系统设置风格：普通分组行、无卡片玻璃材质；
 /// 选项使用系统原生弹出按钮（Picker .menu，即 NSPopUpButton），
@@ -79,6 +94,7 @@ struct SettingsView: View {
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card.rawValue
     @AppStorage("cardStyle") private var cardStyle = CardStyle.solid.rawValue
     @AppStorage("upBarPosition") private var upBarPosition = UpBarPosition.top.rawValue
+    @AppStorage("playerBarStyle") private var playerBarStyle = PlayerBarStyle.floating.rawValue
     @AppStorage("closeBehavior") private var closeBehavior = CloseBehavior.ask.rawValue
     @AppStorage("favoriteBehavior") private var favoriteBehavior = FavoriteBehavior.defaultFolder.rawValue
     @State private var cacheCleared = false
@@ -193,6 +209,16 @@ struct SettingsView: View {
             optionRow("卡片样式") {
                 Picker("卡片样式", selection: $cardStyle) {
                     ForEach(CardStyle.allCases) { style in
+                        Text(style.label).tag(style.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
+            optionRow("底栏样式") {
+                Picker("底栏样式", selection: $playerBarStyle) {
+                    ForEach(PlayerBarStyle.allCases) { style in
                         Text(style.label).tag(style.rawValue)
                     }
                 }
