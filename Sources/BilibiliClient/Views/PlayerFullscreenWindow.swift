@@ -85,7 +85,7 @@ private final class CustomFullscreenWindow: NSWindow {}
 /// 全屏窗口内容：渲染层 + 弹幕层 + 控制条，共用主窗口的 PlayerController 与弹幕引擎。
 private struct FullscreenPlayerView: View {
     @ObservedObject var playerController: PlayerController
-    @ObservedObject var engine: DanmakuEngine
+    let engine: DanmakuEngine
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     let onExit: () -> Void
 

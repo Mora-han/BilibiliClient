@@ -34,21 +34,10 @@ final class PlayerController: ObservableObject {
     private var cid = 0
     private var loadedKey: String?
     private var reportTask: Task<Void, Never>?
-    /// 当前播放流地址：大幅 seek 后自动刷新播放状态时，用同一地址重建播放条目。
-    private var currentStreamURL: URL?
     /// 控制条时间/状态观察者
     private var playbackObserver: Any?
     private var statusObservation: NSKeyValueObservation?
     private var durationObservation: NSKeyValueObservation?
-    /// 自愈保险：播放中时间停滞超过该秒数视为解码卡住，自动重建播放条目
-    private static let stallThreshold: Double = 2.0
-    /// 两次自愈之间的最小间隔，避免反复重建打断观看
-    private static let recoveryCooldown: Double = 8.0
-    private var lastProgressTime: Double = 0
-    private var stallStart: Double?
-    private var lastRecoveryAt: Double = -10
-    private var isRecovering = false
-    private var recoveryTask: Task<Void, Never>?
 
     var currentQualityName: String? {
         guard let currentQualityId else { return nil }
@@ -171,7 +160,6 @@ final class PlayerController: ObservableObject {
             player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
-            currentStreamURL = url
             startPlaybackMonitoring()
             state = .ready
             startReportLoop()
@@ -208,7 +196,6 @@ final class PlayerController: ObservableObject {
             player = AVPlayer(url: url)
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
-            currentStreamURL = url
             startPlaybackMonitoring()
             startReportLoop()
             return nil
@@ -244,13 +231,11 @@ final class PlayerController: ObservableObject {
         player?.pause()
         player = nil
         proxy.stop()
-        currentStreamURL = nil
     }
 
-    // MARK: - 播放监控与自愈保险
+    // MARK: - 播放监控
 
-    /// 播放监控：0.25s 采样一次播放时间，驱动控制条数据；
-    /// 同时检测「播放中时间停滞」异常，触发按需自愈刷新，正常观看无感。
+    /// 播放监控：0.25s 采样一次播放时间，驱动控制条数据（时间/时长/播放状态）。
     private func startPlaybackMonitoring() {
         stopPlaybackMonitoring()
         guard let player else { return }
@@ -260,17 +245,13 @@ final class PlayerController: ObservableObject {
         ) { [weak self] time in
             let seconds = time.seconds
             Task { @MainActor in
-                self?.tickPlaybackHealth(time: seconds)
+                self?.currentTime = seconds
             }
         }
         statusObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
             let playing = player.timeControlStatus == .playing
             Task { @MainActor in
                 self?.isPlaying = playing
-                if !playing {
-                    // 暂停/缓冲：清掉停滞计时，避免把正常等待误判为卡住
-                    self?.stallStart = nil
-                }
             }
         }
         durationObservation = player.currentItem?.observe(\.duration, options: [.initial, .new]) { [weak self] item, _ in
@@ -293,61 +274,6 @@ final class PlayerController: ObservableObject {
         statusObservation = nil
         durationObservation?.invalidate()
         durationObservation = nil
-        recoveryTask?.cancel()
-        recoveryTask = nil
-        isRecovering = false
-        lastProgressTime = 0
-        stallStart = nil
-    }
-
-    /// 每次采样回调：更新控制条时间，并执行自愈检查。
-    private func tickPlaybackHealth(time: Double) {
-        currentTime = time
-        guard time.isFinite, time >= 0 else { return }
-        guard let player, player.timeControlStatus == .playing else { return }
-
-        // 时间前进 → 正常；时间停滞（解码卡住）累计超过阈值 → 自愈
-        if time - lastProgressTime > 0.001 {
-            lastProgressTime = time
-            stallStart = nil
-        } else if stallStart == nil {
-            stallStart = time
-        } else if time - (stallStart ?? time) >= Self.stallThreshold {
-            triggerRecovery(to: time)
-        }
-    }
-
-    /// 触发一次自愈（带冷却，避免反复重建打断观看）。
-    private func triggerRecovery(to target: Double) {
-        guard !isRecovering else { return }
-        let now = Date().timeIntervalSinceReferenceDate
-        guard now - lastRecoveryAt >= Self.recoveryCooldown else { return }
-        lastRecoveryAt = now
-        isRecovering = true
-        recoveryTask?.cancel()
-        recoveryTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.performRecovery(to: target)
-            self.isRecovering = false
-        }
-    }
-
-    /// 用同一流地址重建播放条目并回到目标时间，保持原播放/暂停状态。
-    private func performRecovery(to target: Double) async {
-        recoveryTask = nil
-        guard let player, let url = currentStreamURL else {
-            isRecovering = false
-            return
-        }
-        let wasPlaying = player.timeControlStatus == .playing
-        player.pause()
-        let item = AVPlayerItem(asset: AVURLAsset(url: url, options: httpAssetOptions()))
-        player.replaceCurrentItem(with: item)
-        startPlaybackMonitoring()
-        await player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
-        if wasPlaying {
-            player.play()
-        }
     }
 
     /// 在线流式兜底：通过本地代理把 CDN 字节流持续转发给 AVPlayer，
@@ -363,7 +289,6 @@ final class PlayerController: ObservableObject {
             player = AVPlayer(url: streamURL)
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
-            currentStreamURL = streamURL
             startPlaybackMonitoring()
             return true
         } catch {

@@ -6,7 +6,7 @@ struct VideoDetailView: View {
 
     @EnvironmentObject private var session: SessionStore
     @StateObject private var player = PlayerController()
-    @StateObject private var danmaku = DanmakuEngine()
+    @State private var danmaku = DanmakuEngine()
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @State private var isFullscreen = false
     @State private var fullscreenPlayer: PlayerFullscreenWindow?

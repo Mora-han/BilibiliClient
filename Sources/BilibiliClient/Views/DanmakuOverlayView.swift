@@ -3,101 +3,88 @@ import AVFoundation
 import QuartzCore
 import SwiftUI
 
-/// 叠在播放器上的弹幕层：由 CADisplayLink 按显示器最高刷新率逐帧驱动引擎，
-/// 按播放时间渲染活跃弹幕（160Hz/120Hz/ProMotion 均可跑满）。
-struct DanmakuOverlayView: View {
-    @ObservedObject var engine: DanmakuEngine
+/// 弹幕渲染层：完全脱离 SwiftUI 渲染管线。
+/// 每条弹幕 = 一个 CATextLayer（文本位图由 GPU 缓存），独立 NSView 上的
+/// CADisplayLink 每帧只做轻量位置计算与 layer 属性赋值（30fps），
+/// 不触发任何 SwiftUI 视图更新或 Canvas 重绘，对视频渲染几乎零干扰。
+struct DanmakuOverlayView: NSViewRepresentable {
+    let engine: DanmakuEngine
     let player: AVPlayer
     let enabled: Bool
 
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                if enabled {
-                    // 单个 Canvas 一帧绘制所有弹幕：避免几十个 SwiftUI Text 视图
-                    // 逐帧布局/重绘，全屏大字号下依然能跑满高刷新率。
-                    Canvas { context, size in
-                        guard !engine.active.isEmpty else { return }
-                        let time = engine.renderTime
-                        // 阴影滤镜加在 drawLayer 之前，只对整层合成做一次离屏模糊；
-                        // 若逐条绘制时开滤镜，每条文字都会触发一次离屏栅格化。
-                        context.addFilter(.shadow(color: .black.opacity(0.85),
-                                                  radius: 2, x: 0, y: 1))
-                        context.drawLayer { layer in
-                            for item in engine.active {
-                                // macOS 26 SDK 中 Text.foregroundColor/foregroundStyle 会擦除类型，
-                                // 改用 AttributedString 携带字体与颜色，Text 类型保持可用。
-                                var attr = AttributedString(item.text)
-                                attr.font = .system(size: item.fontSize(for: size.width),
-                                                    weight: .medium)
-                                attr.foregroundColor = item.color
-                                layer.draw(Text(attr), at: item.position(in: size, at: time))
-                            }
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                // 逐帧回调与所在显示器刷新同步；暂停时 playerTime 不变，弹幕自然冻结
-                DisplayLinkDriver(isActive: enabled) {
-                    engine.tick(playerTime: player.currentTime().seconds, size: geo.size)
-                }
-            }
-        }
-        .onChange(of: enabled) { _, newValue in
-            if !newValue {
-                // 关闭开关：立即清掉屏幕上已有的弹幕
-                engine.clear()
-            }
-        }
-        .allowsHitTesting(false)
-        .clipped()
-    }
-}
-
-/// 用 NSView.displayLink 获取与显示器刷新同步的逐帧回调。
-private struct DisplayLinkDriver: NSViewRepresentable {
-    var isActive: Bool
-    let onTick: () -> Void
-
-    func makeNSView(context: Context) -> DisplayLinkDriverView {
-        let view = DisplayLinkDriverView()
-        view.isActive = isActive
-        view.onTick = onTick
+    func makeNSView(context: Context) -> DanmakuOverlayNSView {
+        let view = DanmakuOverlayNSView(engine: engine, player: player)
+        view.enabled = enabled
         return view
     }
 
-    func updateNSView(_ view: DisplayLinkDriverView, context: Context) {
-        view.isActive = isActive
-        view.onTick = onTick
+    func updateNSView(_ view: DanmakuOverlayNSView, context: Context) {
+        view.player = player
+        view.enabled = enabled
     }
 }
 
-private final class DisplayLinkDriverView: NSView {
-    var isActive = false {
+/// 弹幕承载视图：透明、不拦截鼠标、生命周期与窗口绑定（窗口消失即停表）。
+final class DanmakuOverlayNSView: NSView {
+    let engine: DanmakuEngine
+    weak var player: AVPlayer? {
         didSet {
-            if isActive != oldValue {
+            if player !== oldValue { updateLink() }
+        }
+    }
+    var enabled = false {
+        didSet {
+            if enabled != oldValue {
+                if !enabled { removeAllLayers() }
                 updateLink()
             }
         }
     }
-    var onTick: (() -> Void)?
+
     private var link: CADisplayLink?
+    private var layers: [Int: CATextLayer] = [:]
+    private var lastSize: CGSize = .zero
+    private var lastScale: CGFloat = 0
+
+    init(engine: DanmakuEngine, player: AVPlayer?) {
+        self.engine = engine
+        self.player = player
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.masksToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// 点击穿透到下层播放器
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateLink()
     }
 
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        // 换屏/缩放比例变化：强制重建层，保证文字清晰
+        lastScale = 0
+    }
+
+    deinit {
+        link?.invalidate()
+    }
+
+    // MARK: - 驱动
+
     private func updateLink() {
-        let shouldRun = isActive && window != nil && !isHiddenOrHasHiddenAncestor
+        let shouldRun = enabled && window != nil && player != nil
         if shouldRun {
             guard link == nil else { return }
             let newLink = displayLink(target: self, selector: #selector(frameTick))
-            // 弹幕是低细节文本，60fps 已足够顺滑；上限 60 避免全屏大画布
-            // 在 160Hz 显示器上每帧全量重绘导致渲染压力过大。
-            newLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
+            // 30fps 足够：弹幕位置只做图层位移，观感平滑且几乎不占性能
+            newLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 30)
             newLink.add(to: .main, forMode: .common)
             link = newLink
         } else {
@@ -107,7 +94,93 @@ private final class DisplayLinkDriverView: NSView {
     }
 
     @objc private func frameTick() {
-        onTick?()
+        guard enabled, let player, let window else { return }
+        let size = bounds.size
+        guard size.width > 0, size.height > 0 else { return }
+
+        let scale = window.backingScaleFactor
+        if scale != lastScale {
+            lastScale = scale
+            lastSize = .zero
+        }
+        if abs(size.width - lastSize.width) > 0.5 || abs(size.height - lastSize.height) > 0.5 {
+            lastSize = size
+            removeAllLayers()
+        }
+
+        let raw = player.currentTime().seconds
+        let t = raw.isFinite ? raw : 0
+        engine.tick(playerTime: t, size: size)
+        syncLayers(size: size, scale: scale, time: t)
+    }
+
+    // MARK: - 层同步
+
+    private func syncLayers(size: CGSize, scale: CGFloat, time: Double) {
+        guard !engine.active.isEmpty else {
+            removeAllLayers()
+            return
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        var ids = Set<Int>()
+        ids.reserveCapacity(engine.active.count)
+        for item in engine.active {
+            ids.insert(item.id)
+            if let layer = layers[item.id] {
+                layer.position = layerPosition(for: item, in: size, time: time)
+            } else {
+                addLayer(for: item, size: size, scale: scale, time: time)
+            }
+        }
+        for (id, layer) in layers where !ids.contains(id) {
+            layer.removeFromSuperlayer()
+            layers[id] = nil
+        }
+    }
+
+    private func addLayer(for item: DanmakuEngine.Active, size: CGSize, scale: CGFloat, time: Double) {
+        let fontSize = item.fontSize(for: size.width)
+        let layer = CATextLayer()
+        layer.string = item.text
+        layer.font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        layer.fontSize = fontSize
+        layer.foregroundColor = item.color
+        layer.alignmentMode = .center
+        layer.truncationMode = .end
+        layer.contentsScale = scale
+        layer.bounds = CGRect(x: 0, y: 0,
+                              width: max(item.width(for: size.width), 1),
+                              height: max(fontSize * 1.35, 1))
+        layer.position = layerPosition(for: item, in: size, time: time)
+        layer.actions = [
+            "position": NSNull(),
+            "bounds": NSNull(),
+            "fontSize": NSNull(),
+            "foregroundColor": NSNull(),
+            "contents": NSNull(),
+        ]
+        self.layer?.addSublayer(layer)
+        layers[item.id] = layer
+    }
+
+    private func removeAllLayers() {
+        guard !layers.isEmpty else { return }
+        for layer in layers.values {
+            layer.removeFromSuperlayer()
+        }
+        layers.removeAll()
+    }
+
+    /// 引擎坐标是左上角原点，AppKit 层坐标是左下角原点，翻转 Y
+    private func layerPosition(for item: DanmakuEngine.Active,
+                               in size: CGSize,
+                               time: Double) -> CGPoint {
+        let p = item.position(in: size, at: time)
+        return CGPoint(x: p.x, y: size.height - p.y)
     }
 }
 

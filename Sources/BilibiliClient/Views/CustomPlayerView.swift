@@ -56,6 +56,7 @@ final class PlayerLayerView: NSView {
         layer = CALayer()
         layer?.backgroundColor = NSColor.black.cgColor
         playerLayer.videoGravity = .resizeAspect
+        playerLayer.isOpaque = true
         layer?.addSublayer(playerLayer)
     }
 

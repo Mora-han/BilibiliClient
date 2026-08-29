@@ -1,8 +1,7 @@
 import AppKit
-import SwiftUI
+import CoreGraphics
+import Foundation
 
-/// 弹幕引擎：负责轨道分配、按播放时间生成/回收弹幕、计算位置。
-/// 每次画面刷新调用 tick(playerTime:size:)，渲染层直接读 active。
 /// 弹幕速度档位（设置页可选），通过缩放横穿时长实现
 enum DanmakuSpeed: String, CaseIterable, Identifiable {
     case relaxed
@@ -34,12 +33,14 @@ enum DanmakuSpeed: String, CaseIterable, Identifiable {
     }
 }
 
+/// 弹幕引擎：纯逻辑，负责轨道分配、按播放时间生成/回收弹幕、计算位置。
+/// 不发布任何状态、不触发视图刷新；渲染层每帧调用 tick 后直接读 active。
 @MainActor
-final class DanmakuEngine: ObservableObject {
+final class DanmakuEngine {
     struct Active: Identifiable {
         let id: Int
         let text: String
-        let color: Color
+        let color: CGColor
         let scale: CGFloat
         let mode: Int          // 1 滚动 / 4 底部 / 5 顶部
         let lane: Int          // 轨道编号
@@ -57,8 +58,6 @@ final class DanmakuEngine: ObservableObject {
         static let fixedDuration = 4.5
         static let maxActive = 100
 
-        var isScroll: Bool { mode == 1 }
-
         /// 当前容器宽度对应的舞台缩放比例
         func stageScale(for width: CGFloat) -> CGFloat {
             width / Self.baseWidth
@@ -69,6 +68,12 @@ final class DanmakuEngine: ObservableObject {
             18 * scale * stageScale(for: width)
         }
 
+        /// 当前容器宽度下的文字层宽度
+        func width(for width: CGFloat) -> CGFloat {
+            textWidth * stageScale(for: width)
+        }
+
+        /// 弹幕中心位置（左上角原点，与 SwiftUI 画布坐标一致）
         func position(in size: CGSize, at time: Double) -> CGPoint {
             let s = stageScale(for: size.width)
             let row = Self.rowHeight * s
@@ -85,7 +90,7 @@ final class DanmakuEngine: ObservableObject {
                 // progress 是 0...1 的归一化进度（经过秒数 / 总横穿时长），
                 // 再乘总行程，避免直接把“秒 × 像素”当成速度导致弹幕快十倍。
                 let progress = min(max((time - startTime) / duration, 0), 1)
-                let travel = size.width + textWidth * s
+                let travel = size.width + width(for: size.width)
                 let x = size.width - CGFloat(progress) * travel
                 return CGPoint(x: x, y: y)
             }
@@ -93,16 +98,11 @@ final class DanmakuEngine: ObservableObject {
         }
 
         func isFinished(at time: Double) -> Bool {
-            let progress = time - startTime
-            return progress >= duration
+            time - startTime >= duration
         }
     }
 
-    @Published private(set) var active: [Active] = []
-
-    /// 当前帧渲染用的播放器时间：由 tick 每帧采样一次，渲染层统一读取，
-    /// 避免每个弹幕各自调用 player.currentTime()。
-    private(set) var renderTime: Double = 0
+    private(set) var active: [Active] = []
 
     private var all: [DanmakuItem] = []
     private var nextIndex = 0
@@ -147,14 +147,16 @@ final class DanmakuEngine: ObservableObject {
         }
 
         let t = playerTime.isFinite ? playerTime : 0
-        renderTime = t
 
-        // 生成新弹幕（跳过时间跨度大于 2.5s 的，避免拖动进度条时瞬间堆满）
-        while nextIndex < all.count, all[nextIndex].time <= t {
+        // 生成新弹幕（跳过时间跨度大于 2.5s 的，避免拖动进度条时瞬间堆满）。
+        // 每帧最多生成 6 条：seek 后摊开铺满，避免单帧压力瞬间爆表。
+        var spawnedThisTick = 0
+        while nextIndex < all.count, all[nextIndex].time <= t, spawnedThisTick < 6 {
             let item = all[nextIndex]
             nextIndex += 1
             if t - item.time < 2.5 {
                 spawn(item, time: t, size: size)
+                spawnedThisTick += 1
             }
         }
 
@@ -181,7 +183,7 @@ final class DanmakuEngine: ObservableObject {
         guard active.count < Active.maxActive else { return }
         let scale = min(max(CGFloat(item.fontSize) / 18.0, 0.6), 1.8)
         let textWidth = Self.estimateWidth(text: item.text, scale: scale)
-        let color = Self.color(from: item.color)
+        let color = Self.cgColor(from: item.color)
 
         switch item.mode {
         case 1:
@@ -257,13 +259,13 @@ final class DanmakuEngine: ObservableObject {
         return (text as NSString).size(withAttributes: [.font: font]).width
     }
 
-    private static func color(from raw: UInt32) -> Color {
+    private static func cgColor(from raw: UInt32) -> CGColor {
         if raw == 0xFFFFFF {
-            return .white
+            return CGColor(gray: 1, alpha: 1)
         }
-        let r = Double((raw >> 16) & 0xFF) / 255.0
-        let g = Double((raw >> 8) & 0xFF) / 255.0
-        let b = Double(raw & 0xFF) / 255.0
-        return Color(red: r, green: g, blue: b)
+        let r = CGFloat((raw >> 16) & 0xFF) / 255.0
+        let g = CGFloat((raw >> 8) & 0xFF) / 255.0
+        let b = CGFloat(raw & 0xFF) / 255.0
+        return CGColor(srgbRed: r, green: g, blue: b, alpha: 1)
     }
 }

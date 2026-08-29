@@ -25,10 +25,14 @@ final class HLSProxy {
     private var session: Session?
     private var progressiveBaseURL: URL?
     private let queue = DispatchQueue(label: "com.codex.bilibili.hls", qos: .userInitiated)
+    /// 分片/初始化段内存缓存：seek 来回拖动时避免重复请求 CDN，加快恢复播放。
+    private let cacheStore = CacheStore()
+    private var sessionID = 0
 
     @discardableResult
     func start(video: Media, audio: Media) async throws -> URL {
         stop()
+        sessionID += 1
         session = Session(video: video, audio: audio)
         let port = try await startListener()
         return URL(string: "http://127.0.0.1:\(port)/master.m3u8")!
@@ -38,6 +42,7 @@ final class HLSProxy {
     @discardableResult
     func startProgressive(baseURL: URL) async throws -> URL {
         stop()
+        sessionID += 1
         progressiveBaseURL = baseURL
         let port = try await startListener()
         return URL(string: "http://127.0.0.1:\(port)/mp4")!
@@ -346,27 +351,63 @@ final class HLSProxy {
 
     private func fetchData(path: String, session: Session) async throws -> Data {
         let api = APIClient.shared
-        switch path {
-        case "/init-v":
-            return try await api.streamData(from: session.video.baseURL, range: session.video.initRange).0
-        case "/init-a":
-            return try await api.streamData(from: session.audio.baseURL, range: session.audio.initRange).0
-        default:
-            if path.hasPrefix("/seg-v/"), let index = Int(path.dropFirst("/seg-v/".count)) {
-                guard session.video.segments.indices.contains(index) else {
-                    throw APIError.invalidResponse
+        let cacheKey = "\(sessionID)-\(path)"
+        let fetch: () async throws -> Data = {
+            switch path {
+            case "/init-v":
+                return try await api.streamData(from: session.video.baseURL, range: session.video.initRange).0
+            case "/init-a":
+                return try await api.streamData(from: session.audio.baseURL, range: session.audio.initRange).0
+            default:
+                if path.hasPrefix("/seg-v/"), let index = Int(path.dropFirst("/seg-v/".count)) {
+                    guard session.video.segments.indices.contains(index) else {
+                        throw APIError.invalidResponse
+                    }
+                    return try await api.streamData(from: session.video.baseURL,
+                                                    range: session.video.segments[index].range).0
                 }
-                return try await api.streamData(from: session.video.baseURL,
-                                                range: session.video.segments[index].range).0
-            }
-            if path.hasPrefix("/seg-a/"), let index = Int(path.dropFirst("/seg-a/".count)) {
-                guard session.audio.segments.indices.contains(index) else {
-                    throw APIError.invalidResponse
+                if path.hasPrefix("/seg-a/"), let index = Int(path.dropFirst("/seg-a/".count)) {
+                    guard session.audio.segments.indices.contains(index) else {
+                        throw APIError.invalidResponse
+                    }
+                    return try await api.streamData(from: session.audio.baseURL,
+                                                    range: session.audio.segments[index].range).0
                 }
-                return try await api.streamData(from: session.audio.baseURL,
-                                                range: session.audio.segments[index].range).0
+                throw APIError.invalidResponse
             }
-            throw APIError.invalidResponse
+        }
+        if let data = await cacheStore.value(for: cacheKey) {
+            return data
+        }
+        let data = try await fetch()
+        await cacheStore.store(data, for: cacheKey)
+        return data
+    }
+
+    /// 分片缓存（LRU，总容量上限），actor 保证并发安全。
+    private actor CacheStore {
+        private var cache: [String: Data] = [:]
+        private var order: [String] = []
+        private var size = 0
+        private let limit = 64 * 1024 * 1024
+
+        func value(for key: String) -> Data? {
+            guard let data = cache[key] else { return nil }
+            order.removeAll { $0 == key }
+            order.append(key)
+            return data
+        }
+
+        func store(_ data: Data, for key: String) {
+            cache[key] = data
+            order.append(key)
+            size += data.count
+            while size > limit, let evicted = order.first {
+                order.removeFirst()
+                if let old = cache.removeValue(forKey: evicted) {
+                    size -= old.count
+                }
+            }
         }
     }
 
