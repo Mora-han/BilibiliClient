@@ -7,10 +7,8 @@ struct VideoDetailView: View {
     @EnvironmentObject private var session: SessionStore
     @StateObject private var player = PlayerController()
     @State private var danmaku = DanmakuEngine()
-    @AppStorage("danmakuEnabled") private var danmakuEnabled = true
-    @State private var isFullscreen = false
-    @State private var controlsVisible = true
-    @State private var fullscreenPlayer: PlayerFullscreenWindow?
+    @State private var videoWindow: VideoWindow?
+    @State private var playerFrame: CGRect = .zero
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
@@ -62,10 +60,10 @@ struct VideoDetailView: View {
         .navigationTitle(detail?.view.title ?? "视频详情")
         .task { await load() }
         .onDisappear {
-            fullscreenPlayer?.forceClose()
-            fullscreenPlayer = nil
             player.stop()
             danmaku.reset()
+            videoWindow?.forceClose()
+            videoWindow = nil
         }
         .sheet(isPresented: $showLogin) { LoginView() }
         .sheet(isPresented: $showFavoritePicker) {
@@ -225,36 +223,8 @@ struct VideoDetailView: View {
                 }
                 .padding()
             case .ready:
-                if let avPlayer = player.player {
-                    Group {
-                        if isFullscreen {
-                            // 全屏窗口接管播放：内嵌区域仅保留占位，避免双渲染层
-                            Color.black
-                        } else {
-                            ZStack {
-                                CustomPlayerView(player: avPlayer,
-                                                 autofocus: true,
-                                                 onSpace: { player.togglePlay() },
-                                                 onSkip: { player.skip(by: $0) },
-                                                 onSingleClick: {
-                                                     withAnimation(controlsVisible
-                                                                   ? PlayerControlsView.hideAnimation
-                                                                   : PlayerControlsView.showAnimation) {
-                                                         controlsVisible.toggle()
-                                                     }
-                                                 },
-                                                 onDoubleClick: { toggleFullscreen() })
-                                DanmakuOverlayView(engine: danmaku,
-                                                   player: avPlayer,
-                                                   enabled: danmakuEnabled)
-                                PlayerControlsView(player: player,
-                                                   controlsVisible: $controlsVisible,
-                                                   isFullscreen: false,
-                                                   onToggleFullscreen: toggleFullscreen)
-                            }
-                        }
-                    }
-                }
+                // 视频画面由 VideoWindow 子窗口承载（钉在本区域），这里只留占位
+                Color.black
             }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
@@ -263,12 +233,16 @@ struct VideoDetailView: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         )
-        .overlay(alignment: .topTrailing) {
-            if player.state == .ready {
-                DanmakuToggleButton(isOn: $danmakuEnabled)
-                    .padding(10)
+        .background(
+            FrameReporter { frame in
+                playerFrame = frame
+                if let videoWindow, videoWindow.isOpen {
+                    videoWindow.updateEmbedFrame(frame)
+                } else if player.state == .ready, player.player != nil {
+                    openVideoWindow(at: frame)
+                }
             }
-        }
+        )
     }
 
     private func infoRow(_ view: VideoDetailData.VideoView) -> some View {
@@ -570,19 +544,21 @@ struct VideoDetailView: View {
         isLoadingComments = false
     }
 
-    /// 切换自定义全屏：全屏窗口复用主窗口的 PlayerController 与弹幕引擎。
+    /// 切换系统原生全屏：直接对视频子窗口调用 toggleFullScreen，
+    /// 由系统动画从视频当前位置丝滑放大到全屏 Space。
     private func toggleFullscreen() {
         guard player.state == .ready, player.player != nil else { return }
-        if isFullscreen {
-            fullscreenPlayer?.close()
-        } else {
-            let window = PlayerFullscreenWindow()
-            window.open(playerController: player, engine: danmaku) {
-                self.isFullscreen = false
-            }
-            fullscreenPlayer = window
-            isFullscreen = true
-        }
+        videoWindow?.toggleFullscreen()
+    }
+
+    /// 打开视频子窗口并钉在播放区域（由 FrameReporter 持续校准位置）。
+    private func openVideoWindow(at frame: CGRect) {
+        guard player.state == .ready, player.player != nil,
+              let window = AppDelegate.mainWindow() else { return }
+        let vw = VideoWindow()
+        videoWindow = vw
+        vw.open(playerController: player, engine: danmaku, parent: window, frame: frame)
+        vw.focusPlayer()
     }
 
     private func loadDanmaku(cid: Int) async {

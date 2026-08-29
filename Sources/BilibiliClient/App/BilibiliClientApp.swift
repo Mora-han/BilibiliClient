@@ -56,9 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 与全屏播放窗口（自定义全屏窗口，类名含 Fullscreen）。
     static func mainWindow() -> NSWindow? {
         NSApp.windows.first {
-            $0.identifier?.rawValue == "main" && !$0.styleMask.contains(.fullScreen)
+            $0.identifier?.rawValue == "main"
+                && !$0.styleMask.contains(.fullScreen)
+                && !Self.isSystemFullscreenWindow($0)
         } ?? NSApp.windows.first {
-            !($0 is NSPanel) && !$0.styleMask.contains(.fullScreen)
+            !($0 is NSPanel)
+                && !$0.styleMask.contains(.fullScreen)
+                && !Self.isSystemFullscreenWindow($0)
         }
     }
 
