@@ -102,7 +102,13 @@ private struct FullscreenPlayerView: View {
                                  autofocus: true,
                                  onSpace: { playerController.togglePlay() },
                                  onSkip: { playerController.skip(by: $0) },
-                                 onSingleClick: { controlsVisible.toggle() },
+                                 onSingleClick: {
+                                     withAnimation(controlsVisible
+                                                   ? PlayerControlsView.hideAnimation
+                                                   : PlayerControlsView.showAnimation) {
+                                         controlsVisible.toggle()
+                                     }
+                                 },
                                  onDoubleClick: onExit)
                 DanmakuOverlayView(engine: engine, player: player, enabled: danmakuEnabled)
             }

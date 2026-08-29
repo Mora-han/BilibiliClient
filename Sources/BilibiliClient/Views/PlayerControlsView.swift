@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 自研播放器控制条：替换 AVKit 系统控制条。
-/// 显示后 5 秒自动淡出；鼠标移动不唤起，仅点击画面可切换显隐。
+/// 显示后 3 秒自动落下隐藏；鼠标移动不唤起，仅点击画面可切换显隐。
 struct PlayerControlsView: View {
     @ObservedObject var player: PlayerController
     @Environment(\.colorScheme) private var colorScheme
@@ -22,6 +22,10 @@ struct PlayerControlsView: View {
     @State private var seekGeneration = 0
     @State private var seekTimeoutTask: Task<Void, Never>?
 
+    /// 浮起/落下动画时长：集中定义，供点击切换调用点复用
+    static let showAnimation = Animation.easeOut(duration: 0.8)
+    static let hideAnimation = Animation.easeIn(duration: 1.1)
+
     private var isDark: Bool { colorScheme == .dark }
 
     var body: some View {
@@ -30,9 +34,7 @@ struct PlayerControlsView: View {
             Color.clear
                 .allowsHitTesting(false)
 
-            if controlsVisible {
-                controlBar
-            }
+            controlBar
         }
         .onChange(of: controlsVisible) { _, newValue in
             if newValue { scheduleHide() }
@@ -79,6 +81,10 @@ struct PlayerControlsView: View {
                 // 悬浮：收窄成居中胶囊并抬高；沉底：贴底通栏
                 .frame(maxWidth: barStyle == PlayerBarStyle.floating.rawValue ? 580 : .infinity)
                 .padding(.bottom, barStyle == PlayerBarStyle.floating.rawValue ? 18 : 0)
+                // 浮起动画：隐藏时下沉 28pt 并淡出，显示时滑回原位
+                .offset(y: controlsVisible ? 0 : 28)
+                .opacity(controlsVisible ? 1 : 0)
+                .allowsHitTesting(controlsVisible)
         }
     }
 
@@ -220,20 +226,20 @@ struct PlayerControlsView: View {
     private func bumpActivity() {
         // 交互（点按钮/拖进度条）后重新计时；鼠标悬停不再触发
         if !controlsVisible {
-            withAnimation(.easeOut(duration: 0.5)) {
+            withAnimation(Self.showAnimation) {
                 controlsVisible = true
             }
         }
         scheduleHide()
     }
 
-    /// 控制条显示 3 秒后自动淡出（无视鼠标移动）
+    /// 控制条显示 3 秒后自动落下隐藏（无视鼠标移动）
     private func scheduleHide() {
         hideTask?.cancel()
         hideTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled, controlsVisible, !isScrubbing else { return }
-            withAnimation(.easeOut(duration: 0.7)) {
+            withAnimation(Self.hideAnimation) {
                 controlsVisible = false
             }
         }

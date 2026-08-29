@@ -236,7 +236,13 @@ struct VideoDetailView: View {
                                                  autofocus: true,
                                                  onSpace: { player.togglePlay() },
                                                  onSkip: { player.skip(by: $0) },
-                                                 onSingleClick: { controlsVisible.toggle() },
+                                                 onSingleClick: {
+                                                     withAnimation(controlsVisible
+                                                                   ? PlayerControlsView.hideAnimation
+                                                                   : PlayerControlsView.showAnimation) {
+                                                         controlsVisible.toggle()
+                                                     }
+                                                 },
                                                  onDoubleClick: { toggleFullscreen() })
                                 DanmakuOverlayView(engine: danmaku,
                                                    player: avPlayer,
