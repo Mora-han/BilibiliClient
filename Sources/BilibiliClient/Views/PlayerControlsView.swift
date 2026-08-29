@@ -13,7 +13,7 @@ struct PlayerControlsView: View {
     let isFullscreen: Bool
     let onToggleFullscreen: () -> Void
 
-    @State private var hideTimer: Timer?
+    @State private var hideTask: Task<Void, Never>?
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
     /// 松开滑块后等待 seek 完成期间，滑块保持显示的目标位置
@@ -21,8 +21,6 @@ struct PlayerControlsView: View {
     /// seek 序号：用于忽略被新 seek 打断的旧回调
     @State private var seekGeneration = 0
     @State private var seekTimeoutTask: Task<Void, Never>?
-    /// 控制条本次可见的起始时间：5 秒后自动隐藏
-    @State private var visibleSince: Date = .now
 
     private var isDark: Bool { colorScheme == .dark }
 
@@ -37,15 +35,14 @@ struct PlayerControlsView: View {
             }
         }
         .onChange(of: controlsVisible) { _, newValue in
-            if newValue { visibleSince = .now }
+            if newValue { scheduleHide() }
         }
         .onAppear {
-            visibleSince = .now
-            startHideTimer()
+            scheduleHide()
         }
         .onDisappear {
-            hideTimer?.invalidate()
-            hideTimer = nil
+            hideTask?.cancel()
+            hideTask = nil
             seekTimeoutTask?.cancel()
             seekTimeoutTask = nil
         }
@@ -221,25 +218,23 @@ struct PlayerControlsView: View {
     // MARK: - 自动隐藏
 
     private func bumpActivity() {
-        // 交互（点按钮/拖进度条）重置隐藏计时；鼠标悬停不再触发
-        visibleSince = .now
+        // 交互（点按钮/拖进度条）后重新计时；鼠标悬停不再触发
         if !controlsVisible {
             withAnimation(.easeOut(duration: 0.15)) {
                 controlsVisible = true
             }
         }
+        scheduleHide()
     }
 
-    private func startHideTimer() {
-        hideTimer?.invalidate()
-        hideTimer = Timer(timeInterval: 1, repeats: true) { _ in
-            Task { @MainActor in
-                guard controlsVisible, !isScrubbing else { return }
-                if Date().timeIntervalSince(visibleSince) > 5 {
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        controlsVisible = false
-                    }
-                }
+    /// 控制条显示 5 秒后自动淡出（无视鼠标移动）
+    private func scheduleHide() {
+        hideTask?.cancel()
+        hideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, controlsVisible, !isScrubbing else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                controlsVisible = false
             }
         }
     }
