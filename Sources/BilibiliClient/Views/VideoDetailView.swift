@@ -231,7 +231,11 @@ struct VideoDetailView: View {
                             Color.black
                         } else {
                             ZStack {
-                                CustomPlayerView(player: avPlayer)
+                                CustomPlayerView(player: avPlayer,
+                                                 onSpace: { player.togglePlay() },
+                                                 onSkip: { player.skip(by: $0) },
+                                                 onSingleClick: { player.togglePlay() },
+                                                 onDoubleClick: { toggleFullscreen() })
                                 DanmakuOverlayView(engine: danmaku,
                                                    player: avPlayer,
                                                    enabled: danmakuEnabled)

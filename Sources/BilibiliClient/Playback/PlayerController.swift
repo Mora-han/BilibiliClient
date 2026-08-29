@@ -36,17 +36,19 @@ final class PlayerController: ObservableObject {
     private var reportTask: Task<Void, Never>?
     /// 当前播放流地址：大幅 seek 后自动刷新播放状态时，用同一地址重建播放条目。
     private var currentStreamURL: URL?
-    /// 大幅 seek 自动刷新：轮询播放时间，检测大跳变后重建播放条目，避免 seek 后解码状态异常卡顿。
-    private var seekMonitorTimer: Timer?
-    private var lastSeenPlaybackTime: Double = 0
-    private var isSeekRecovering = false
-    private var seekRecoveryTask: Task<Void, Never>?
     /// 控制条时间/状态观察者
     private var playbackObserver: Any?
     private var statusObservation: NSKeyValueObservation?
     private var durationObservation: NSKeyValueObservation?
-    /// 播放时间跳变超过该秒数视为大幅快进/快退，触发一次自动刷新
-    private static let seekJumpThreshold: Double = 15
+    /// 自愈保险：播放中时间停滞超过该秒数视为解码卡住，自动重建播放条目
+    private static let stallThreshold: Double = 2.0
+    /// 两次自愈之间的最小间隔，避免反复重建打断观看
+    private static let recoveryCooldown: Double = 8.0
+    private var lastProgressTime: Double = 0
+    private var stallStart: Double?
+    private var lastRecoveryAt: Double = -10
+    private var isRecovering = false
+    private var recoveryTask: Task<Void, Never>?
 
     var currentQualityName: String? {
         guard let currentQualityId else { return nil }
@@ -106,10 +108,7 @@ final class PlayerController: ObservableObject {
         errorMessage = nil
         teardownPlayer()
         do {
-            let data = try await service.playURLDASH(bvid: bvid, cid: cid, qn: quality.id)
-            let granted = data.quality ?? quality.id
-            currentQualityId = granted
-            await play(bvid: bvid, cid: cid, qn: granted, dashFallback: data)
+            try await loadDASH(qn: quality.id, updateQualities: false)
         } catch {
             state = .failed
             errorMessage = error.localizedDescription
@@ -142,15 +141,22 @@ final class PlayerController: ObservableObject {
         errorMessage = nil
         teardownPlayer()
         do {
-            let data = try await service.playURLDASH(bvid: bvid, cid: cid, qn: qn)
-            qualities = Self.qualityOptions(from: data)
-            let granted = data.quality ?? qualities.last?.id ?? qn
-            currentQualityId = granted
-            await play(bvid: bvid, cid: cid, qn: granted, dashFallback: data)
+            try await loadDASH(qn: qn, updateQualities: true)
         } catch {
             state = .failed
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// 拉取 DASH 播放地址并按指定清晰度开播；共用于初次加载与清晰度切换。
+    private func loadDASH(qn: Int, updateQualities: Bool) async throws {
+        let data = try await service.playURLDASH(bvid: bvid, cid: cid, qn: qn)
+        if updateQualities {
+            qualities = Self.qualityOptions(from: data)
+        }
+        let granted = data.quality ?? qualities.last?.id ?? qn
+        currentQualityId = granted
+        await play(bvid: bvid, cid: cid, qn: granted, dashFallback: data)
     }
 
     /// 播放：优先 MP4 直链（已验证稳定），拿不到再走 DASH 本地代理。
@@ -166,7 +172,6 @@ final class PlayerController: ObservableObject {
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
             currentStreamURL = url
-            startSeekRecoveryMonitoring()
             startPlaybackMonitoring()
             state = .ready
             startReportLoop()
@@ -204,7 +209,6 @@ final class PlayerController: ObservableObject {
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
             currentStreamURL = url
-            startSeekRecoveryMonitoring()
             startPlaybackMonitoring()
             startReportLoop()
             return nil
@@ -236,7 +240,6 @@ final class PlayerController: ObservableObject {
     }
 
     private func teardownPlayer() {
-        stopSeekRecoveryMonitoring()
         stopPlaybackMonitoring()
         player?.pause()
         player = nil
@@ -244,32 +247,10 @@ final class PlayerController: ObservableObject {
         currentStreamURL = nil
     }
 
-    // MARK: - 大幅 seek 自动刷新
+    // MARK: - 播放监控与自愈保险
 
-    /// 每 0.5s 采样一次播放时间；发现大幅跳变（快进/快退）后，
-    /// 等待时间稳定，再用同一流地址重建播放条目并回到目标时间继续播放，
-    /// 等价于一次“刷新”，避免 seek 后解码/代理状态异常导致长时间卡顿。
-    private func startSeekRecoveryMonitoring() {
-        stopSeekRecoveryMonitoring()
-        lastSeenPlaybackTime = 0
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.checkPlaybackTimeJump()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        seekMonitorTimer = timer
-    }
-
-    private func stopSeekRecoveryMonitoring() {
-        seekMonitorTimer?.invalidate()
-        seekMonitorTimer = nil
-        seekRecoveryTask?.cancel()
-        seekRecoveryTask = nil
-        isSeekRecovering = false
-    }
-
-    /// 控制条数据观察：播放时间（0.25s）、播放状态、总时长。
+    /// 播放监控：0.25s 采样一次播放时间，驱动控制条数据；
+    /// 同时检测「播放中时间停滞」异常，触发按需自愈刷新，正常观看无感。
     private func startPlaybackMonitoring() {
         stopPlaybackMonitoring()
         guard let player else { return }
@@ -279,13 +260,17 @@ final class PlayerController: ObservableObject {
         ) { [weak self] time in
             let seconds = time.seconds
             Task { @MainActor in
-                self?.currentTime = seconds
+                self?.tickPlaybackHealth(time: seconds)
             }
         }
         statusObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
             let playing = player.timeControlStatus == .playing
             Task { @MainActor in
                 self?.isPlaying = playing
+                if !playing {
+                    // 暂停/缓冲：清掉停滞计时，避免把正常等待误判为卡住
+                    self?.stallStart = nil
+                }
             }
         }
         durationObservation = player.currentItem?.observe(\.duration, options: [.initial, .new]) { [weak self] item, _ in
@@ -308,51 +293,50 @@ final class PlayerController: ObservableObject {
         statusObservation = nil
         durationObservation?.invalidate()
         durationObservation = nil
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        isRecovering = false
+        lastProgressTime = 0
+        stallStart = nil
     }
 
-    private func checkPlaybackTimeJump() {
-        guard !isSeekRecovering, let player else { return }
-        let time = player.currentTime().seconds
+    /// 每次采样回调：更新控制条时间，并执行自愈检查。
+    private func tickPlaybackHealth(time: Double) {
+        currentTime = time
         guard time.isFinite, time >= 0 else { return }
-        guard lastSeenPlaybackTime > 0 else {
-            lastSeenPlaybackTime = time
-            return
+        guard let player, player.timeControlStatus == .playing else { return }
+
+        // 时间前进 → 正常；时间停滞（解码卡住）累计超过阈值 → 自愈
+        if time - lastProgressTime > 0.001 {
+            lastProgressTime = time
+            stallStart = nil
+        } else if stallStart == nil {
+            stallStart = time
+        } else if time - (stallStart ?? time) >= Self.stallThreshold {
+            triggerRecovery(to: time)
         }
-        let jump = abs(time - lastSeenPlaybackTime)
-        lastSeenPlaybackTime = time
-        guard jump >= Self.seekJumpThreshold else { return }
-        scheduleSeekRecovery(to: time)
     }
 
-    private func scheduleSeekRecovery(to target: Double) {
-        guard !isSeekRecovering else { return }
-        isSeekRecovering = true
-        seekRecoveryTask?.cancel()
-        seekRecoveryTask = Task { @MainActor [weak self] in
+    /// 触发一次自愈（带冷却，避免反复重建打断观看）。
+    private func triggerRecovery(to target: Double) {
+        guard !isRecovering else { return }
+        let now = Date().timeIntervalSinceReferenceDate
+        guard now - lastRecoveryAt >= Self.recoveryCooldown else { return }
+        lastRecoveryAt = now
+        isRecovering = true
+        recoveryTask?.cancel()
+        recoveryTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            // 等 seek 完成、播放时间稳定后再刷新，避免打断连续拖动
-            var settled = target
-            for _ in 0..<10 {
-                try? await Task.sleep(for: .milliseconds(150))
-                guard !Task.isCancelled else { return }
-                guard let player = self.player else {
-                    self.isSeekRecovering = false
-                    return
-                }
-                let t = player.currentTime().seconds
-                if t.isFinite, abs(t - settled) < 1 {
-                    break
-                }
-                settled = t
-            }
-            await self.performSeekRecovery(to: settled)
+            await self.performRecovery(to: target)
+            self.isRecovering = false
         }
     }
 
     /// 用同一流地址重建播放条目并回到目标时间，保持原播放/暂停状态。
-    private func performSeekRecovery(to target: Double) async {
+    private func performRecovery(to target: Double) async {
+        recoveryTask = nil
         guard let player, let url = currentStreamURL else {
-            isSeekRecovering = false
+            isRecovering = false
             return
         }
         let wasPlaying = player.timeControlStatus == .playing
@@ -364,8 +348,6 @@ final class PlayerController: ObservableObject {
         if wasPlaying {
             player.play()
         }
-        lastSeenPlaybackTime = target
-        isSeekRecovering = false
     }
 
     /// 在线流式兜底：通过本地代理把 CDN 字节流持续转发给 AVPlayer，
@@ -382,7 +364,6 @@ final class PlayerController: ObservableObject {
             player?.automaticallyWaitsToMinimizeStalling = true
             player?.play()
             currentStreamURL = streamURL
-            startSeekRecoveryMonitoring()
             startPlaybackMonitoring()
             return true
         } catch {

@@ -9,13 +9,11 @@ struct DanmakuOverlayView: View {
     @ObservedObject var engine: DanmakuEngine
     let player: AVPlayer
     let enabled: Bool
-    /// 全屏窗口打开时，内嵌层的驱动挂起，只由全屏层驱动引擎
-    var suspended: Bool = false
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if enabled && !suspended {
+                if enabled {
                     // 单个 Canvas 一帧绘制所有弹幕：避免几十个 SwiftUI Text 视图
                     // 逐帧布局/重绘，全屏大字号下依然能跑满高刷新率。
                     Canvas { context, size in
@@ -42,7 +40,7 @@ struct DanmakuOverlayView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 // 逐帧回调与所在显示器刷新同步；暂停时 playerTime 不变，弹幕自然冻结
-                DisplayLinkDriver(isActive: enabled && !suspended) {
+                DisplayLinkDriver(isActive: enabled) {
                     engine.tick(playerTime: player.currentTime().seconds, size: geo.size)
                 }
             }

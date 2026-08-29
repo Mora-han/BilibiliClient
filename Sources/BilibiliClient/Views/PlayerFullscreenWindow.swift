@@ -93,7 +93,11 @@ private struct FullscreenPlayerView: View {
         ZStack {
             Color.black
             if let player = playerController.player {
-                CustomPlayerView(player: player)
+                CustomPlayerView(player: player,
+                                 onSpace: { playerController.togglePlay() },
+                                 onSkip: { playerController.skip(by: $0) },
+                                 onSingleClick: { playerController.togglePlay() },
+                                 onDoubleClick: onExit)
                 DanmakuOverlayView(engine: engine, player: player, enabled: danmakuEnabled)
             }
             PlayerControlsView(player: playerController,

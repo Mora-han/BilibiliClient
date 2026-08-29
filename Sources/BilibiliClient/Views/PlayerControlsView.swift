@@ -10,21 +10,19 @@ struct PlayerControlsView: View {
     let onToggleFullscreen: () -> Void
 
     @State private var controlsVisible = true
-    @State private var lastActivity = Date()
     @State private var hideTimer: Timer?
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
     @State private var volume: Double = 1
+    /// 鼠标活动时间戳（普通引用，不触发 SwiftUI 更新，避免高频 hover 重绘）
+    @State private var monitor = InteractionMonitor()
 
     var body: some View {
         ZStack {
-            // 视频区域点击：播放/暂停（控制条按钮在上层，点击不会穿透到这里）
+            // 透明占位：点击穿透到视频层（PlayerLayerView 处理单击/双击），
+            // 同时保持 hover 区域覆盖整个播放器
             Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    bumpActivity()
-                    player.togglePlay()
-                }
+                .allowsHitTesting(false)
 
             if controlsVisible {
                 controlBar
@@ -199,7 +197,7 @@ struct PlayerControlsView: View {
     // MARK: - 自动隐藏
 
     private func bumpActivity() {
-        lastActivity = Date()
+        monitor.lastActivity = Date()
         if !controlsVisible {
             withAnimation(.easeOut(duration: 0.15)) {
                 controlsVisible = true
@@ -212,12 +210,17 @@ struct PlayerControlsView: View {
         hideTimer = Timer(timeInterval: 1, repeats: true) { _ in
             Task { @MainActor in
                 guard controlsVisible, !isScrubbing else { return }
-                if Date().timeIntervalSince(lastActivity) > 3 {
+                if Date().timeIntervalSince(monitor.lastActivity) > 3 {
                     withAnimation(.easeOut(duration: 0.25)) {
                         controlsVisible = false
                     }
                 }
             }
         }
+    }
+
+    /// 鼠标活动记录：普通类实例，修改属性不会触发视图更新。
+    private final class InteractionMonitor {
+        var lastActivity = Date()
     }
 }

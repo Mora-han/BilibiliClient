@@ -2,7 +2,7 @@
 
 一个面向 macOS 的原生哔哩哔哩客户端，使用 SwiftUI 构建并遵循 macOS 26 设计语言。
 
-> 当前版本：**1.1.0** · 最低系统要求：**macOS 26.0**
+> 当前版本：**1.1.1** · 最低系统要求：**macOS 26.0**
 
 ## 功能
 
@@ -18,7 +18,7 @@
 
 ## 安装
 
-从 [Releases](https://github.com/Mora-han/BilibiliClient/releases) 下载 `BilibiliClient-v1.1.0.app.zip`，解压后将 App 移动到“应用程序”文件夹。
+从 [Releases](https://github.com/Mora-han/BilibiliClient/releases) 下载 `BilibiliClient-v1.1.1.app.zip`，解压后将 App 移动到“应用程序”文件夹。
 
 首次使用需要自行扫码登录。登录信息仅保存在当前 Mac 的本地钥匙串中，不会随安装包分享。
 
