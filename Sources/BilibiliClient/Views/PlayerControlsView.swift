@@ -23,8 +23,8 @@ struct PlayerControlsView: View {
     @State private var seekTimeoutTask: Task<Void, Never>?
 
     /// 浮起/落下动画时长：集中定义，供点击切换调用点复用
-    static let showAnimation = Animation.easeOut(duration: 0.8)
-    static let hideAnimation = Animation.easeIn(duration: 1.1)
+    static let showAnimation = Animation.easeOut(duration: 0.4)
+    static let hideAnimation = Animation.easeIn(duration: 0.55)
 
     private var isDark: Bool { colorScheme == .dark }
 
