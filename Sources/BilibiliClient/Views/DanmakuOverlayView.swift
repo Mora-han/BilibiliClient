@@ -11,26 +11,37 @@ struct DanmakuOverlayView: View {
     let enabled: Bool
     /// 全屏窗口打开时，内嵌层的驱动挂起，只由全屏层驱动引擎
     var suspended: Bool = false
+    /// 全屏弹幕层自身传 true：即使 engine.isFullscreenDriven 也不挂起
+    var isFullscreenDriver: Bool = false
+
+    /// 引擎是否由其他渲染层（全屏弹幕层）接管驱动
+    private var isActive: Bool {
+        enabled && !suspended && (isFullscreenDriver || !engine.isFullscreenDriven)
+    }
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if enabled && !suspended {
+                if isActive {
                     // 单个 Canvas 一帧绘制所有弹幕：避免几十个 SwiftUI Text 视图
                     // 逐帧布局/重绘，全屏大字号下依然能跑满高刷新率。
                     Canvas { context, size in
+                        guard !engine.active.isEmpty else { return }
                         let time = engine.renderTime
-                        // 阴影用一次 context 滤镜统一绘制，避免每个弹幕重复栅格化
+                        // 阴影滤镜加在 drawLayer 之前，只对整层合成做一次离屏模糊；
+                        // 若逐条绘制时开滤镜，每条文字都会触发一次离屏栅格化。
                         context.addFilter(.shadow(color: .black.opacity(0.85),
                                                   radius: 2, x: 0, y: 1))
-                        for item in engine.active {
-                            // macOS 26 SDK 中 Text.foregroundColor/foregroundStyle 会擦除类型，
-                            // 改用 AttributedString 携带字体与颜色，Text 类型保持可用。
-                            var attr = AttributedString(item.text)
-                            attr.font = .system(size: item.fontSize(for: size.width),
-                                                weight: .medium)
-                            attr.foregroundColor = item.color
-                            context.draw(Text(attr), at: item.position(in: size, at: time))
+                        context.drawLayer { layer in
+                            for item in engine.active {
+                                // macOS 26 SDK 中 Text.foregroundColor/foregroundStyle 会擦除类型，
+                                // 改用 AttributedString 携带字体与颜色，Text 类型保持可用。
+                                var attr = AttributedString(item.text)
+                                attr.font = .system(size: item.fontSize(for: size.width),
+                                                    weight: .medium)
+                                attr.foregroundColor = item.color
+                                layer.draw(Text(attr), at: item.position(in: size, at: time))
+                            }
                         }
                     }
                 }
@@ -38,7 +49,7 @@ struct DanmakuOverlayView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 // 逐帧回调与所在显示器刷新同步；暂停时 playerTime 不变，弹幕自然冻结
-                DisplayLinkDriver(isActive: enabled && !suspended) {
+                DisplayLinkDriver(isActive: isActive) {
                     engine.tick(playerTime: player.currentTime().seconds, size: geo.size)
                 }
             }
@@ -93,8 +104,9 @@ private final class DisplayLinkDriverView: NSView {
         if shouldRun {
             guard link == nil else { return }
             let newLink = displayLink(target: self, selector: #selector(frameTick))
-            // 跟随显示器最高刷新率（160Hz 显示即 160fps 回调）
-            newLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 240)
+            // 弹幕是低细节文本，60fps 已足够顺滑；上限 60 避免全屏大画布
+            // 在 160Hz 显示器上每帧全量重绘导致渲染压力过大。
+            newLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60)
             newLink.add(to: .main, forMode: .common)
             link = newLink
         } else {

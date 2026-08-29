@@ -99,6 +99,9 @@ final class DanmakuEngine: ObservableObject {
     }
 
     @Published private(set) var active: [Active] = []
+    /// 全屏弹幕层是否正在接管驱动：接管后内嵌层停止 DisplayLink，
+    /// 避免全屏窗口里两个渲染层同时逐帧驱动引擎与重绘。
+    @Published private(set) var isFullscreenDriven = false
 
     /// 当前帧渲染用的播放器时间：由 tick 每帧采样一次，渲染层统一读取，
     /// 避免每个弹幕各自调用 player.currentTime()。
@@ -135,6 +138,11 @@ final class DanmakuEngine: ObservableObject {
     /// 清空当前屏幕上的弹幕（关闭开关时调用）。
     func clear() {
         active = []
+    }
+
+    /// 标记全屏弹幕层接管/交还驱动。
+    func setFullscreenDriven(_ driven: Bool) {
+        isFullscreenDriven = driven
     }
 
     // MARK: - 每帧更新

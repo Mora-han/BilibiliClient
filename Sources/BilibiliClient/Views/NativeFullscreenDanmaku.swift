@@ -14,6 +14,10 @@ final class NativeFullscreenDanmaku {
     func attach(engine: DanmakuEngine, player: AVPlayer, to window: NSWindow?) {
         detach()
         guard let content = window?.contentView else { return }
+        self.engine = engine
+
+        // 全屏层接管驱动：内嵌层（可能随播放器一起进入全屏窗口）立即停止 DisplayLink。
+        engine.setFullscreenDriven(true)
 
         // 弹幕渲染层：整窗口铺满，点击穿透。
         // 注意：不要对 NSHostingView 强制 wantsLayer / 手动设置 layer，
@@ -38,11 +42,14 @@ final class NativeFullscreenDanmaku {
     }
 
     func detach() {
+        engine?.setFullscreenDriven(false)
         for host in hosts {
             host.removeFromSuperview()
         }
         hosts = []
     }
+
+    private var engine: DanmakuEngine?
 }
 
 /// 点击穿透的 NSHostingView（弹幕不挡播放器控制条）。
@@ -62,7 +69,8 @@ private struct FullscreenDanmakuLayer: View {
         DanmakuOverlayView(engine: engine,
                            player: player,
                            enabled: enabled,
-                           suspended: false)
+                           suspended: false,
+                           isFullscreenDriver: true)
     }
 }
 
