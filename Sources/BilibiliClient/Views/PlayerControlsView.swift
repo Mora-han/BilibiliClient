@@ -23,8 +23,8 @@ struct PlayerControlsView: View {
     @State private var seekTimeoutTask: Task<Void, Never>?
 
     /// 浮起/落下动画时长：集中定义，供点击切换调用点复用
-    static let showAnimation = Animation.easeOut(duration: 0.2)
-    static let hideAnimation = Animation.easeIn(duration: 0.275)
+    static let showAnimation = Animation.easeOut(duration: 0.15)
+    static let hideAnimation = Animation.easeIn(duration: 0.2)
 
     private var isDark: Bool { colorScheme == .dark }
 
@@ -81,8 +81,8 @@ struct PlayerControlsView: View {
                 // 悬浮：收窄成居中胶囊并抬高；沉底：贴底通栏
                 .frame(maxWidth: barStyle == PlayerBarStyle.floating.rawValue ? 580 : .infinity)
                 .padding(.bottom, barStyle == PlayerBarStyle.floating.rawValue ? 18 : 0)
-                // 浮起动画：隐藏时下沉 28pt 并淡出，显示时滑回原位
-                .offset(y: controlsVisible ? 0 : 28)
+                // 浮起动画：隐藏时下沉 14pt 并淡出，显示时滑回原位
+                .offset(y: controlsVisible ? 0 : 14)
                 .opacity(controlsVisible ? 1 : 0)
                 .allowsHitTesting(controlsVisible)
         }
