@@ -220,20 +220,20 @@ struct PlayerControlsView: View {
     private func bumpActivity() {
         // 交互（点按钮/拖进度条）后重新计时；鼠标悬停不再触发
         if !controlsVisible {
-            withAnimation(.easeOut(duration: 0.15)) {
+            withAnimation(.easeOut(duration: 0.5)) {
                 controlsVisible = true
             }
         }
         scheduleHide()
     }
 
-    /// 控制条显示 5 秒后自动淡出（无视鼠标移动）
+    /// 控制条显示 3 秒后自动淡出（无视鼠标移动）
     private func scheduleHide() {
         hideTask?.cancel()
         hideTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled, controlsVisible, !isScrubbing else { return }
-            withAnimation(.easeOut(duration: 0.25)) {
+            withAnimation(.easeOut(duration: 0.7)) {
                 controlsVisible = false
             }
         }
