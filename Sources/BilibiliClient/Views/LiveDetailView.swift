@@ -362,23 +362,31 @@ struct LiveDetailView: View {
     }
 }
 
-/// 实时弹幕聊天面板：新弹幕追加在底部并自动跟随滚动；
-/// 手动向上翻阅时暂停跟随，停止滑动数秒后自动回到最新弹幕。
+/// 实时弹幕聊天面板：新弹幕追加在底部并自动吸附到最新一条；
+/// 手动上滑暂停跟随，停止滑动数秒后自动回到最新弹幕并恢复吸附。
 private struct LiveChatPanel: View {
     @ObservedObject var engine: LiveDanmakuEngine
     /// 是否吸附在底部实时跟随最新弹幕
     @State private var autoFollow = true
-    /// 用户最后一次手动上滑的时间；每次变化都会重启“自动回底”计时
+    /// 用户最后一次手动上滑的时间；用于“闲置数秒后自动回底”计时
     @State private var lastUserScroll: Date?
-    /// 手动上滑后停留多久自动回到最新弹幕
+    /// 手动上滑后闲置多久自动回到最新弹幕
     private let scrollBackDelay: TimeInterval = 3
     @Environment(\.colorScheme) private var colorScheme
     private var isDark: Bool { colorScheme == .dark }
 
+    /// 滚动几何：offsetY 用于区分“用户真的在滑动”与“底部内容增长”
+    private struct ScrollMetrics: Equatable {
+        var offsetY: CGFloat
+        var remainingToBottom: CGFloat
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 5) {
+                // 用普通 VStack 而非 LazyVStack：历史行始终存在，
+                // 从任意滚动位置 scrollTo(最新 id) 都能可靠回到底部。
+                VStack(alignment: .leading, spacing: 5) {
                     ForEach(engine.messages) { message in
                         LiveChatRow(message: message)
                             .id(message.id)
@@ -397,35 +405,44 @@ private struct LiveChatPanel: View {
                     }
             }
             .frame(height: 420)
-            .onChange(of: engine.messages.count) { _, _ in
-                guard autoFollow, let last = engine.messages.last else { return }
+            // 监听最新一条的 id（而非数量）：即使列表达到上限、数量不变也能跟随
+            .onChange(of: engine.messages.last?.id) { _, _ in
+                guard let last = engine.messages.last else { return }
+                let idleSinceScroll = lastUserScroll
+                    .map { Date().timeIntervalSince($0) >= scrollBackDelay } ?? true
+                guard autoFollow || idleSinceScroll else { return }
+                autoFollow = true
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height
-            } action: { _, remaining in
-                let atBottom = remaining < 32
-                if atBottom {
+            .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
+                ScrollMetrics(
+                    offsetY: geometry.contentOffset.y,
+                    remainingToBottom: geometry.contentSize.height
+                        - geometry.contentOffset.y
+                        - geometry.containerSize.height
+                )
+            } action: { old, new in
+                if new.remainingToBottom < 32 {
                     autoFollow = true
-                } else {
-                    // 用户正在向上翻阅：暂停跟随，并顺延“自动回底”计时
+                } else if new.offsetY < old.offsetY - 1 {
+                    // 仅当用户真的向上滚动（offset 减小）才暂停跟随并计时；
+                    // 底部新增内容导致的几何变化不视为用户滑动。
                     autoFollow = false
                     lastUserScroll = Date()
                 }
             }
-            // 最后一次手动上滑后停止滑动 3 秒，自动回到最新弹幕并恢复跟随
+            // 手动上滑后闲置 3 秒自动回到最新弹幕（即使期间没有新弹幕）
             .task(id: lastUserScroll) {
                 guard let scrollTime = lastUserScroll else { return }
                 try? await Task.sleep(for: .seconds(scrollBackDelay))
                 guard !Task.isCancelled, !autoFollow,
-                      Date().timeIntervalSince(scrollTime) >= scrollBackDelay else { return }
+                      Date().timeIntervalSince(scrollTime) >= scrollBackDelay,
+                      let last = engine.messages.last else { return }
                 autoFollow = true
-                if let last = engine.messages.last {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
+                withAnimation(.easeOut(duration: 0.3)) {
+                    proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
             .overlay {
