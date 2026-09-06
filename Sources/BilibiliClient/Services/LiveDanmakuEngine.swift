@@ -33,6 +33,9 @@ final class LiveDanmakuEngine: ObservableObject {
     /// 心跳回复携带的实时在线人数（可能为 0/无）
     @Published private(set) var popularity: Int?
 
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectAttempts = 0
+
     private let roomId: Int
     private let session: URLSession
     private var task: URLSessionWebSocketTask?
@@ -88,6 +91,9 @@ final class LiveDanmakuEngine: ObservableObject {
     func disconnect() {
         generation += 1
         connecting = false
+        reconnectAttempts = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
         receiveTask?.cancel()
         receiveTask = nil
         heartbeatTask?.cancel()
@@ -148,7 +154,21 @@ final class LiveDanmakuEngine: ObservableObject {
             if task === self?.task {
                 self?.connected = false
                 self?.task = nil
+                self?.scheduleReconnect()
             }
+        }
+    }
+
+    /// 连接意外断开后延迟重连（3 秒后最多再试 3 次，手动断开不触发）。
+    private func scheduleReconnect() {
+        guard reconnectTask == nil, reconnectAttempts < 3 else { return }
+        reconnectAttempts += 1
+        errorText = "弹幕连接已断开，正在重连…"
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            await self.connect()
         }
     }
 
@@ -196,9 +216,10 @@ final class LiveDanmakuEngine: ObservableObject {
         case 7: // 认证请求（服务器收到后的回执在 op=8）
             break
         case 8: // 认证回复
-            let code = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])??["code"] as? NSNumber
-            if code?.intValue == 0 || code == nil {
+            let code = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+            if code?["code"] as? Int == 0 || code == nil {
                 connected = true
+                reconnectAttempts = 0
                 errorText = nil
             } else {
                 connected = false

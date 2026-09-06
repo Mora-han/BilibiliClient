@@ -341,10 +341,13 @@ struct LiveDetailView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                } else if danmaku.errorText != nil {
-                    Text("弹幕连接失败")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                } else if let error = danmaku.errorText {
+                    HStack(spacing: 5) {
+                        Circle().fill(Color.orange).frame(width: 6, height: 6)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     HStack(spacing: 5) {
                         ProgressView().controlSize(.mini)
@@ -406,10 +409,12 @@ private struct LiveChatPanel: View {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .font(.title3)
                             .foregroundStyle(.tertiary)
-                        Text("等待弹幕…")
+                        Text(engine.errorText ?? "等待弹幕…")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
                     }
+                    .padding(.horizontal, 12)
                     .allowsHitTesting(false)
                 }
             }
