@@ -16,6 +16,8 @@ struct VideoDetailView: View {
     @State private var favoriteFolders: [FavFolder] = []
     @State private var showFavoritePicker = false
     @State private var shareMessage: String?
+    @State private var showCoinMenu = false
+    @State private var showShareMenu = false
     @State private var isFollowing = false
     @State private var relationLoaded = false
     @State private var likeCount = 0
@@ -380,13 +382,9 @@ struct VideoDetailView: View {
                 }
             }
 
-            Menu {
-                Button("投 1 枚硬币") {
-                    Task { await coin(multiply: 1) }
-                }
-                Button("投 2 枚硬币") {
-                    Task { await coin(multiply: 2) }
-                }
+            Button {
+                guard !coined else { return }
+                showCoinMenu = true
             } label: {
                 VStack(spacing: 3) {
                     Image(systemName: coined ? "dollarsign.circle.fill" : "dollarsign.circle")
@@ -395,9 +393,10 @@ struct VideoDetailView: View {
                 }
                 .foregroundStyle(coined ? Color.orange : Color.primary)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .disabled(coined)
+            .buttonStyle(.plain)
+            .popover(isPresented: $showCoinMenu, arrowEdge: .bottom) {
+                coinActionCard
+            }
             .hoverScale(scale: 1.06)
 
             Button {
@@ -413,13 +412,8 @@ struct VideoDetailView: View {
             .buttonStyle(.plain)
             .hoverScale(scale: 1.06)
 
-            Menu {
-                Button("复制链接") {
-                    Task { await copyLink() }
-                }
-                Button("在浏览器打开") {
-                    openInBrowser()
-                }
+            Button {
+                showShareMenu = true
             } label: {
                 VStack(spacing: 3) {
                     Image(systemName: "arrowshape.turn.up.right")
@@ -428,8 +422,11 @@ struct VideoDetailView: View {
                 }
                 .foregroundStyle(.primary)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            .buttonStyle(.plain)
+            .popover(isPresented: $showShareMenu, arrowEdge: .bottom) {
+                shareActionCard
+            }
+            .hoverScale(scale: 1.06)
 
             Button { Task { await addToWatchLater() } } label: {
                 VStack(spacing: 3) {
@@ -442,6 +439,42 @@ struct VideoDetailView: View {
         }
         .font(.title3)
         .padding(.vertical, 4)
+    }
+
+    // MARK: - 投币 / 分享 悬浮小卡片
+
+    /// 点击投币按钮弹出的液态玻璃小卡片（与左下角账户卡片同一套弹层样式）。
+    private var coinActionCard: some View {
+        VStack(spacing: 0) {
+            MenuActionRow(icon: "dollarsign.circle", title: "投 1 枚硬币") {
+                showCoinMenu = false
+                Task { await coin(multiply: 1) }
+            }
+            Divider().padding(.horizontal, 10)
+            MenuActionRow(icon: "dollarsign.circle.fill", title: "投 2 枚硬币") {
+                showCoinMenu = false
+                Task { await coin(multiply: 2) }
+            }
+        }
+        .padding(6)
+        .frame(width: 190)
+    }
+
+    /// 点击分享按钮弹出的液态玻璃小卡片。
+    private var shareActionCard: some View {
+        VStack(spacing: 0) {
+            MenuActionRow(icon: "doc.on.doc", title: "复制链接") {
+                showShareMenu = false
+                Task { await copyLink() }
+            }
+            Divider().padding(.horizontal, 10)
+            MenuActionRow(icon: "safari", title: "在浏览器打开") {
+                showShareMenu = false
+                openInBrowser()
+            }
+        }
+        .padding(6)
+        .frame(width: 190)
     }
 
     private func toggleLike() async {
@@ -809,5 +842,35 @@ struct VideoDetailView: View {
                 }
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// 悬浮小卡片中的一行操作，带系统菜单同款悬停高亮。
+private struct MenuActionRow: View {
+    let icon: String
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .frame(width: 18)
+                Text(title)
+                Spacer(minLength: 0)
+            }
+            .font(.callout)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
