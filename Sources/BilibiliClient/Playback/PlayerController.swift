@@ -33,7 +33,8 @@ final class PlayerController: ObservableObject {
     private let service = VideoService()
     private var aid = 0
     private var bvid = ""
-    private var cid = 0
+    /// 当前已加载分P的 cid（尚未加载时为 0，供页面判断是否需要切换）。
+    private(set) var cid = 0
     private var loadedKey: String?
     private var reportTask: Task<Void, Never>?
     /// 控制条时间/状态观察者

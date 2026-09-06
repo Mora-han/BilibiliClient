@@ -8,6 +8,8 @@ struct VideoDetailView: View {
     @EnvironmentObject private var router: AppRouter
     @StateObject private var player = PlayerController()
     @State private var danmaku = DanmakuEngine()
+    /// 当前选中的分P cid（nil = 播放详情默认分P，即第一个分P）
+    @State private var selectedPageCid: Int?
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @State private var liked = false
     @State private var coined = false
@@ -119,8 +121,8 @@ struct VideoDetailView: View {
         if let data = detail {
             // 返回后再进入：恢复已停止的播放器与弹幕
             if player.player == nil {
-                await player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
-                await loadDanmaku(cid: data.view.cid)
+                await player.load(aid: data.view.aid, bvid: data.view.bvid, cid: activePageCid)
+                await loadDanmaku(cid: activePageCid)
             }
             return
         }
@@ -150,9 +152,9 @@ struct VideoDetailView: View {
                 }
             }
             async let commentsTask: Void = loadComments(aid: data.view.aid)
-            async let playerTask: Void = player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
+            async let playerTask: Void = player.load(aid: data.view.aid, bvid: data.view.bvid, cid: activePageCid)
             _ = await (commentsTask, playerTask)
-            await loadDanmaku(cid: data.view.cid)
+            await loadDanmaku(cid: activePageCid)
             await loadTags(aid: data.view.aid, bvid: data.view.bvid)
             return
         } catch {
@@ -214,9 +216,7 @@ struct VideoDetailView: View {
                     actionBar(view)
 
                     if let pages = view.pages, pages.count > 1 {
-                        Label("共 \(pages.count) 个分P", systemImage: "list.number")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        partSelector(pages)
                     }
 
                     Divider()
@@ -250,6 +250,96 @@ struct VideoDetailView: View {
                 .padding(.bottom, 24)
             }
         }
+    }
+
+    // MARK: - 分P选集
+
+    /// 当前应播放的分P cid：用户点选优先，未选时用详情默认 cid（第一个分P）。
+    private var activePageCid: Int {
+        guard let view = detail?.view else { return 0 }
+        if let selectedPageCid,
+           view.pages?.contains(where: { $0.cid == selectedPageCid }) == true {
+            return selectedPageCid
+        }
+        return view.cid
+    }
+
+    /// 分P选集：标题行 + 可横向滑动的分P卡片列表（点击切换播放）。
+    private func partSelector(_ pages: [VideoDetailData.VideoPage]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("共 \(pages.count) 个分P", systemImage: "list.number")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 8) {
+                    ForEach(pages) { page in
+                        partCard(page)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    /// 单个分P卡片：序号 + 标题 + 时长，横向排布、高度紧凑。
+    private func partCard(_ page: VideoDetailData.VideoPage) -> some View {
+        let isCurrent = page.cid == activePageCid
+        return Button {
+            Task { await selectPart(page) }
+        } label: {
+            HStack(spacing: 8) {
+                Text("P\(page.page)")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(isCurrent ? Color.white : Color.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(isCurrent ? Color.pink : Color.primary.opacity(0.1)))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(page.part)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                    Text(Formatters.duration(page.duration))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                Spacer(minLength: 0)
+
+                if isCurrent {
+                    Image(systemName: "play.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Color.pink)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(width: 210, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isCurrent ? Color.pink.opacity(0.1) : Color(nsColor: .controlBackgroundColor))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(isCurrent ? Color.pink.opacity(0.45) : Color.primary.opacity(0.1), lineWidth: 1)
+                    }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverScale(scale: 1.02)
+    }
+
+    /// 切换分P：重载播放器与弹幕；播放窗口保持吸附，流程与首次进入一致。
+    private func selectPart(_ page: VideoDetailData.VideoPage) async {
+        guard let view = detail?.view else { return }
+        let cid = page.cid
+        selectedPageCid = cid
+        guard player.cid != cid || player.player == nil else { return }
+        danmaku.reset()
+        await player.load(aid: view.aid, bvid: view.bvid, cid: cid)
+        await loadDanmaku(cid: cid)
     }
 
     @ViewBuilder
