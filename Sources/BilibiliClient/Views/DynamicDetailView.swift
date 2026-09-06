@@ -139,9 +139,7 @@ struct DynamicDetailView: View {
                 Button {
                     preview = PreviewTarget(url: url)
                 } label: {
-                    RemoteImage(url: url)
-                        .aspectRatio(1, contentMode: .fill)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    DynamicImageTile(url: url, cornerRadius: 10)
                 }
                 .buttonStyle(.plain)
                 .help("查看大图")
@@ -151,13 +149,16 @@ struct DynamicDetailView: View {
 
     private func statBar(_ item: DynamicItem) -> some View {
         HStack(spacing: 24) {
-            Label(Formatters.count(stat(item)?.like?.count ?? 0), systemImage: "heart")
+            DynamicLikeButton(dynamicID: item.idStr,
+                              initialLiked: stat(item)?.like?.status ?? false,
+                              initialCount: stat(item)?.like?.count ?? 0)
             Label(Formatters.count(stat(item)?.comment?.count ?? 0), systemImage: "bubble.right")
+                .foregroundStyle(.secondary)
             Label(Formatters.count(stat(item)?.forward?.count ?? 0), systemImage: "arrowshape.turn.up.right")
+                .foregroundStyle(.secondary)
             Spacer()
         }
         .font(.callout)
-        .foregroundStyle(.secondary)
     }
 
     private func stat(_ item: DynamicItem) -> DynamicItem.ModuleStat? {

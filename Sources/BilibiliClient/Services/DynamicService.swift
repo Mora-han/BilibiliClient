@@ -29,4 +29,18 @@ struct DynamicService {
             "features": Self.features,
         ])
     }
+
+    /// 点赞 / 取消点赞动态。
+    func like(dynamicID: String, liked: Bool) async throws {
+        try await APIClient.shared.postJSON(
+            path: "/x/dynamic/feed/dyn/thumb",
+            json: [
+                "dyn_id_str": dynamicID,
+                "up": liked ? 1 : 2,
+            ],
+            query: [
+                "csrf": APIClient.shared.cookies.biliJct ?? "",
+            ]
+        )
+    }
 }

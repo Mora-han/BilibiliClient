@@ -167,6 +167,45 @@ final class APIClient {
         }
     }
 
+    /// POST JSON 请求（动态点赞等），只校验 code/message。
+    func postJSON(path: String,
+                  base: URL = APIConstants.apiBase,
+                  json: [String: Any],
+                  query: [String: String] = [:]) async throws {
+        struct EmptyEnvelope: Decodable {
+            let code: Int
+            let message: String
+        }
+
+        var components = URLComponents(url: base.appendingPathComponent(path),
+                                       resolvingAgainstBaseURL: false)!
+        if !query.isEmpty {
+            components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(APIConstants.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(APIConstants.referer, forHTTPHeaderField: "Referer")
+        request.setValue("https://www.bilibili.com", forHTTPHeaderField: "Origin")
+        if let body = try? JSONSerialization.data(withJSONObject: json, options: []) {
+            request.httpBody = body
+        }
+        if !effectiveCookieHeader.isEmpty {
+            request.setValue(effectiveCookieHeader, forHTTPHeaderField: "Cookie")
+        }
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else { throw APIError.http(http.statusCode) }
+
+        let decoder = JSONDecoder()
+        let envelope = try decoder.decode(EmptyEnvelope.self, from: data)
+        guard envelope.code == 0 else {
+            throw APIError.biz(code: envelope.code, message: envelope.message)
+        }
+    }
+
     private static func encodeFormValue(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
     }

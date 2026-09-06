@@ -236,6 +236,8 @@ struct DynamicCardView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            footer
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -294,8 +296,6 @@ struct DynamicCardView: View {
             if let orig = item.orig {
                 DynamicQuoteView(origin: orig)
             }
-
-            footer
         }
     }
 
@@ -336,7 +336,9 @@ struct DynamicCardView: View {
 
     private var footer: some View {
         HStack(spacing: 18) {
-            Label(Formatters.count(stat?.like?.count ?? 0), systemImage: "heart")
+            DynamicLikeButton(dynamicID: item.idStr,
+                              initialLiked: stat?.like?.status ?? false,
+                              initialCount: stat?.like?.count ?? 0)
             Label(Formatters.count(stat?.comment?.count ?? 0), systemImage: "bubble.right")
             Label(Formatters.count(stat?.forward?.count ?? 0), systemImage: "arrowshape.turn.up.right")
             Spacer()
@@ -474,6 +476,8 @@ struct DynamicArchiveRow: View {
 struct DynamicImageGridView: View {
     let urls: [URL?]
     var maxWidth: CGFloat = .infinity
+    var spacing: CGFloat = 6
+    var cornerRadius: CGFloat = 8
 
     private var validURLs: [URL] {
         urls.compactMap { $0 }
@@ -485,12 +489,82 @@ struct DynamicImageGridView: View {
                                 count: min(max(validURLs.count, 1), 3))
             LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(Array(validURLs.enumerated()), id: \.offset) { _, url in
-                    RemoteImage(url: url)
-                        .aspectRatio(1, contentMode: .fill)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    DynamicImageTile(url: url, cornerRadius: cornerRadius)
                 }
             }
-            .frame(maxWidth: maxWidth)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+        }
+    }
+}
+
+/// 动态图片块：以所在宽度为基准强制 1:1 正方形并裁剪铺满。
+/// 不给原图尺寸参与布局的机会，避免图片把卡片/容器撑宽造成错位。
+struct DynamicImageTile: View {
+    let url: URL
+    var cornerRadius: CGFloat = 8
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                RemoteImage(url: url)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+}
+
+/// 动态点赞按钮：乐观更新，失败自动回滚。
+struct DynamicLikeButton: View {
+    let dynamicID: String
+    let initialLiked: Bool
+    let initialCount: Int
+
+    @State private var liked: Bool
+    @State private var count: Int
+    @State private var isBusy = false
+
+    init(dynamicID: String, initialLiked: Bool, initialCount: Int) {
+        self.dynamicID = dynamicID
+        self.initialLiked = initialLiked
+        self.initialCount = initialCount
+        _liked = State(initialValue: initialLiked)
+        _count = State(initialValue: initialCount)
+    }
+
+    var body: some View {
+        Button {
+            toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: liked ? "heart.fill" : "heart")
+                Text(Formatters.count(count))
+            }
+            .font(.caption)
+            .foregroundStyle(liked ? Color.red : Color.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+        .help(liked ? "取消点赞" : "点赞")
+    }
+
+    private func toggle() {
+        guard !isBusy else { return }
+        isBusy = true
+        let target = !liked
+        let delta = target ? 1 : -1
+        liked = target
+        count = max(0, count + delta)
+        Task {
+            defer { isBusy = false }
+            do {
+                try await DynamicService().like(dynamicID: dynamicID, liked: target)
+            } catch {
+                liked = !target
+                count = max(0, count - delta)
+            }
         }
     }
 }
