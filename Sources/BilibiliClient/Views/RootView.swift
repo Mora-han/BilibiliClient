@@ -14,6 +14,10 @@ struct SearchRoute: Hashable {
     let query: String
 }
 
+struct DynamicRoute: Hashable {
+    let id: String
+}
+
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var router: AppRouter
@@ -102,6 +106,9 @@ struct RootView: View {
                 }
                 .navigationDestination(for: SearchRoute.self) { route in
                     SearchView(query: route.query)
+                }
+                .navigationDestination(for: DynamicRoute.self) { route in
+                    DynamicDetailView(id: route.id)
                 }
             }
         }

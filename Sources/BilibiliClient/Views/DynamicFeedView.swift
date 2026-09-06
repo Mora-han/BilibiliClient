@@ -220,29 +220,36 @@ struct DynamicFeedView: View {
     }
 }
 
+/// 动态卡片：视频动态点击直接播放；图片/文字/图文/转发等其他动态点击进入详情页。
 struct DynamicCardView: View {
     let item: DynamicItem
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
+            authorHeader
 
-            if let text = item.modules.moduleDynamic?.desc?.text, !text.isEmpty {
-                Text(text)
-                    .font(.callout)
-                    .textSelection(.enabled)
+            if isVideoPost {
+                cardBody
+            } else {
+                NavigationLink(value: DynamicRoute(id: item.idStr)) {
+                    cardBody
+                }
+                .buttonStyle(.plain)
             }
-
-            majorContent
-
-            footer
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentCard(cornerRadius: 14)
     }
 
-    private var header: some View {
+    /// 是否属于“视频投稿”动态（点击目标为播放视频）。
+    private var isVideoPost: Bool {
+        item.modules.moduleDynamic?.major?.type == "MAJOR_TYPE_ARCHIVE"
+    }
+
+    // MARK: - 头部
+
+    private var authorHeader: some View {
         HStack(spacing: 10) {
             Group {
                 if let mid = item.modules.moduleAuthor?.mid {
@@ -271,70 +278,58 @@ struct DynamicCardView: View {
         }
     }
 
+    // MARK: - 正文
+
+    private var cardBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let text = dynamicText, !text.isEmpty {
+                Text(text)
+                    .font(.callout)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            majorContent
+
+            if let orig = item.orig {
+                DynamicQuoteView(origin: orig, interactiveArchive: false)
+            }
+
+            footer
+        }
+    }
+
+    /// 卡片主文字：图文动态优先取 desc，其次摘要；其余取动态正文。
+    private var dynamicText: String? {
+        if let text = item.modules.moduleDynamic?.desc?.text, !text.isEmpty {
+            return text
+        }
+        if item.modules.moduleDynamic?.major?.type == "MAJOR_TYPE_OPUS" {
+            return item.modules.moduleDynamic?.major?.opus?.summary?.text
+        }
+        return nil
+    }
+
     @ViewBuilder
     private var majorContent: some View {
         if let major = item.modules.moduleDynamic?.major {
             switch major.type {
             case "MAJOR_TYPE_ARCHIVE":
                 if let archive = major.archive {
-                    archiveCard(archive)
+                    DynamicArchiveRow(archive: archive)
                 }
             case "MAJOR_TYPE_DRAW":
                 if let draw = major.draw {
-                    drawGrid(Array(draw.items?.prefix(9) ?? []))
+                    DynamicImageGridView(urls: draw.imageURLs)
                 }
             case "MAJOR_TYPE_OPUS":
-                if let text = major.opus?.summary?.text, !text.isEmpty {
-                    Text(text)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(6)
+                if let opus = major.opus {
+                    if !opus.picsURLs.isEmpty {
+                        DynamicImageGridView(urls: opus.picsURLs)
+                    }
                 }
             default:
                 EmptyView()
-            }
-        }
-    }
-
-    private func archiveCard(_ archive: DynamicItem.ModuleDynamic.Major.Archive) -> some View {
-        NavigationLink(value: archive.bvid ?? "") {
-            HStack(spacing: 10) {
-                RemoteImage(url: Formatters.https(archive.cover ?? ""))
-                    .frame(width: 128, height: 76)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(archive.title ?? "")
-                        .font(.callout.weight(.medium))
-                        .lineLimit(2)
-                    if let desc = archive.desc, !desc.isEmpty {
-                        Text(desc)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    if let duration = archive.durationText {
-                        Text(duration)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                Spacer()
-            }
-            .padding(8)
-            .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func drawGrid(_ items: [DynamicItem.ModuleDynamic.Major.Draw.DrawItem]) -> some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 6),
-                            count: min(max(items.count, 1), 3))
-        return LazyVGrid(columns: columns, spacing: 6) {
-            ForEach(items.indices, id: \.self) { index in
-                RemoteImage(url: Formatters.https(items[index].src ?? ""))
-                    .aspectRatio(1, contentMode: .fill)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }
     }
@@ -352,5 +347,151 @@ struct DynamicCardView: View {
 
     private var stat: DynamicItem.ModuleStat? {
         item.modules.moduleStat
+    }
+}
+
+/// 转发动态中的引用内容块（整体不可点，仅展示原动态信息）。
+struct DynamicQuoteView: View {
+    let origin: DynamicOrigin
+    /// 引用内容为视频时是否可点击播放（详情页打开；卡片内嵌套时关闭）
+    var interactiveArchive = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                RemoteImage(url: Formatters.https(origin.modules?.moduleAuthor?.face ?? ""))
+                    .frame(width: 22, height: 22)
+                    .clipShape(Circle())
+                Text(origin.modules?.moduleAuthor?.name ?? "未知用户")
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+            }
+
+            if let text = quotedText, !text.isEmpty {
+                Text(text)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(6)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            quotedContent
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.white.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(.primary.opacity(0.08), lineWidth: 1)
+                )
+        }
+    }
+
+    private var quotedText: String? {
+        if let text = origin.modules?.moduleDynamic?.desc?.text, !text.isEmpty {
+            return text
+        }
+        if origin.modules?.moduleDynamic?.major?.type == "MAJOR_TYPE_OPUS" {
+            return origin.modules?.moduleDynamic?.major?.opus?.summary?.text
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var quotedContent: some View {
+        let major = origin.modules?.moduleDynamic?.major
+        if let archive = major?.archive {
+            if interactiveArchive, let bvid = archive.bvid, !bvid.isEmpty {
+                NavigationLink(value: bvid) {
+                    DynamicArchiveRow(archive: archive)
+                }
+                .buttonStyle(.plain)
+            } else {
+                DynamicArchiveRow(archive: archive)
+            }
+        } else if let draw = major?.draw {
+            DynamicImageGridView(urls: draw.imageURLs, maxWidth: 220)
+        } else if let opus = major?.opus {
+            DynamicImageGridView(urls: opus.picsURLs, maxWidth: 220)
+        }
+    }
+}
+
+/// 视频动态的封面信息行：点击进入播放。
+struct DynamicArchiveRow: View {
+    let archive: DynamicItem.ModuleDynamic.Major.Archive
+
+    var body: some View {
+        NavigationLink(value: archive.bvid ?? "") {
+            rowContent
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 10) {
+            RemoteImage(url: Formatters.https(archive.cover ?? ""))
+                .frame(width: 128, height: 76)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(archive.title ?? "")
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+                if let desc = archive.desc, !desc.isEmpty {
+                    Text(desc)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                if let duration = archive.durationText {
+                    Text(duration)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Spacer()
+        }
+        .padding(8)
+        .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// 统一的动态图片网格（兼容带图 draw 与图文 opus.pics）。
+struct DynamicImageGridView: View {
+    let urls: [URL?]
+    var maxWidth: CGFloat = .infinity
+
+    private var validURLs: [URL] {
+        urls.compactMap { $0 }
+    }
+
+    var body: some View {
+        if !validURLs.isEmpty {
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 6),
+                                count: min(max(validURLs.count, 1), 3))
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(Array(validURLs.enumerated()), id: \.offset) { _, url in
+                    RemoteImage(url: url)
+                        .aspectRatio(1, contentMode: .fill)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            .frame(maxWidth: maxWidth)
+        }
+    }
+}
+
+extension DynamicItem.ModuleDynamic.Major.Draw {
+    var imageURLs: [URL?] {
+        (items ?? []).map { Formatters.https($0.src ?? "") }
+    }
+}
+
+extension DynamicItem.ModuleDynamic.Major.Opus {
+    var picsURLs: [URL?] {
+        (pics ?? []).map { Formatters.https($0.src ?? "") }
     }
 }

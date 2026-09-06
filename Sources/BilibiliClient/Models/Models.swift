@@ -206,9 +206,40 @@ struct DynamicFeedData: Decodable {
 struct DynamicItem: Decodable, Identifiable {
     let idStr: String
     let type: String
+    let basic: Basic?
+    /// 转发动态的“原动态”（仅 DYNAMIC_TYPE_FORWARD 存在）。
+    /// 独立类型承载，避免结构体自递归。
+    let orig: DynamicOrigin?
     let modules: Modules
 
     var id: String { idStr }
+
+    enum CodingKeys: String, CodingKey {
+        case idStr
+        case type
+        case basic
+        case orig
+        case modules
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        idStr = try container.decode(String.self, forKey: .idStr)
+        type = (try? container.decode(String.self, forKey: .type)) ?? ""
+        basic = try container.decodeIfPresent(Basic.self, forKey: .basic)
+        // orig 结构异常时降级为无引用内容，不影响整条动态展示
+        orig = (try? container.decode(DynamicOrigin.self, forKey: .orig)) ?? nil
+        modules = (try? container.decode(Modules.self, forKey: .modules))
+            ?? Modules(moduleAuthor: nil, moduleDynamic: nil, moduleStat: nil)
+    }
+
+    struct Basic: Decodable {
+        /// 评论所属对象 id（带图动态为相簿 id，其余为动态 id）
+        let commentIdStr: String?
+        /// 评论类型（视频=1，带图动态=11，文字/转发动态=17）
+        let commentType: Int?
+        let ridStr: String?
+    }
 
     struct Modules: Decodable {
         let moduleAuthor: ModuleAuthor?
@@ -247,7 +278,20 @@ struct DynamicItem: Decodable, Identifiable {
             }
 
             struct Draw: Decodable {
+                let id: Int?
                 let items: [DrawItem]?
+
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case items
+                }
+
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    id = try container.decodeIfPresent(Int.self, forKey: .id)
+                    items = (try? container.decode([Lossy<DrawItem>].self, forKey: .items))?
+                        .compactMap(\.value)
+                }
 
                 struct DrawItem: Decodable, Hashable {
                     let src: String?
@@ -258,9 +302,40 @@ struct DynamicItem: Decodable, Identifiable {
 
             struct Opus: Decodable {
                 let summary: OpusSummary?
+                let pics: [OpusPic]?
+
+                enum CodingKeys: String, CodingKey {
+                    case summary
+                    case pics
+                }
+
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    summary = try container.decodeIfPresent(OpusSummary.self, forKey: .summary)
+                    // pics 常见为对象数组；个别接口返回字符串数组，做双格式容错
+                    if let objects = (try? container.decode([Lossy<OpusPic>].self, forKey: .pics)) {
+                        pics = objects.compactMap(\.value)
+                    } else if let strings = try? container.decode([String].self, forKey: .pics) {
+                        pics = strings.map { OpusPic(src: $0, width: nil, height: nil) }
+                    } else {
+                        pics = nil
+                    }
+                }
 
                 struct OpusSummary: Decodable {
                     let text: String?
+                }
+
+                struct OpusPic: Decodable, Hashable {
+                    let src: String?
+                    let width: Int?
+                    let height: Int?
+
+                    init(src: String?, width: Int?, height: Int?) {
+                        self.src = src
+                        self.width = width
+                        self.height = height
+                    }
                 }
             }
         }
@@ -277,6 +352,20 @@ struct DynamicItem: Decodable, Identifiable {
             let status: Bool?
         }
     }
+}
+
+
+/// 转发动态中的“原动态”内容（结构与动态主体相同）。
+struct DynamicOrigin: Decodable {
+    let idStr: String?
+    let type: String?
+    let basic: DynamicItem.Basic?
+    let modules: DynamicItem.Modules?
+}
+
+/// 动态详情（/x/polymer/web-dynamic/v1/detail）
+struct DynamicDetailData: Decodable {
+    let item: DynamicItem?
 }
 
 /// 容错解码包装：单个元素解析失败时返回 nil，而不是让整个数组解码失败。
