@@ -896,7 +896,6 @@ struct LiveRoomDetail: Decodable, Hashable {
     let areaName: String?
     let parentAreaName: String?
     let description: String?
-    let liveTime: Int?
 
     var isLive: Bool { liveStatus == 1 }
 }
