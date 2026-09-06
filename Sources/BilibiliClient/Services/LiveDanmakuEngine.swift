@@ -178,7 +178,8 @@ final class LiveDanmakuEngine: ObservableObject {
         while offset + 16 <= data.count {
             let total = Self.readUInt32(data, at: offset)
             guard total >= 16, offset + total <= data.count else { break }
-            let proto = Self.readUInt16(data, at: offset + 4)
+            // 头部：4B 总长 + 2B 头长(16) + 2B 协议版本(offset+6) + 4B op + 4B 序号
+            let proto = Self.readUInt16(data, at: offset + 6)
             let op = Self.readUInt32(data, at: offset + 8)
             let body = data.subdata(in: (offset + 16)..<(offset + total))
             handlePacket(op: op, proto: proto, body: body)
