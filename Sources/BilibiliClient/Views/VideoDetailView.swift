@@ -33,8 +33,11 @@ struct VideoDetailView: View {
     @State private var commentError: String?
     @State private var commentTotal: Int?
     @State private var tags: [VideoTagData] = []
-    /// 一键三连成功的动画提示
-    @State private var showTripleBurst = false
+    /// 长按点赞蓄力反馈：是否按住中 / 蓄力进度 0...1 / 蓄满后的脉冲
+    @State private var likePressActive = false
+    @State private var likePressProgress: Double = 0
+    @State private var likeChargeTask: Task<Void, Never>?
+    @State private var likeChargedPulse = false
     /// 本页首次出现时导航栈的深度（记录后，栈变深=被新页面覆盖，变回=回到本页）
     @State private var navBaseCount = 0
 
@@ -344,9 +347,22 @@ struct VideoDetailView: View {
             .onTapGesture {
                 Task { await toggleLike() }
             }
-            .onLongPressGesture(minimumDuration: 0.6) {
-                Task { await triple() }
-            }
+            .onLongPressGesture(
+                minimumDuration: 0.6,
+                perform: {
+                    Task { await triple() }
+                    pulseCharged()
+                },
+                onPressingChanged: { pressing in
+                    if pressing {
+                        beginLikeCharge()
+                    } else {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            endLikeCharge()
+                        }
+                    }
+                }
+            )
             .onHover { hovering in
                 if hovering {
                     NSCursor.pointingHand.push()
@@ -357,10 +373,9 @@ struct VideoDetailView: View {
             .hoverScale(scale: 1.06)
             .help("点赞 · 长按一键三连")
             .overlay(alignment: .top) {
-                if showTripleBurst {
-                    tripleBurst
-                        .offset(y: -48)
-                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                if likePressActive {
+                    likeChargeHUD
+                        .offset(y: -46)
                         .allowsHitTesting(false)
                 }
             }
@@ -450,47 +465,85 @@ struct VideoDetailView: View {
             if !liked { liked = true; likeCount += 1 }
             if !coined { coined = true; coinCount += 1 }
             if !faved { faved = true; favCount += 1 }
-            playTripleBurst()
         } catch {
             actionError = error.localizedDescription
         }
     }
 
-    /// 三连成功的动画提示：心/币/收藏图标 + 文字弹起淡出。
-    private func playTripleBurst() {
-        showTripleBurst = false
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
-            showTripleBurst = true
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.3)) {
-                showTripleBurst = false
+    // MARK: - 长按蓄力反馈
+
+    /// 按下点赞按钮：启动 0.6s 蓄力进度计时，驱动三枚图标逐一亮起。
+    private func beginLikeCharge() {
+        likeChargeTask?.cancel()
+        likePressActive = true
+        likePressProgress = 0
+        likeChargedPulse = false
+        likeChargeTask = Task { @MainActor in
+            let start = Date()
+            while !Task.isCancelled {
+                let progress = min(Date().timeIntervalSince(start) / 0.6, 1)
+                likePressProgress = progress
+                if progress >= 1 { break }
+                try? await Task.sleep(for: .milliseconds(16))
             }
         }
     }
 
-    private var tripleBurst: some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 2) {
-                Image(systemName: "hand.thumbsup.fill")
-                    .foregroundStyle(.pink)
-                Image(systemName: "dollarsign.circle.fill")
-                    .foregroundStyle(.orange)
-                Image(systemName: "bookmark.fill")
-                    .foregroundStyle(.blue)
-            }
-            .font(.system(size: 12, weight: .semibold))
-            Text("一键三连")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.primary)
+    /// 松开（或长按被打断）：停止蓄力并隐藏提示。
+    private func endLikeCharge() {
+        likeChargeTask?.cancel()
+        likeChargeTask = nil
+        likePressActive = false
+        likePressProgress = 0
+        likeChargedPulse = false
+    }
+
+    /// 蓄满触发三连时的脉冲：胶囊放大一下再回落。
+    private func pulseCharged() {
+        guard likePressActive else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
+            likeChargedPulse = true
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(.ultraThinMaterial))
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(380))
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                likeChargedPulse = false
+            }
+        }
+    }
+
+    /// 长按中的蓄力提示：赞/币/收藏随进度逐一亮起，蓄满后整颗胶囊脉冲。
+    private var likeChargeHUD: some View {
+        HStack(spacing: 6) {
+            chargeIcon("hand.thumbsup.fill", .pink, order: 0)
+            chargeIcon("dollarsign.circle.fill", .orange, order: 1)
+            chargeIcon("bookmark.fill", .blue, order: 2)
+            Text("长按三连")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .font(.system(size: 13, weight: .semibold))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(.regularMaterial))
         .overlay(Capsule().stroke(.primary.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+        .scaleEffect(likeChargedPulse ? 1.15 : 1)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: likeChargedPulse)
+        .transition(.scale(scale: 0.7).combined(with: .opacity))
+    }
+
+    /// 单个蓄力图标：进度超过 (order+1)/3 时点亮并弹入。
+    private func chargeIcon(_ name: String, _ color: Color, order: Int) -> some View {
+        let threshold = Double(order + 1) / 3
+        let lit = likePressProgress >= threshold
+        return Image(systemName: name)
+            .foregroundStyle(color.opacity(lit ? 1 : 0.35))
+            .scaleEffect(lit ? 1 : 0.6)
+            .opacity(likePressProgress > 0 ? 1 : 0)
+            .animation(.spring(response: 0.28, dampingFraction: 0.6), value: lit)
+            .animation(.easeOut(duration: 0.15), value: likePressProgress > 0)
     }
 
     private func coin(multiply: Int) async {
