@@ -41,4 +41,27 @@ struct VideoService {
             wbi: true
         )
     }
+
+    /// 视频在线人数（web 端在线人数接口）。
+    func onlineTotal(aid: Int, cid: Int) async throws -> VideoOnlineData {
+        try await APIClient.shared.get(
+            "/x/player/online/total",
+            query: ["aid": "\(aid)", "cid": "\(cid)"]
+        )
+    }
+}
+
+/// 视频在线人数（`data` 字段）。
+struct VideoOnlineData: Decodable {
+    /// 所有终端总计人数，如 "9.4万+"
+    let total: String?
+    /// web 端实时在线人数
+    let count: String?
+    /// 数据显示控制
+    let showSwitch: ShowSwitch?
+
+    struct ShowSwitch: Decodable {
+        let total: Bool?
+        let count: Bool?
+    }
 }

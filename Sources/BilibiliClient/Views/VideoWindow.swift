@@ -463,7 +463,36 @@ private struct VideoWindowContent: View {
                     .padding(10)
             }
         }
+        .overlay(alignment: .topLeading) {
+            // 在线人数：随控制条唤起显示在播放窗口左上角
+            if controlsVisible, let text = playerController.onlineText {
+                OnlineBadge(text: text)
+                    .padding(10)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
         .clipped()
+    }
+}
+
+/// 播放窗口左上角“在线人数”徽标。
+private struct OnlineBadge: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 10, weight: .semibold))
+            Text("\(text) 人在看")
+                .font(.caption.weight(.medium))
+                .monospacedDigit()
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(.black.opacity(0.5)))
+        .overlay(Capsule().stroke(.white.opacity(0.16), lineWidth: 1))
     }
 }
 

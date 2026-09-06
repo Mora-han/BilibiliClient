@@ -14,6 +14,8 @@ final class PlayerController: ObservableObject {
     @Published var currentTime: Double = 0
     @Published var duration: Double = 0
     @Published var isPlaying = false
+    /// 视频在线人数展示文本（如 "9.4万+"），随播放加载拉取
+    @Published var onlineText: String?
 
     enum LoadState {
         case idle
@@ -203,6 +205,7 @@ final class PlayerController: ObservableObject {
     /// 播放：优先 MP4 直链（已验证稳定），拿不到再走 DASH 本地代理。
     /// 注意：html5 平台 MP4 最高只有 1080P，4K/HDR/1080P60 必须走 DASH。
     private func play(bvid: String, cid: Int, qn: Int, dashFallback: PlayURLData) async {
+        fetchOnlineCount()
         // 1. MP4（仅 1080P 及以下）
         if qn <= 80,
            let mp4 = try? await service.playURLMP4(bvid: bvid, cid: cid, qn: qn),
@@ -280,10 +283,32 @@ final class PlayerController: ObservableObject {
 
     private func teardownPlayer() {
         holdActive = false
+        onlineText = nil
         stopPlaybackMonitoring()
         player?.pause()
         player = nil
         proxy.stop()
+    }
+
+    /// 拉取当前视频在线人数（所有终端总计优先，其次 web 端实时人数）。
+    private func fetchOnlineCount() {
+        guard aid > 0, cid > 0 else { return }
+        let fetchAid = aid
+        let fetchCid = cid
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let data = try? await self.service.onlineTotal(aid: fetchAid, cid: fetchCid)
+            // 期间可能已切换视频：只采纳仍属于当前视频的结果
+            guard fetchAid == self.aid, fetchCid == self.cid else { return }
+            guard let data else { return }
+            if data.showSwitch?.total == true, let total = data.total, !total.isEmpty {
+                self.onlineText = total
+            } else if data.showSwitch?.count == true, let count = data.count, !count.isEmpty {
+                self.onlineText = count
+            } else {
+                self.onlineText = nil
+            }
+        }
     }
 
     // MARK: - 播放监控
