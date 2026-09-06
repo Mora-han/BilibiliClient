@@ -848,3 +848,126 @@ struct SeriesArchive: Decodable, Identifiable, Hashable {
         let view: Int?
     }
 }
+
+// MARK: - 直播
+
+/// 直播推荐/热门卡片（/room/v1/room/get_user_recommend，data 直接是数组）
+struct LiveRoomCard: Decodable, Identifiable, Hashable {
+    let roomid: Int
+    let uid: Int?
+    let uname: String?
+    let title: String?
+    let online: Int?
+    let userCover: String?
+    let systemCover: String?
+    let face: String?
+    let areaName: String?
+    let watchedShow: WatchedShow?
+
+    var id: Int { roomid }
+
+    struct WatchedShow: Decodable, Hashable {
+        let textSmall: String?
+    }
+
+    /// 封面：优先主播自定义封面，其次系统封面（热门榜大图）。
+    var cover: String {
+        userCover ?? systemCover ?? ""
+    }
+
+    /// 观看人数展示文本（如 "5494.3万"）。
+    var watchingText: String? {
+        if let text = watchedShow?.textSmall, !text.isEmpty { return text }
+        guard let online, online > 0 else { return nil }
+        return "\(online)"
+    }
+}
+
+/// 直播间详情（/room/v1/Room/get_info）
+struct LiveRoomDetail: Decodable, Hashable {
+    let roomId: Int
+    let uid: Int
+    let title: String?
+    let online: Int
+    let liveStatus: Int?
+    let cover: String?
+    let userCover: String?
+    let keyframe: String?
+    let areaName: String?
+    let parentAreaName: String?
+    let description: String?
+    let liveTime: Int?
+
+    var isLive: Bool { liveStatus == 1 }
+}
+
+/// 直播间主播名片（/live_user/v1/Master/info）
+struct LiveAnchorData: Decodable {
+    let info: Info?
+    let followerNum: Int?
+
+    struct Info: Decodable {
+        let uid: Int?
+        let uname: String?
+        let face: String?
+        let sign: String?
+        let official: Int?
+    }
+}
+
+/// 播放流（/xlive/web-room/v2/index/getRoomPlayInfo）
+struct LivePlayInfoData: Decodable {
+    let roomId: Int?
+    let uid: Int?
+    let liveStatus: Int?
+    let playurlInfo: PlayURLInfo?
+
+    struct PlayURLInfo: Decodable {
+        let playurl: PlayURL?
+
+        struct PlayURL: Decodable {
+            let stream: [Stream]?
+            let gQnDesc: [QnDesc]?
+
+            struct QnDesc: Decodable {
+                let qn: Int?
+                let desc: String?
+            }
+        }
+    }
+
+    struct Stream: Decodable {
+        let protocolName: String?
+        let format: [Format]?
+
+        struct Format: Decodable {
+            let formatName: String?
+            let codec: [Codec]?
+
+            struct Codec: Decodable {
+                let codecName: String?
+                let baseUrl: String?
+                let urlInfo: [URLInfo]?
+
+                struct URLInfo: Decodable {
+                    let host: String?
+                    let extra: String?
+                }
+            }
+        }
+    }
+}
+
+/// 弹幕服务器配置（/room/v1/Danmu/getConf，无需 WBI/登录）
+struct LiveDanmuConf: Decodable {
+    let token: String?
+    let host: String?
+    let port: Int?
+    let hostServerList: [Host]?
+
+    struct Host: Decodable, Hashable {
+        let host: String?
+        let port: Int?
+        let wssPort: Int?
+    }
+}

@@ -32,6 +32,7 @@ struct RootView: View {
         case home = "推荐"
         case zones = "分区"
         case popular = "热门"
+        case live = "直播"
         case dynamics = "动态"
         case favorites = "收藏"
         case history = "历史"
@@ -47,6 +48,7 @@ struct RootView: View {
             case .home: return "house.fill"
             case .zones: return "square.grid.2x2"
             case .popular: return "flame.fill"
+            case .live: return "dot.radiowaves.left.and.right"
             case .dynamics: return "sparkles"
             case .favorites: return "bookmark"
             case .history: return "clock.arrow.circlepath"
@@ -79,6 +81,8 @@ struct RootView: View {
                         ZonesView()
                     case .popular:
                         PopularView()
+                    case .live:
+                        LiveFeedView()
                     case .search:
                         SearchView(query: submittedQuery)
                     case .dynamics:
@@ -110,6 +114,9 @@ struct RootView: View {
                 .navigationDestination(for: DynamicRoute.self) { route in
                     DynamicDetailView(id: route.id)
                 }
+                .navigationDestination(for: LiveRoute.self) { route in
+                    LiveDetailView(route: route)
+                }
             }
         }
         .preferredColorScheme(colorScheme)
@@ -132,7 +139,7 @@ struct RootView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section("浏览") {
-                ForEach([SidebarItem.home, .zones, .popular, .dynamics]) { item in
+                ForEach([SidebarItem.home, .zones, .popular, .live, .dynamics]) { item in
                     Label(item.rawValue, systemImage: item.icon)
                         .tag(item)
                 }
