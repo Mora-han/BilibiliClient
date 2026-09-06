@@ -38,6 +38,10 @@ final class PlayerController: ObservableObject {
     private var playbackObserver: Any?
     private var statusObservation: NSKeyValueObservation?
     private var durationObservation: NSKeyValueObservation?
+    /// F9 / 右方向键长按 2 倍速快进的状态（恢复按下前的播放状态用）
+    private var holdActive = false
+    private var rateBeforeHold: Float = 1
+    private var wasPlayingBeforeHold = false
 
     var currentQualityName: String? {
         guard let currentQualityId else { return nil }
@@ -52,6 +56,42 @@ final class PlayerController: ObservableObject {
             player.pause()
         } else {
             player.play()
+        }
+    }
+
+    /// 暂停状态下恢复播放（系统媒体键 F8/播放指令用）
+    func playIfPaused() {
+        guard let player, player.timeControlStatus != .playing else { return }
+        player.play()
+    }
+
+    /// 播放中暂停（系统媒体键 F8/暂停指令用）
+    func pauseIfPlaying() {
+        guard let player, player.timeControlStatus == .playing else { return }
+        player.pause()
+    }
+
+    /// 进入长按 2 倍速快进（与右方向键长按一致）
+    func beginHoldFastForward() {
+        guard let player, !holdActive else { return }
+        holdActive = true
+        rateBeforeHold = player.rate
+        wasPlayingBeforeHold = player.timeControlStatus == .playing
+        if wasPlayingBeforeHold {
+            player.rate = 2
+        } else {
+            player.playImmediately(atRate: 2)
+        }
+    }
+
+    /// 结束长按快进：恢复按住前的播放状态
+    func endHoldFastForward() {
+        guard let player, holdActive else { return }
+        holdActive = false
+        if wasPlayingBeforeHold {
+            player.rate = rateBeforeHold > 0 ? rateBeforeHold : 1
+        } else {
+            player.pause()
         }
     }
 
@@ -132,6 +172,7 @@ final class PlayerController: ObservableObject {
         if Self.activeController === self {
             Self.activeController = nil
         }
+        SystemMediaCenter.shared.playerDidStop(self)
     }
 
     // MARK: - Private
@@ -238,6 +279,7 @@ final class PlayerController: ObservableObject {
     }
 
     private func teardownPlayer() {
+        holdActive = false
         stopPlaybackMonitoring()
         player?.pause()
         player = nil
@@ -257,18 +299,21 @@ final class PlayerController: ObservableObject {
             let seconds = time.seconds
             Task { @MainActor in
                 self?.currentTime = seconds
+                SystemMediaCenter.shared.syncNowPlaying()
             }
         }
         statusObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
             let playing = player.timeControlStatus == .playing
             Task { @MainActor in
                 self?.isPlaying = playing
+                SystemMediaCenter.shared.syncNowPlaying(force: true)
             }
         }
         durationObservation = player.currentItem?.observe(\.duration, options: [.initial, .new]) { [weak self] item, _ in
             let d = item.duration.seconds
             Task { @MainActor in
                 self?.duration = d.isFinite ? d : 0
+                SystemMediaCenter.shared.syncNowPlaying(force: true)
             }
         }
         if let d = player.currentItem?.duration.seconds, d.isFinite {

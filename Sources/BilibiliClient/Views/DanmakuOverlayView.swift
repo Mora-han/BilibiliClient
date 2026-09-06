@@ -5,8 +5,9 @@ import QuartzCore
 import SwiftUI
 
 /// 弹幕渲染层：完全脱离 SwiftUI 渲染管线。
-/// 每条弹幕 = 一个 CALayer（文字预渲染成带外侧描边的位图，由 GPU 缓存），
-/// 独立 NSView 上的 CADisplayLink 每帧只做轻量位置计算与 layer 属性赋值，
+/// 每条弹幕 = 一个 CALayer（文字预渲染成带外侧描边的位图，由 GPU 缓存）。
+/// 滚动弹幕的运动交给 Core Animation 在渲染进程按播放时间推进（不依赖回调帧率），
+/// CADisplayLink 只做轻量的生成/回收；暂停、seek、倍速时直接修正模型值，
 /// 不触发任何 SwiftUI 视图更新或 Canvas 重绘，对视频渲染几乎零干扰。
 struct DanmakuOverlayView: NSViewRepresentable {
     let engine: DanmakuEngine
@@ -43,9 +44,12 @@ final class DanmakuOverlayNSView: NSView {
     }
 
     private var link: CADisplayLink?
+    private var windowCloseObserver: NSObjectProtocol?
     private var layers: [Int: CALayer] = [:]
     private var lastSize: CGSize = .zero
     private var lastScale: CGFloat = 0
+    /// 弹幕是否处于“随播放头行进”的状态（播放中）。暂停/缓冲时置为静态。
+    private var drivePlaying = false
 
     init(engine: DanmakuEngine, player: AVPlayer?) {
         self.engine = engine
@@ -64,6 +68,21 @@ final class DanmakuOverlayNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let windowCloseObserver {
+            NotificationCenter.default.removeObserver(windowCloseObserver)
+            self.windowCloseObserver = nil
+        }
+        if let window {
+            // 窗口被关闭（无论由谁触发）时立即停帧：CADisplayLink 强引用 target，
+            // 不能依赖 deinit 收尾，避免关闭后仍有空转的帧驱动占用 CPU。
+            windowCloseObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.stopLink()
+                }
+            }
+        }
         updateLink()
     }
 
@@ -74,6 +93,9 @@ final class DanmakuOverlayNSView: NSView {
     }
 
     deinit {
+        if let windowCloseObserver {
+            NotificationCenter.default.removeObserver(windowCloseObserver)
+        }
         link?.invalidate()
     }
 
@@ -90,9 +112,15 @@ final class DanmakuOverlayNSView: NSView {
             newLink.add(to: .main, forMode: .common)
             link = newLink
         } else {
-            link?.invalidate()
-            link = nil
+            stopLink()
         }
+    }
+
+    /// 立即停止帧驱动（窗口关闭/离开/停用弹幕/播放器销毁时调用）。
+    private func stopLink() {
+        link?.invalidate()
+        link = nil
+        removeAllLayers()
     }
 
     @objc private func frameTick() {
@@ -119,30 +147,72 @@ final class DanmakuOverlayNSView: NSView {
 
     // MARK: - 层同步
 
+    /// 滚动弹幕的运动由 Core Animation 在渲染侧按时间推进：
+    /// 只在“生成/回收/暂停/变速”时改模型值，常规播放中不提交事务，
+    /// 视觉帧率与系统是否节流 CADisplayLink 回调完全解耦。
     private func syncLayers(size: CGSize, scale: CGFloat, time: Double) {
+        let playing = player?.timeControlStatus == .playing
+        let rate = playing ? max(player?.rate ?? 1, 0.1) : 1
+
+        if playing != drivePlaying {
+            if playing {
+                // 恢复播放：给暂停/缓冲期间静态放置的滚动层补上续走动画
+                for (id, layer) in layers {
+                    if let item = engine.active.first(where: { $0.id == id }) {
+                        startScrollAnimation(for: item, layer: layer, in: size, time: time)
+                    }
+                }
+            } else {
+                // 暂停/缓冲：取消动画，钉在播放头当前时间对应的位置
+                for (id, layer) in layers {
+                    if let item = engine.active.first(where: { $0.id == id }) {
+                        freeze(layer, for: item, in: size, time: time)
+                    } else {
+                        layer.removeAnimation(forKey: Self.moveKey)
+                    }
+                }
+            }
+            drivePlaying = playing
+        }
+        // 倍速（如长按右方向键 2 倍速）时按倍速推进动画，与播放头保持一致
+        if abs((self.layer?.speed ?? 1) - rate) > 0.01 {
+            self.layer?.speed = rate
+        }
+
         guard !engine.active.isEmpty else {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             removeAllLayers()
+            CATransaction.commit()
             return
         }
 
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        defer { CATransaction.commit() }
-
+        // 只在实际有层加入/回收时才开事务提交；空转帧零 CA 提交
         var ids = Set<Int>()
         ids.reserveCapacity(engine.active.count)
+        var needsMutation = false
         for item in engine.active {
             ids.insert(item.id)
-            if let layer = layers[item.id] {
-                layer.position = layerPosition(for: item, in: size, time: time)
-            } else {
-                addLayer(for: item, size: size, scale: scale, time: time)
+            if layers[item.id] == nil { needsMutation = true }
+        }
+        if !needsMutation {
+            for id in layers.keys where !ids.contains(id) {
+                needsMutation = true
+                break
             }
+        }
+        guard needsMutation else { return }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for item in engine.active where layers[item.id] == nil {
+            addLayer(for: item, size: size, scale: scale, time: time)
         }
         for (id, layer) in layers where !ids.contains(id) {
             layer.removeFromSuperlayer()
             layers[id] = nil
         }
+        CATransaction.commit()
     }
 
     private func addLayer(for item: DanmakuEngine.Active, size: CGSize, scale: CGFloat, time: Double) {
@@ -163,13 +233,53 @@ final class DanmakuOverlayNSView: NSView {
         } else {
             layer.bounds = CGRect(x: 0, y: 0, width: 1, height: 1)
         }
-        layer.position = layerPosition(for: item, in: size, time: time)
         layer.actions = [
             "position": NSNull(),
             "contents": NSNull(),
         ]
         self.layer?.addSublayer(layer)
         layers[item.id] = layer
+        if drivePlaying, item.mode == 1 {
+            startScrollAnimation(for: item, layer: layer, in: size, time: time)
+        } else {
+            layer.position = Self.layerPosition(for: item, in: size, time: time)
+        }
+    }
+
+    /// 滚动弹幕：从当前播放头位置线性动画到终点（终点即离开画面）。
+    /// 模型值直接设为终点，动画结束后不会回跳；层在引擎回收时移除。
+    private func startScrollAnimation(for item: DanmakuEngine.Active,
+                                      layer: CALayer,
+                                      in size: CGSize,
+                                      time: Double) {
+        guard item.mode == 1 else {
+            layer.position = Self.layerPosition(for: item, in: size, time: time)
+            return
+        }
+        let end = item.startTime + item.duration
+        let remaining = max(0, end - time)
+        guard remaining > 0.02 else {
+            layer.position = Self.layerPosition(for: item, in: size, time: end)
+            return
+        }
+        let endPosition = Self.layerPosition(for: item, in: size, time: end)
+        layer.removeAnimation(forKey: Self.moveKey)
+        layer.position = endPosition
+        let animation = CABasicAnimation(keyPath: "position")
+        animation.fromValue = NSValue(point: Self.layerPosition(for: item, in: size, time: time))
+        animation.toValue = NSValue(point: endPosition)
+        animation.duration = remaining
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        layer.add(animation, forKey: Self.moveKey)
+    }
+
+    /// 暂停/缓冲：取消动画，把层钉在当前播放头时间对应的静止位置。
+    private func freeze(_ layer: CALayer,
+                        for item: DanmakuEngine.Active,
+                        in size: CGSize,
+                        time: Double) {
+        layer.removeAnimation(forKey: Self.moveKey)
+        layer.position = Self.layerPosition(for: item, in: size, time: time)
     }
 
     /// 预渲染文字位图：8 方向偏移的黑色描边 + 中心填充，返回已按 scale 放大的图。
@@ -219,12 +329,14 @@ final class DanmakuOverlayNSView: NSView {
     }
 
     /// 引擎坐标是左上角原点，AppKit 层坐标是左下角原点，翻转 Y
-    private func layerPosition(for item: DanmakuEngine.Active,
-                               in size: CGSize,
-                               time: Double) -> CGPoint {
+    private static func layerPosition(for item: DanmakuEngine.Active,
+                                      in size: CGSize,
+                                      time: Double) -> CGPoint {
         let p = item.position(in: size, at: time)
         return CGPoint(x: p.x, y: size.height - p.y)
     }
+
+    private static let moveKey = "dmMove"
 }
 
 /// 播放器右上角的弹幕开关（液态玻璃胶囊样式）。

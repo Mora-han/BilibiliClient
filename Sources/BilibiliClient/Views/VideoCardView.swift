@@ -14,12 +14,19 @@ struct VideoCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             thumbnail
 
-            Text(title)
-                .font(.callout.weight(.medium))
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .foregroundStyle(.primary)
+            ZStack(alignment: .topLeading) {
+                // 隐藏的两行占位：短标题的卡片高度也与两行标题的卡片一致
+                Text("\n")
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+                    .hidden()
+                Text(title)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
 
             HStack(spacing: 8) {
                 Text(ownerName.isEmpty ? "未知UP主" : ownerName)
@@ -40,9 +47,13 @@ struct VideoCardView: View {
 
     private var thumbnail: some View {
         ZStack(alignment: .bottomTrailing) {
-            RemoteImage(url: Formatters.https(pic))
-                .frame(maxWidth: .infinity)
+            // 用透明视图撑出固定 16:9 的封面盒子：卡片尺寸与封面原始大小无关，
+            // 封面在其内填满（保持比例），避免小封面把整张卡片带矮。
+            Color.clear
                 .aspectRatio(16 / 9, contentMode: .fit)
+                .overlay {
+                    RemoteImage(url: Formatters.https(pic))
+                }
 
             if duration > 0 {
                 Text(Formatters.duration(duration))

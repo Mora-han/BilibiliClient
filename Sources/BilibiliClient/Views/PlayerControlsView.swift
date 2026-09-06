@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 自研播放器控制条：替换 AVKit 系统控制条。
-/// 显示后 3 秒自动落下隐藏；鼠标移动不唤起，仅点击画面可切换显隐。
+/// 鼠标活动时显示，静止数秒后淡出；所有交互都走 PlayerController。
 struct PlayerControlsView: View {
     @ObservedObject var player: PlayerController
     @Environment(\.colorScheme) private var colorScheme
@@ -11,7 +11,10 @@ struct PlayerControlsView: View {
     @Binding var controlsVisible: Bool
     /// 当前是否在全屏窗口内（决定全屏按钮图标与动作方向）
     let isFullscreen: Bool
+    /// 当前视频窗口是否已分离为独立窗口（决定分离/吸附按钮形态）
+    let isDetached: Bool
     let onToggleFullscreen: () -> Void
+    let onToggleDetach: () -> Void
 
     @State private var hideTask: Task<Void, Never>?
     @State private var isScrubbing = false
@@ -21,26 +24,28 @@ struct PlayerControlsView: View {
     /// seek 序号：用于忽略被新 seek 打断的旧回调
     @State private var seekGeneration = 0
     @State private var seekTimeoutTask: Task<Void, Never>?
-
-    /// 浮起/落下动画时长：集中定义，供点击切换调用点复用
-    static let showAnimation = Animation.easeOut(duration: 0.15)
-    static let hideAnimation = Animation.easeIn(duration: 0.2)
-
     private var isDark: Bool { colorScheme == .dark }
 
     var body: some View {
         ZStack {
-            // 透明占位：点击穿透到视频层（PlayerLayerView 处理单击/双击）
+            // 透明占位：点击穿透到视频层（PlayerLayerView 处理单击/双击），
+            // 同时保持 hover 区域覆盖整个播放器
             Color.clear
                 .allowsHitTesting(false)
 
-            controlBar
+            if controlsVisible {
+                controlBar
+            }
         }
-        .onChange(of: controlsVisible) { _, newValue in
-            if newValue { scheduleHide() }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active, .ended:
+                bumpActivity()
+            }
         }
-        .onAppear {
-            scheduleHide()
+        .onAppear { scheduleHide() }
+        .onChange(of: controlsVisible) { _, visible in
+            if visible { scheduleHide() }
         }
         .onDisappear {
             hideTask?.cancel()
@@ -81,10 +86,6 @@ struct PlayerControlsView: View {
                 // 悬浮：收窄成居中胶囊并抬高；沉底：贴底通栏
                 .frame(maxWidth: barStyle == PlayerBarStyle.floating.rawValue ? 580 : .infinity)
                 .padding(.bottom, barStyle == PlayerBarStyle.floating.rawValue ? 18 : 0)
-                // 浮起动画：隐藏时下沉 14pt 并淡出，显示时滑回原位
-                .offset(y: controlsVisible ? 0 : 14)
-                .opacity(controlsVisible ? 1 : 0)
-                .allowsHitTesting(controlsVisible)
         }
     }
 
@@ -106,8 +107,27 @@ struct PlayerControlsView: View {
 
             qualityMenu
             DanmakuToggleButton(isOn: $danmakuEnabled)
+            if !isFullscreen {
+                detachButton
+            }
             fullscreenButton
         }
+    }
+
+    /// 分离/吸附按钮：点击把播放窗口从播放页拆成独立窗口，可自由移动缩放；
+    /// 再点一次恢复吸附回播放页原位。
+    private var detachButton: some View {
+        Button {
+            bumpActivity()
+            onToggleDetach()
+        } label: {
+            Image(systemName: isDetached ? "pin" : "pin.slash")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .help(isDetached ? "吸附回播放页" : "分离为独立窗口")
     }
 
     private var playbackButton: some View {
@@ -224,22 +244,25 @@ struct PlayerControlsView: View {
     // MARK: - 自动隐藏
 
     private func bumpActivity() {
-        // 交互（点按钮/拖进度条）后重新计时；鼠标悬停不再触发
         if !controlsVisible {
-            withAnimation(Self.showAnimation) {
+            withAnimation(.easeOut(duration: 0.15)) {
                 controlsVisible = true
             }
         }
         scheduleHide()
     }
 
-    /// 控制条显示 3 秒后自动落下隐藏（无视鼠标移动）
+    /// 显示后 5 秒无操作自动淡出；拖进度条期间顺延，松开后重新计时。
     private func scheduleHide() {
         hideTask?.cancel()
         hideTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, controlsVisible, !isScrubbing else { return }
-            withAnimation(Self.hideAnimation) {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, controlsVisible else { return }
+            if isScrubbing {
+                scheduleHide()
+                return
+            }
+            withAnimation(.easeOut(duration: 0.25)) {
                 controlsVisible = false
             }
         }

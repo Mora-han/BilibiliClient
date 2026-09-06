@@ -5,10 +5,10 @@ struct VideoDetailView: View {
     let bvid: String
 
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var router: AppRouter
     @StateObject private var player = PlayerController()
     @State private var danmaku = DanmakuEngine()
-    @State private var videoWindow: VideoWindow?
-    @State private var playerFrame: CGRect = .zero
+    @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @State private var liked = false
     @State private var coined = false
     @State private var faved = false
@@ -32,14 +32,21 @@ struct VideoDetailView: View {
     @State private var hasMoreComments = true
     @State private var commentError: String?
     @State private var commentTotal: Int?
+    /// 本页首次出现时导航栈的深度（记录后，栈变深=被新页面覆盖，变回=回到本页）
+    @State private var navBaseCount = 0
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if isLoading {
+        Group {
+            if isLoading {
+                ScrollView {
                     ProgressView("加载中…")
                         .frame(maxWidth: .infinity, minHeight: 320)
-                } else if let errorMessage {
+                        .frame(maxWidth: 980)
+                        .frame(maxWidth: .infinity)
+                        .padding(24)
+                }
+            } else if let errorMessage {
+                ScrollView {
                     ContentUnavailableView {
                         Label("加载失败", systemImage: "exclamationmark.triangle")
                     } description: {
@@ -49,21 +56,36 @@ struct VideoDetailView: View {
                             Task { await load() }
                         }
                     }
-                } else if let view = detail?.view {
-                    content(view)
+                    .frame(maxWidth: 980)
+                    .frame(maxWidth: .infinity)
+                    .padding(24)
                 }
+            } else if let view = detail?.view {
+                content(view)
             }
-            .frame(maxWidth: 980)
-            .frame(maxWidth: .infinity)
-            .padding(24)
         }
         .navigationTitle(detail?.view.title ?? "视频详情")
         .task { await load() }
+        .onAppear {
+            navBaseCount = router.path.count
+        }
+        .onChange(of: router.path.count) { _, newCount in
+            if newCount > navBaseCount {
+                // 被推入的新页面覆盖（如 UP 主页、评论中的 UP 等）：隐藏播放窗口并停止播放
+                VideoWindow.shared?.forceClose()
+                VideoWindow.shared = nil
+                player.stop()
+                danmaku.reset()
+            } else if newCount == navBaseCount {
+                // 回到本页：恢复播放器与弹幕
+                Task { await load() }
+            }
+        }
         .onDisappear {
+            VideoWindow.shared?.forceClose()
+            VideoWindow.shared = nil
             player.stop()
             danmaku.reset()
-            videoWindow?.forceClose()
-            videoWindow = nil
         }
         .sheet(isPresented: $showLogin) { LoginView() }
         .sheet(isPresented: $showFavoritePicker) {
@@ -87,9 +109,10 @@ struct VideoDetailView: View {
 
     private func load() async {
         if let data = detail {
-            // 返回后再进入：恢复已停止的播放器
+            // 返回后再进入：恢复已停止的播放器与弹幕
             if player.player == nil {
                 await player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
+                await loadDanmaku(cid: data.view.cid)
             }
             return
         }
@@ -130,77 +153,93 @@ struct VideoDetailView: View {
     }
 
     private func content(_ view: VideoDetailData.VideoView) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(spacing: 0) {
+            // 视频固定在页面顶部：滚动时保持原位完整可见，下方内容独立滑动
             playerSection
+                .frame(maxWidth: 980)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
 
-            if !player.qualities.isEmpty {
-                HStack {
-                    Spacer()
-                    Menu {
-                        ForEach(player.qualities) { quality in
-                            Button {
-                                Task { await player.selectQuality(quality) }
-                            } label: {
-                                if quality.id == player.currentQualityId {
-                                    Label(quality.name, systemImage: "checkmark")
-                                } else {
-                                    Text(quality.name)
+                // 固定空隙：不属于滚动内容，滚动时始终保留在视频与内容之间
+                Color.clear
+                    .frame(height: 18)
+
+                ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if !player.qualities.isEmpty {
+                        HStack {
+                            Spacer()
+                            Menu {
+                                ForEach(player.qualities) { quality in
+                                    Button {
+                                        Task { await player.selectQuality(quality) }
+                                    } label: {
+                                        if quality.id == player.currentQualityId {
+                                            Label(quality.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(quality.name)
+                                        }
+                                    }
                                 }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "gear")
+                                    Text(player.currentQualityName ?? "清晰度")
+                                    Image(systemName: "chevron.up.chevron.down")
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
                         }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "gear")
-                            Text(player.currentQualityName ?? "清晰度")
-                            Image(systemName: "chevron.up.chevron.down")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
+
+                    Text(view.title)
+                        .font(.title2.bold())
+                        .textSelection(.enabled)
+
+                    infoRow(view)
+
+                    actionBar(view)
+
+                    if let pages = view.pages, pages.count > 1 {
+                        Label("共 \(pages.count) 个分P", systemImage: "list.number")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    Text("简介").font(.headline)
+                    Text(view.desc.isEmpty ? "该视频没有简介" : view.desc)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineSpacing(4)
+                        .textSelection(.enabled)
+
+                    Divider()
+
+                    commentHeader
+                    commentSection(view)
+
+                    Spacer(minLength: 40)
                 }
+                .frame(maxWidth: 980)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
             }
-
-            Text(view.title)
-                .font(.title2.bold())
-                .textSelection(.enabled)
-
-            infoRow(view)
-
-            actionBar(view)
-
-            if let pages = view.pages, pages.count > 1 {
-                Label("共 \(pages.count) 个分P", systemImage: "list.number")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            Text("简介").font(.headline)
-            Text(view.desc.isEmpty ? "该视频没有简介" : view.desc)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineSpacing(4)
-                .textSelection(.enabled)
-
-            Divider()
-
-            commentHeader
-            commentSection(view)
-
-            Spacer(minLength: 40)
         }
     }
 
     @ViewBuilder
     private var playerSection: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16).fill(.black)
-
             switch player.state {
             case .idle, .loading:
+                Rectangle().fill(.black)
                 VStack(spacing: 10) {
                     ProgressView()
                     Text("正在加载播放地址…")
@@ -208,6 +247,7 @@ struct VideoDetailView: View {
                         .foregroundStyle(.secondary)
                 }
             case .failed:
+                Rectangle().fill(.black)
                 VStack(spacing: 10) {
                     Image(systemName: "play.slash")
                         .font(.largeTitle)
@@ -223,25 +263,25 @@ struct VideoDetailView: View {
                 }
                 .padding()
             case .ready:
-                // 视频画面由 VideoWindow 子窗口承载（钉在本区域），这里只留占位
-                Color.black
+                // 视频画面由 VideoWindow 子窗口承载（钉在本区域），这里不放任何
+                // 可见占位：黑色背景会在全屏动画期间像“残留黑窗”一样留在原位。
+                // 仅保留透明视图撑住 16:9 布局，供 FrameReporter 定位视频窗口。
+                Color.clear
             }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            Rectangle()
                 .strokeBorder(.white.opacity(0.08), lineWidth: 1)
         )
         .background(
-            FrameReporter { frame in
-                playerFrame = frame
-                if let videoWindow, videoWindow.isOpen {
+            FrameReporter(onFrame: { frame in
+                if let videoWindow = VideoWindow.shared, videoWindow.isOpen {
                     videoWindow.updateEmbedFrame(frame)
                 } else if player.state == .ready, player.player != nil {
                     openVideoWindow(at: frame)
                 }
-            }
+            }, force: player.state == .ready)
         )
     }
 
@@ -544,11 +584,16 @@ struct VideoDetailView: View {
         isLoadingComments = false
     }
 
-    /// 切换系统原生全屏：直接对视频子窗口调用 toggleFullScreen，
-    /// 由系统动画从视频当前位置丝滑放大到全屏 Space。
+    /// 切换全屏：直接对嵌入播放窗口调用系统 toggleFullScreen，
+    /// 原生动画从窗口当前位置放大到全屏，无需新建窗口或手动定位。
     private func toggleFullscreen() {
         guard player.state == .ready, player.player != nil else { return }
-        videoWindow?.toggleFullscreen()
+        VideoWindow.shared?.toggleFullscreen()
+    }
+
+    /// 切换播放窗口“吸附嵌入 / 分离独立”。
+    private func toggleVideoWindowDetach() {
+        VideoWindow.shared?.toggleDetach()
     }
 
     /// 打开视频子窗口并钉在播放区域（由 FrameReporter 持续校准位置）。
@@ -556,14 +601,32 @@ struct VideoDetailView: View {
     private func openVideoWindow(at frame: CGRect) {
         guard player.state == .ready, player.player != nil,
               let window = AppDelegate.mainWindow() else { return }
-        if let existing = videoWindow, existing.isOpen {
+        if let existing = VideoWindow.shared, existing.isOpen {
             existing.updateEmbedFrame(frame)
             return
         }
+        bindSystemPlayer()
         let vw = VideoWindow()
-        videoWindow = vw
-        vw.open(playerController: player, engine: danmaku, parent: window, frame: frame)
+        VideoWindow.shared = vw
+        vw.open(playerController: player,
+                engine: danmaku,
+                parent: window,
+                frame: frame,
+                onToggleFullscreen: toggleFullscreen,
+                onToggleDetach: toggleVideoWindowDetach)
         vw.focusPlayer()
+    }
+
+    /// 播放窗口建起时把当前视频注册为系统“正在播放”，媒体键（F7/F8/F9）
+    /// 与控制中心进度条才会路由到这个播放器。
+    private func bindSystemPlayer() {
+        guard let view = detail?.view else { return }
+        SystemMediaCenter.shared.bind(
+            player: player,
+            title: view.title,
+            artist: view.owner.name,
+            artworkURL: Formatters.https(view.pic)
+        )
     }
 
     private func loadDanmaku(cid: Int) async {
@@ -580,3 +643,4 @@ struct VideoDetailView: View {
         await player.retry(aid: view.aid, bvid: view.bvid, cid: view.cid)
     }
 }
+

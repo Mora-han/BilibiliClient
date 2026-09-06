@@ -386,26 +386,35 @@ final class HLSProxy {
 
     /// 分片缓存（LRU，总容量上限），actor 保证并发安全。
     private actor CacheStore {
-        private var cache: [String: Data] = [:]
-        private var order: [String] = []
+        private struct Entry {
+            let data: Data
+            var lastUsed: Int
+        }
+
+        private var cache: [String: Entry] = [:]
+        private var clock = 0
         private var size = 0
         private let limit = 64 * 1024 * 1024
 
         func value(for key: String) -> Data? {
-            guard let data = cache[key] else { return nil }
-            order.removeAll { $0 == key }
-            order.append(key)
-            return data
+            guard var entry = cache[key] else { return nil }
+            clock += 1
+            entry.lastUsed = clock
+            cache[key] = entry
+            return entry.data
         }
 
         func store(_ data: Data, for key: String) {
-            cache[key] = data
-            order.append(key)
+            clock += 1
+            if let old = cache[key] {
+                size -= old.data.count
+            }
+            cache[key] = Entry(data: data, lastUsed: clock)
             size += data.count
-            while size > limit, let evicted = order.first {
-                order.removeFirst()
+            while size > limit,
+                  let evicted = cache.min(by: { $0.value.lastUsed < $1.value.lastUsed })?.key {
                 if let old = cache.removeValue(forKey: evicted) {
-                    size -= old.count
+                    size -= old.data.count
                 }
             }
         }

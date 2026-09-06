@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// 定位主窗口：优先按 Scene id “main”，并排除菜单栏 popover 等 NSPanel
-    /// 与全屏播放窗口（自定义全屏窗口，类名含 Fullscreen）。
+    /// 与全屏/嵌入播放窗口（类名含 Fullscreen）。
     static func mainWindow() -> NSWindow? {
         NSApp.windows.first {
             $0.identifier?.rawValue == "main"
@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         NSApplication.shared.setActivationPolicy(.regular)
+        // 系统媒体键（F7 后退 / F8 播放暂停 / F9 前进）与“正在播放”上报
+        SystemMediaCenter.shared.install()
         let menuBar = MenuBarController()
         menuBar.install()
         self.menuBar = menuBar
