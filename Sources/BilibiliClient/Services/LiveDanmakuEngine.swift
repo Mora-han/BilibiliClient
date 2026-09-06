@@ -124,7 +124,7 @@ final class LiveDanmakuEngine: ObservableObject {
         task.resume()
 
         let auth = Self.packet(op: 7, protover: 1,
-                               body: Data(Self.authBody(roomId: roomId, token: token).utf8))
+                               body: Data(authBody(roomId: roomId, token: token).utf8))
         try await task.send(.data(auth))
         startReceiveLoop(task)
         startHeartbeat(task)
@@ -319,9 +319,12 @@ final class LiveDanmakuEngine: ObservableObject {
 
     // MARK: - 包构造
 
-    private static func authBody(roomId: Int, token: String) -> String {
+    private func authBody(roomId: Int, token: String) -> String {
+        // 弹幕 token 与账号绑定：登录后须用真实 uid 认证，否则服务端会直接断开
+        // （uid=0 仅对匿名 token 有效）。
+        let uid = Int(APIClient.shared.cookies.dedeUserID ?? "") ?? 0
         let dict: [String: Any] = [
-            "uid": 0,
+            "uid": uid,
             "roomid": roomId,
             "protover": 2,
             "platform": "web",
