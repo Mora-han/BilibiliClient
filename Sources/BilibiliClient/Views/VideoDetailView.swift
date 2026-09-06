@@ -33,6 +33,8 @@ struct VideoDetailView: View {
     @State private var commentError: String?
     @State private var commentTotal: Int?
     @State private var tags: [VideoTagData] = []
+    /// 一键三连成功的动画提示
+    @State private var showTripleBurst = false
     /// 本页首次出现时导航栈的深度（记录后，栈变深=被新页面覆盖，变回=回到本页）
     @State private var navBaseCount = 0
 
@@ -331,18 +333,37 @@ struct VideoDetailView: View {
 
     private func actionBar(_ view: VideoDetailData.VideoView) -> some View {
         HStack(spacing: 28) {
-            Button {
-                Task { await toggleLike() }
-            } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: liked ? "hand.thumbsup.fill" : "hand.thumbsup")
-                    Text(Formatters.count(likeCount))
-                        .font(.caption2)
-                }
-                .foregroundStyle(liked ? Color.pink : Color.primary)
+            VStack(spacing: 3) {
+                Image(systemName: liked ? "hand.thumbsup.fill" : "hand.thumbsup")
+                Text(Formatters.count(likeCount))
+                    .font(.caption2)
             }
-            .buttonStyle(.plain)
+            .foregroundStyle(liked ? Color.pink : Color.primary)
+            .contentShape(Rectangle())
+            // 单击点赞/取消赞；长按 0.6s 一键三连（长按识别后松手不会再触发单击）
+            .onTapGesture {
+                Task { await toggleLike() }
+            }
+            .onLongPressGesture(minimumDuration: 0.6) {
+                Task { await triple() }
+            }
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
             .hoverScale(scale: 1.06)
+            .help("点赞 · 长按一键三连")
+            .overlay(alignment: .top) {
+                if showTripleBurst {
+                    tripleBurst
+                        .offset(y: -48)
+                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                        .allowsHitTesting(false)
+                }
+            }
 
             Menu {
                 Button("投 1 枚硬币") {
@@ -418,6 +439,58 @@ struct VideoDetailView: View {
         } catch {
             actionError = error.localizedDescription
         }
+    }
+
+    /// 一键三连：点赞 + 投币 1 枚 + 收藏到默认收藏夹。
+    private func triple() async {
+        guard requireLogin() else { return }
+        guard let view = detail?.view else { return }
+        do {
+            try await UserActionService().triple(aid: view.aid, bvid: view.bvid)
+            if !liked { liked = true; likeCount += 1 }
+            if !coined { coined = true; coinCount += 1 }
+            if !faved { faved = true; favCount += 1 }
+            playTripleBurst()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// 三连成功的动画提示：心/币/收藏图标 + 文字弹起淡出。
+    private func playTripleBurst() {
+        showTripleBurst = false
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
+            showTripleBurst = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                showTripleBurst = false
+            }
+        }
+    }
+
+    private var tripleBurst: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 2) {
+                Image(systemName: "hand.thumbsup.fill")
+                    .foregroundStyle(.pink)
+                Image(systemName: "dollarsign.circle.fill")
+                    .foregroundStyle(.orange)
+                Image(systemName: "bookmark.fill")
+                    .foregroundStyle(.blue)
+            }
+            .font(.system(size: 12, weight: .semibold))
+            Text("一键三连")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .overlay(Capsule().stroke(.primary.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
     }
 
     private func coin(multiply: Int) async {

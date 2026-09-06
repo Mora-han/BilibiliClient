@@ -27,6 +27,14 @@ struct UserActionService {
         try await APIClient.shared.postForm(path: "/x/web-interface/coin/add", form: form)
     }
 
+    /// 一键三连：同时点赞、投币 1 枚并收藏到默认收藏夹。
+    func triple(aid: Int, bvid: String? = nil) async throws {
+        await APIClient.shared.ensureBuvid()
+        var form: [String: String] = ["aid": "\(aid)", "csrf": csrf()]
+        if let bvid, !bvid.isEmpty { form["bvid"] = bvid }
+        try await APIClient.shared.postForm(path: "/x/web-interface/archive/like/triple", form: form)
+    }
+
     func favorite(aid: Int, faved: Bool) async throws {
         let folderId = try await defaultFolderId()
         var form: [String: String] = [
