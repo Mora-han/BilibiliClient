@@ -339,6 +339,8 @@ struct CommentItem: Decodable, Identifiable {
     let rcount: Int?
     let ctime: Int?
     let like: Int?
+    /// 当前登录用户是否已点赞：0 = 未赞，1 = 已赞（未登录时可能缺失）
+    let action: Int?
     let member: Member?
     let content: Content?
     let replies: [CommentItem]?

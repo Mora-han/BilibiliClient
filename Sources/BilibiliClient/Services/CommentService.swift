@@ -21,4 +21,16 @@ struct CommentService {
             "pn": "\(page)",
         ])
     }
+
+    /// 点赞 / 取消点赞评论（type=1 视频评论）。
+    func like(aid: Int, rpid: Int, liked: Bool) async throws {
+        await APIClient.shared.ensureBuvid()
+        try await APIClient.shared.postForm(path: "/x/v2/reply/like", form: [
+            "type": "1",
+            "oid": "\(aid)",
+            "rpid": "\(rpid)",
+            "action": liked ? "1" : "2",
+            "csrf": APIClient.shared.cookies.biliJct ?? "",
+        ])
+    }
 }

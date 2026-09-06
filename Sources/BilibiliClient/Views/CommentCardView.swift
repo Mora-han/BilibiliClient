@@ -53,7 +53,10 @@ struct CommentCardView: View {
 
                     HStack(spacing: 14) {
                         Text(Formatters.timeAgo(comment.ctime ?? 0))
-                        Label(Formatters.count(comment.like ?? 0), systemImage: "hand.thumbsup")
+                        CommentLikeButton(aid: aid,
+                                          rpid: comment.rpid,
+                                          liked: (comment.action ?? 0) == 1,
+                                          likeCount: comment.like ?? 0)
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -84,7 +87,7 @@ struct CommentCardView: View {
     private var replyList: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(replies) { reply in
-                ReplyRowView(reply: reply)
+                ReplyRowView(reply: reply, aid: aid)
             }
 
             if isLoadingReplies && replies.isEmpty {
@@ -154,6 +157,7 @@ struct CommentCardView: View {
 
 struct ReplyRowView: View {
     let reply: CommentItem
+    let aid: Int
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -180,11 +184,74 @@ struct ReplyRowView: View {
 
                 HStack(spacing: 10) {
                     Text(Formatters.timeAgo(reply.ctime ?? 0))
-                    Label(Formatters.count(reply.like ?? 0), systemImage: "hand.thumbsup")
+                    CommentLikeButton(aid: aid,
+                                      rpid: reply.rpid,
+                                      liked: (reply.action ?? 0) == 1,
+                                      likeCount: reply.like ?? 0)
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// 评论/回复的点赞按钮：未登录点击唤起扫码登录，登录后乐观更新计数。
+struct CommentLikeButton: View {
+    let aid: Int
+    let rpid: Int
+    let liked: Bool
+    let likeCount: Int
+
+    @EnvironmentObject private var session: SessionStore
+    @State private var isLiked: Bool
+    @State private var count: Int
+    @State private var isBusy = false
+    @State private var showLogin = false
+
+    init(aid: Int, rpid: Int, liked: Bool, likeCount: Int) {
+        self.aid = aid
+        self.rpid = rpid
+        self.liked = liked
+        self.likeCount = likeCount
+        _isLiked = State(initialValue: liked)
+        _count = State(initialValue: likeCount)
+    }
+
+    var body: some View {
+        Button {
+            Task { await toggleLike() }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isLiked ? "hand.thumbsup.fill" : "hand.thumbsup")
+                Text(Formatters.count(count))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(isLiked ? Color.pink : Color.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isLiked ? "取消点赞" : "点赞")
+        .opacity(isBusy ? 0.5 : 1)
+        .sheet(isPresented: $showLogin) { LoginView() }
+    }
+
+    private func toggleLike() async {
+        guard session.loggedIn else {
+            showLogin = true
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        let wasLiked = isLiked
+        isLiked.toggle()
+        count = max(0, count + (isLiked ? 1 : -1))
+        do {
+            try await CommentService().like(aid: aid, rpid: rpid, liked: isLiked)
+        } catch {
+            isLiked = wasLiked
+            count = max(0, count + (isLiked ? 1 : -1))
+        }
+        isBusy = false
     }
 }
