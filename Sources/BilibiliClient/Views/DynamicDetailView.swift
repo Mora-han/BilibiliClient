@@ -56,8 +56,12 @@ struct DynamicDetailView: View {
 
                 imageArea(item)
 
+                if let archive = item.modules.moduleDynamic?.major?.archive {
+                    DynamicArchiveRow(archive: archive)
+                }
+
                 if let orig = item.orig {
-                    DynamicQuoteView(origin: orig, interactiveArchive: true)
+                    DynamicQuoteView(origin: orig, opensOrigin: true)
                 }
 
                 statBar(item)

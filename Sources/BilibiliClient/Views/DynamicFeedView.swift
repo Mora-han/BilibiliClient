@@ -292,7 +292,7 @@ struct DynamicCardView: View {
             majorContent
 
             if let orig = item.orig {
-                DynamicQuoteView(origin: orig, interactiveArchive: false)
+                DynamicQuoteView(origin: orig)
             }
 
             footer
@@ -350,13 +350,26 @@ struct DynamicCardView: View {
     }
 }
 
-/// 转发动态中的引用内容块（整体不可点，仅展示原动态信息）。
+/// 转发动态中的引用内容块：动态流内仅展示（外层已是转发详情链接）；
+/// 详情页中开启 opensOrigin 后，整块可点跳转到原动态自己的详情页。
 struct DynamicQuoteView: View {
     let origin: DynamicOrigin
-    /// 引用内容为视频时是否可点击播放（详情页打开；卡片内嵌套时关闭）
-    var interactiveArchive = true
+    var opensOrigin = false
 
     var body: some View {
+        let box = quoteBox
+        if opensOrigin, let oid = origin.idStr, !oid.isEmpty {
+            NavigationLink(value: DynamicRoute(id: oid)) {
+                box
+            }
+            .buttonStyle(.plain)
+            .help("查看原动态")
+        } else {
+            box
+        }
+    }
+
+    private var quoteBox: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 RemoteImage(url: Formatters.https(origin.modules?.moduleAuthor?.face ?? ""))
@@ -403,14 +416,7 @@ struct DynamicQuoteView: View {
     private var quotedContent: some View {
         let major = origin.modules?.moduleDynamic?.major
         if let archive = major?.archive {
-            if interactiveArchive, let bvid = archive.bvid, !bvid.isEmpty {
-                NavigationLink(value: bvid) {
-                    DynamicArchiveRow(archive: archive)
-                }
-                .buttonStyle(.plain)
-            } else {
-                DynamicArchiveRow(archive: archive)
-            }
+            DynamicArchiveRow(archive: archive, linked: false)
         } else if let draw = major?.draw {
             DynamicImageGridView(urls: draw.imageURLs, maxWidth: 220)
         } else if let opus = major?.opus {
@@ -422,12 +428,17 @@ struct DynamicQuoteView: View {
 /// 视频动态的封面信息行：点击进入播放。
 struct DynamicArchiveRow: View {
     let archive: DynamicItem.ModuleDynamic.Major.Archive
+    var linked = true
 
     var body: some View {
-        NavigationLink(value: archive.bvid ?? "") {
+        if linked, let bvid = archive.bvid, !bvid.isEmpty {
+            NavigationLink(value: bvid) {
+                rowContent
+            }
+            .buttonStyle(.plain)
+        } else {
             rowContent
         }
-        .buttonStyle(.plain)
     }
 
     private var rowContent: some View {
