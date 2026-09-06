@@ -363,10 +363,15 @@ struct LiveDetailView: View {
 }
 
 /// 实时弹幕聊天面板：新弹幕追加在底部并自动跟随滚动；
-/// 手动向上翻阅时暂停跟随，滑回底部后恢复。
+/// 手动向上翻阅时暂停跟随，停止滑动数秒后自动回到最新弹幕。
 private struct LiveChatPanel: View {
     @ObservedObject var engine: LiveDanmakuEngine
+    /// 是否吸附在底部实时跟随最新弹幕
     @State private var autoFollow = true
+    /// 用户最后一次手动上滑的时间；每次变化都会重启“自动回底”计时
+    @State private var lastUserScroll: Date?
+    /// 手动上滑后停留多久自动回到最新弹幕
+    private let scrollBackDelay: TimeInterval = 3
     @Environment(\.colorScheme) private var colorScheme
     private var isDark: Bool { colorScheme == .dark }
 
@@ -401,7 +406,27 @@ private struct LiveChatPanel: View {
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height
             } action: { _, remaining in
-                autoFollow = remaining < 32
+                let atBottom = remaining < 32
+                if atBottom {
+                    autoFollow = true
+                } else {
+                    // 用户正在向上翻阅：暂停跟随，并顺延“自动回底”计时
+                    autoFollow = false
+                    lastUserScroll = Date()
+                }
+            }
+            // 最后一次手动上滑后停止滑动 3 秒，自动回到最新弹幕并恢复跟随
+            .task(id: lastUserScroll) {
+                guard let scrollTime = lastUserScroll else { return }
+                try? await Task.sleep(for: .seconds(scrollBackDelay))
+                guard !Task.isCancelled, !autoFollow,
+                      Date().timeIntervalSince(scrollTime) >= scrollBackDelay else { return }
+                autoFollow = true
+                if let last = engine.messages.last {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    }
+                }
             }
             .overlay {
                 if engine.messages.isEmpty {
