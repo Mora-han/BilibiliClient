@@ -49,6 +49,14 @@ struct VideoService {
             query: ["aid": "\(aid)", "cid": "\(cid)"]
         )
     }
+
+    /// 视频 TAG 列表（旧版经典 TAG 接口）。
+    func tags(aid: Int, bvid: String) async throws -> [VideoTagData] {
+        try await APIClient.shared.get(
+            "/x/tag/archive/tags",
+            query: ["aid": "\(aid)", "bvid": bvid]
+        )
+    }
 }
 
 /// 视频在线人数（`data` 字段）。
@@ -64,4 +72,12 @@ struct VideoOnlineData: Decodable {
         let total: Bool?
         let count: Bool?
     }
+}
+
+/// 视频 TAG（`data` 数组元素）。
+struct VideoTagData: Decodable, Hashable, Identifiable {
+    let tagId: Int
+    let tagName: String
+
+    var id: Int { tagId }
 }

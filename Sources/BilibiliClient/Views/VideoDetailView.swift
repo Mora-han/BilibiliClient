@@ -32,6 +32,7 @@ struct VideoDetailView: View {
     @State private var hasMoreComments = true
     @State private var commentError: String?
     @State private var commentTotal: Int?
+    @State private var tags: [VideoTagData] = []
     /// 本页首次出现时导航栈的深度（记录后，栈变深=被新页面覆盖，变回=回到本页）
     @State private var navBaseCount = 0
 
@@ -145,6 +146,7 @@ struct VideoDetailView: View {
             async let playerTask: Void = player.load(aid: data.view.aid, bvid: data.view.bvid, cid: data.view.cid)
             _ = await (commentsTask, playerTask)
             await loadDanmaku(cid: data.view.cid)
+            await loadTags(aid: data.view.aid, bvid: data.view.bvid)
             return
         } catch {
             errorMessage = error.localizedDescription
@@ -218,6 +220,15 @@ struct VideoDetailView: View {
                         .foregroundStyle(.secondary)
                         .lineSpacing(4)
                         .textSelection(.enabled)
+
+                    if !tags.isEmpty {
+                        FlowLayout(spacing: 8) {
+                            ForEach(tags) { tag in
+                                tagButton(tag)
+                            }
+                        }
+                        .padding(.top, 14)
+                    }
 
                     Divider()
 
@@ -642,5 +653,35 @@ struct VideoDetailView: View {
         guard let view = detail?.view else { return }
         await player.retry(aid: view.aid, bvid: view.bvid, cid: view.cid)
     }
-}
 
+    private func loadTags(aid: Int, bvid: String) async {
+        do {
+            tags = try await VideoService().tags(aid: aid, bvid: bvid)
+        } catch {
+            // 标签拉取失败不影响视频页，静默忽略
+        }
+    }
+
+    /// 视频 TAG 实色小卡片；点击用标签内容进入搜索页。
+    private func tagButton(_ tag: VideoTagData) -> some View {
+        Button {
+            router.path.append(SearchRoute(query: tag.tagName))
+        } label: {
+            Text(tag.tagName)
+                .font(.callout)
+                .lineLimit(1)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(.primary.opacity(0.12), lineWidth: 1)
+                        }
+                }
+        }
+        .buttonStyle(.plain)
+    }
+}

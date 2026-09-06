@@ -10,6 +10,10 @@ struct PartitionRoute: Hashable {
     let name: String
 }
 
+struct SearchRoute: Hashable {
+    let query: String
+}
+
 struct RootView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var router: AppRouter
@@ -95,6 +99,9 @@ struct RootView: View {
                 }
                 .navigationDestination(for: PartitionRoute.self) { route in
                     PartitionVideosView(zone: BiliZone(id: route.tid, name: route.name, icon: "play.rectangle"))
+                }
+                .navigationDestination(for: SearchRoute.self) { route in
+                    SearchView(query: route.query)
                 }
             }
         }
