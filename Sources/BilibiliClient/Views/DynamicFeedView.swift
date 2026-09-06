@@ -503,6 +503,6 @@ extension DynamicItem.ModuleDynamic.Major.Draw {
 
 extension DynamicItem.ModuleDynamic.Major.Opus {
     var picsURLs: [URL?] {
-        (pics ?? []).map { Formatters.https($0.src ?? "") }
+        (pics ?? []).map { Formatters.https($0.url ?? $0.src ?? "") }
     }
 }

@@ -127,7 +127,7 @@ struct DynamicDetailView: View {
             return (draw.items ?? []).compactMap { Formatters.https($0.src ?? "") }
         }
         if let opus = major?.opus {
-            return (opus.pics ?? []).compactMap { Formatters.https($0.src ?? "") }
+            return (opus.pics ?? []).compactMap { Formatters.https($0.url ?? $0.src ?? "") }
         }
         return []
     }

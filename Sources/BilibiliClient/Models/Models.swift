@@ -316,7 +316,7 @@ struct DynamicItem: Decodable, Identifiable {
                     if let objects = (try? container.decode([Lossy<OpusPic>].self, forKey: .pics)) {
                         pics = objects.compactMap(\.value)
                     } else if let strings = try? container.decode([String].self, forKey: .pics) {
-                        pics = strings.map { OpusPic(src: $0, width: nil, height: nil) }
+                        pics = strings.map { OpusPic(url: $0) }
                     } else {
                         pics = nil
                     }
@@ -327,12 +327,18 @@ struct DynamicItem: Decodable, Identifiable {
                 }
 
                 struct OpusPic: Decodable, Hashable {
+                    /// 新版接口图片字段为 url，旧版为 src
+                    let url: String?
                     let src: String?
                     let width: Int?
                     let height: Int?
 
-                    init(src: String?, width: Int?, height: Int?) {
+                    init(src: String? = nil,
+                         url: String? = nil,
+                         width: Int? = nil,
+                         height: Int? = nil) {
                         self.src = src
+                        self.url = url
                         self.width = width
                         self.height = height
                     }
