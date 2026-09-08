@@ -564,13 +564,15 @@ private final class LiveWindowCloseGuard: NSObject, NSWindowDelegate {
 
     private func animate(_ window: NSWindow, to frame: CGRect, duration: TimeInterval) {
         if duration <= 0.001 {
-            window.setFrame(frame, display: true)
+            window.setFrame(frame, display: false)
             return
         }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            window.animator().setFrame(frame, display: true)
+            // 图层型内容实时跟随窗口缩放；display: false 避免逐帧强制重绘，
+            // 让 60Hz 屏上的进出全屏动画更流畅
+            window.animator().setFrame(frame, display: false)
         }
     }
 

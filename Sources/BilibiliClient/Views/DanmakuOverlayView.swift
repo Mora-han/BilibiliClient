@@ -46,10 +46,22 @@ final class DanmakuOverlayNSView: NSView {
     private var link: CADisplayLink?
     private var windowCloseObserver: NSObjectProtocol?
     private var layers: [Int: CALayer] = [:]
+    /// 弹幕统一挂在 stageLayer 下；连续尺寸变化（全屏缩放/拖窗）期间
+    /// 只缩放该层，避免每帧销毁并重新栅格化全部文字造成动画卡顿。
+    private let stageLayer = CALayer()
     private var lastSize: CGSize = .zero
     private var lastScale: CGFloat = 0
     /// 弹幕是否处于“随播放头行进”的状态（播放中）。暂停/缓冲时置为静态。
     private var drivePlaying = false
+    /// 尺寸连续变化中：舞台按 freezeBaseSize -> 当前 bounds 等比缩放，引擎暂停推进。
+    private var layerFreezeActive = false
+    private var freezeBaseSize: CGSize = .zero
+    /// 最后一次尺寸变化时间：用于判断缩放是否已结束（0.12s 无变化即重建）
+    private var lastResizeTime: TimeInterval = 0
+    /// 突发批量重建时每帧新增上限：把单帧栅格化峰值拆散到连续几帧
+    private static let maxAddPerTick = 14
+    /// 文字位图缓存：同文案/字号/颜色/scale 直接复用 GPU 图，省去重复栅格化
+    private static let textureCache = NSCache<NSString, CGImage>()
 
     init(engine: DanmakuEngine, player: AVPlayer?) {
         self.engine = engine
@@ -58,6 +70,9 @@ final class DanmakuOverlayNSView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.masksToBounds = true
+        stageLayer.anchorPoint = .zero
+        stageLayer.position = .zero
+        layer?.addSublayer(stageLayer)
     }
 
     @available(*, unavailable)
@@ -132,10 +147,35 @@ final class DanmakuOverlayNSView: NSView {
         if scale != lastScale {
             lastScale = scale
             lastSize = .zero
+            endFreeze()
         }
-        if abs(size.width - lastSize.width) > 0.5 || abs(size.height - lastSize.height) > 0.5 {
+        let sizeChanged = abs(size.width - lastSize.width) > 0.5
+            || abs(size.height - lastSize.height) > 0.5
+        if sizeChanged {
+            if !layerFreezeActive, !layers.isEmpty, lastSize.width > 0 {
+                // 进入连续尺寸变化（全屏缩放/拖拽窗口）：保留现有弹幕层，
+                // 舞台按比例缩放跟随画面；文字位图不重建，GPU 直接合成，
+                // 动画期间零栅格化开销。尺寸稳定后再按最终尺寸一次性重建。
+                layerFreezeActive = true
+                freezeBaseSize = lastSize
+            }
+            lastResizeTime = CACurrentMediaTime()
+            if layerFreezeActive {
+                applyStageScale(to: size)
+                lastSize = size
+                // 冻结推进：等尺寸稳定后统一补帧，避免动画期间引擎与层不同步
+                return
+            }
             lastSize = size
             removeAllLayers()
+        } else {
+            lastSize = size
+            // 缩放结束（连续 0.12s 无尺寸变化）→ 解除舞台缩放并按新尺寸重建
+            if layerFreezeActive,
+               CACurrentMediaTime() - lastResizeTime > 0.12 {
+                endFreeze()
+                removeAllLayers()
+            }
         }
 
         let raw = player.currentTime().seconds
@@ -143,6 +183,31 @@ final class DanmakuOverlayNSView: NSView {
         guard raw.isFinite else { return }
         engine.tick(playerTime: raw, size: size)
         syncLayers(size: size, scale: scale, time: raw)
+    }
+
+    /// 尺寸稳定：解除舞台缩放并复位，等待下一帧按新尺寸重建全部弹幕层。
+    private func endFreeze() {
+        guard layerFreezeActive else { return }
+        layerFreezeActive = false
+        freezeBaseSize = .zero
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        stageLayer.transform = CATransform3DIdentity
+        stageLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    /// 把舞台从 freezeBaseSize 等比缩放到当前尺寸（左下角为原点）。
+    private func applyStageScale(to size: CGSize) {
+        let base = freezeBaseSize
+        guard base.width > 0, base.height > 0 else { return }
+        let sx = size.width / base.width
+        let sy = size.height / base.height
+        guard abs(sx - 1) > 0.001 || abs(sy - 1) > 0.001 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        stageLayer.transform = CATransform3DMakeScale(sx, sy, 1)
+        CATransaction.commit()
     }
 
     // MARK: - 层同步
@@ -187,6 +252,14 @@ final class DanmakuOverlayNSView: NSView {
             return
         }
 
+        // 非冻结态下确保舞台尺寸与视图一致（首次挂载/解除冻结后的重建）
+        if !layerFreezeActive, stageLayer.frame != CGRect(origin: .zero, size: size) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            stageLayer.frame = CGRect(origin: .zero, size: size)
+            CATransaction.commit()
+        }
+
         // 只在实际有层加入/回收时才开事务提交；空转帧零 CA 提交
         var ids = Set<Int>()
         ids.reserveCapacity(engine.active.count)
@@ -205,8 +278,13 @@ final class DanmakuOverlayNSView: NSView {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        // 单帧新增数设上限：全屏切换结束后的一次性重建 / 弹幕高峰不会让
+        // 某一帧承担全部栅格化，未补完的下一帧继续，观感更平滑。
+        var added = 0
         for item in engine.active where layers[item.id] == nil {
+            guard added < Self.maxAddPerTick else { break }
             addLayer(for: item, size: size, scale: scale, time: time)
+            added += 1
         }
         for (id, layer) in layers where !ids.contains(id) {
             layer.removeFromSuperlayer()
@@ -218,11 +296,12 @@ final class DanmakuOverlayNSView: NSView {
     private func addLayer(for item: DanmakuEngine.Active, size: CGSize, scale: CGFloat, time: Double) {
         let fontSize = item.fontSize(for: size.width)
         // 文字预渲染成带外侧描边的位图：黑色字 8 方向偏移 + 中心前景色字，
-        // 描边只出现在字形最外侧，笔画交叉处不会被描边切断填充
-        let image = Self.makeOutlineImage(text: item.text,
-                                          color: item.color,
-                                          fontSize: fontSize,
-                                          scale: scale)
+        // 描边只出现在字形最外侧，笔画交叉处不会被描边切断填充。
+        // 位图按“文案+颜色+字号+scale”缓存，重复弹幕与重建直接复用，免栅格化。
+        let image = Self.cachedOutlineImage(text: item.text,
+                                            color: item.color,
+                                            fontSize: fontSize,
+                                            scale: scale)
         let layer = CALayer()
         layer.contents = image
         layer.contentsScale = scale
@@ -237,7 +316,7 @@ final class DanmakuOverlayNSView: NSView {
             "position": NSNull(),
             "contents": NSNull(),
         ]
-        self.layer?.addSublayer(layer)
+        stageLayer.addSublayer(layer)
         layers[item.id] = layer
         if drivePlaying, item.mode == 1 {
             startScrollAnimation(for: item, layer: layer, in: size, time: time)
@@ -282,6 +361,30 @@ final class DanmakuOverlayNSView: NSView {
         layer.position = Self.layerPosition(for: item, in: size, time: time)
     }
 
+    /// 带缓存的文字位图获取：命中直接返回 GPU 图，未命中才栅格化。
+    private static func cachedOutlineImage(text: String, color: CGColor,
+                                           fontSize: CGFloat, scale: CGFloat) -> CGImage? {
+        let key = cacheKey(text: text, color: color,
+                           fontSize: fontSize, scale: scale)
+        if let hit = textureCache.object(forKey: key as NSString) {
+            return hit
+        }
+        guard let image = makeOutlineImage(text: text, color: color,
+                                           fontSize: fontSize, scale: scale) else {
+            return nil
+        }
+        textureCache.setObject(image, forKey: key as NSString)
+        return image
+    }
+
+    private static func cacheKey(text: String, color: CGColor,
+                                 fontSize: CGFloat, scale: CGFloat) -> String {
+        let colorParts = (color.components ?? [])
+            .map { String(Int(round($0 * 255))) }
+            .joined(separator: ",")
+        return "\(text)\u{1F}|\(Int(round(fontSize * 10)))|\(Int(round(scale * 10)))|\(colorParts)"
+    }
+
     /// 预渲染文字位图：8 方向偏移的黑色描边 + 中心填充，返回已按 scale 放大的图。
     private static func makeOutlineImage(text: String, color: CGColor,
                                          fontSize: CGFloat, scale: CGFloat) -> CGImage? {
@@ -321,6 +424,7 @@ final class DanmakuOverlayNSView: NSView {
     }
 
     private func removeAllLayers() {
+        endFreeze()
         guard !layers.isEmpty else { return }
         for layer in layers.values {
             layer.removeFromSuperlayer()
