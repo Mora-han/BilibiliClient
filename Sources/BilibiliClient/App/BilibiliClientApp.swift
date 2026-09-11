@@ -53,16 +53,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// 定位主窗口：优先按 Scene id “main”，并排除菜单栏 popover 等 NSPanel
-    /// 与全屏/嵌入播放窗口（类名含 Fullscreen）。
+    /// 与分离/全屏播放窗口。
     static func mainWindow() -> NSWindow? {
         NSApp.windows.first {
             $0.identifier?.rawValue == "main"
                 && !$0.styleMask.contains(.fullScreen)
-                && !Self.isSystemFullscreenWindow($0)
+                && !Self.isPlaybackWindow($0)
         } ?? NSApp.windows.first {
             !($0 is NSPanel)
                 && !$0.styleMask.contains(.fullScreen)
-                && !Self.isSystemFullscreenWindow($0)
+                && !Self.isPlaybackWindow($0)
         }
     }
 
@@ -95,26 +95,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func reattachWindowDelegate(_ note: Notification) {
-        // 只对主窗口重挂 delegate：菜单栏 popover 面板、全屏播放窗口等
-        // 一律不接管，避免全屏窗口的退出/关闭流程被关闭行为拦截破坏。
+        // 只对主窗口重挂 delegate：菜单栏 popover 面板、播放窗口等
+        // 一律不接管，避免播放窗口的退出/关闭流程被关闭行为拦截破坏。
         guard let window = note.object as? NSWindow,
               !(window is NSPanel),
-              !Self.isSystemFullscreenWindow(window) else { return }
+              !Self.isPlaybackWindow(window) else { return }
         window.delegate = self
     }
 
-    /// 判断窗口是否为全屏播放窗口（类名含 Fullscreen；自定义全屏窗口同样适用）。
-    /// 这类窗口在进入全屏前才会收到 becameKey，此时 styleMask 还没有 .fullScreen，
-    /// 因此不能靠 styleMask 判断，必须按类名排除。
-    private static func isSystemFullscreenWindow(_ window: NSWindow) -> Bool {
-        let name = NSStringFromClass(type(of: window))
-        return name.localizedCaseInsensitiveContains("fullscreen")
+    /// 判断窗口是否为播放窗口（分离/全屏时的按需窗口）。
+    /// 这类窗口有自己的关闭语义（关窗=画面收回页面内），不能套用主窗口的关闭拦截。
+    private static func isPlaybackWindow(_ window: NSWindow) -> Bool {
+        window is PlayerHostWindow
     }
 
     /// 关闭主窗口时按用户设置处理：完全退出 / 菜单栏模式 / 每次询问。
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        // 全屏窗口的关闭由系统/全屏管理逻辑处理，不走关闭行为拦截
-        guard !Self.isSystemFullscreenWindow(sender) else { return true }
+        // 播放窗口的关闭由播放窗口自己处理（关窗=画面收回页面内）
+        guard !Self.isPlaybackWindow(sender) else { return true }
         switch CloseBehavior.current {
         case .quit:
             showDockIcon()

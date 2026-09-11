@@ -8,6 +8,10 @@ struct VideoDetailView: View {
     @EnvironmentObject private var router: AppRouter
     @StateObject private var player = PlayerController()
     @State private var danmaku = DanmakuEngine()
+    /// 按需创建的播放窗口：默认不存在，画面就播在页面里
+    @StateObject private var playbackWindow = PlayerWindowController()
+    /// 页面里播放区域的屏幕位置：创建播放窗口时用它把窗口精确覆盖到画面处
+    @State private var playerArea = PlayerAreaFrameBox()
     /// 当前选中的分P cid（nil = 播放详情默认分P，即第一个分P）
     @State private var selectedPageCid: Int?
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
@@ -81,9 +85,8 @@ struct VideoDetailView: View {
         }
         .onChange(of: router.path.count) { _, newCount in
             if newCount > navBaseCount {
-                // 被推入的新页面覆盖（如 UP 主页、评论中的 UP 等）：隐藏播放窗口并停止播放
-                VideoWindow.shared?.forceClose()
-                VideoWindow.shared = nil
+                // 被推入的新页面覆盖（如 UP 主页、评论中的 UP 等）：收起播放窗口并停止播放
+                closePlaybackWindow()
                 player.stop()
                 danmaku.reset()
             } else if newCount == navBaseCount {
@@ -92,10 +95,23 @@ struct VideoDetailView: View {
             }
         }
         .onDisappear {
-            VideoWindow.shared?.forceClose()
-            VideoWindow.shared = nil
+            closePlaybackWindow()
             player.stop()
             danmaku.reset()
+        }
+        // 窗口内容里的全屏/分离状态变化后同步控制条形态
+        .onChange(of: playbackWindow.isFullscreen) { _, isFullscreen in
+            syncWindowContent()
+            // 为全屏临时创建的窗口：退出全屏后把画面收回页面内
+            if !isFullscreen, playbackWindow.isOpen, !playbackWindow.isDetached {
+                closePlaybackWindow()
+            }
+        }
+        .onChange(of: playbackWindow.isDetached) { _, _ in
+            syncWindowContent()
+        }
+        .onChange(of: player.state) { _, state in
+            if state == .ready { bindSystemPlayer() }
         }
         .sheet(isPresented: $showLogin) { LoginView() }
         .sheet(isPresented: $showFavoritePicker) {
@@ -371,26 +387,34 @@ struct VideoDetailView: View {
                 }
                 .padding()
             case .ready:
-                // 视频画面由 VideoWindow 子窗口承载（钉在本区域），这里不放任何
-                // 可见占位：黑色背景会在全屏动画期间像“残留黑窗”一样留在原位。
-                // 仅保留透明视图撑住 16:9 布局，供 FrameReporter 定位视频窗口。
-                Color.clear
+                if isPlayingInline, let avPlayer = player.player {
+                    // 默认形态：播放组件就是页面里的普通视图
+                    surface(isFullscreen: false, isDetached: false)
+                        .id(avPlayer)
+                } else {
+                    // 画面已移入播放窗口（分离/全屏）：页面位置留空
+                    Color.clear
+                }
             }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
-        .overlay(
-            Rectangle()
-                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
-        )
+        .overlay {
+            // 有画面时保持完整矩形画面，不画边框；占位状态保留一圈细边
+            if !isPlayingInline {
+                Rectangle()
+                    .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+            }
+        }
         .background(
-            FrameReporter(onFrame: { frame in
-                if let videoWindow = VideoWindow.shared, videoWindow.isOpen {
-                    videoWindow.updateEmbedFrame(frame)
-                } else if player.state == .ready, player.player != nil {
-                    openVideoWindow(at: frame)
-                }
-            }, force: player.state == .ready)
+            PlayerAreaReporter(onFrame: { frame in
+                playerArea.frame = frame
+            })
         )
+    }
+
+    /// 画面当前是否正在页面内播放（决定页面显示播放组件还是空位）。
+    private var isPlayingInline: Bool {
+        player.state == .ready && player.player != nil && !playbackWindow.isOpen
     }
 
     private func infoRow(_ view: VideoDetailData.VideoView) -> some View {
@@ -844,37 +868,73 @@ struct VideoDetailView: View {
         isLoadingComments = false
     }
 
-    /// 切换全屏：直接对嵌入播放窗口调用系统 toggleFullScreen，
-    /// 原生动画从窗口当前位置放大到全屏，无需新建窗口或手动定位。
+    /// 切换全屏：页面内播放时按需创建播放窗口（正好覆盖在画面位置），
+    /// 由窗口自己走系统原生全屏；已在窗口里则直接切换。
     private func toggleFullscreen() {
         guard player.state == .ready, player.player != nil else { return }
-        VideoWindow.shared?.toggleFullscreen()
-    }
-
-    /// 切换播放窗口“吸附嵌入 / 分离独立”。
-    private func toggleVideoWindowDetach() {
-        VideoWindow.shared?.toggleDetach()
-    }
-
-    /// 打开视频子窗口并钉在播放区域（由 FrameReporter 持续校准位置）。
-    /// 幂等：已打开时只更新位置，避免重复建窗导致残留黑窗口与双渲染卡顿。
-    private func openVideoWindow(at frame: CGRect) {
-        guard player.state == .ready, player.player != nil,
-              let window = AppDelegate.mainWindow() else { return }
-        if let existing = VideoWindow.shared, existing.isOpen {
-            existing.updateEmbedFrame(frame)
+        if playbackWindow.isOpen {
+            playbackWindow.toggleFullScreen()
             return
         }
+        presentPlaybackWindow(detached: false)
+        // 系统全屏动画使用窗口快照：等窗口里先渲染出画面再切换，
+        // 否则动画会拍到空画面（黑场放大）
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(90))
+            playbackWindow.toggleFullScreen()
+        }
+    }
+
+    /// 分离/吸附：分离后成为普通可移动缩放窗口，再点一次把画面收回页面内。
+    private func toggleDetach() {
+        guard player.state == .ready, player.player != nil else { return }
+        if playbackWindow.isDetached {
+            closePlaybackWindow()
+        } else if !playbackWindow.isOpen {
+            presentPlaybackWindow(detached: true)
+        }
+    }
+
+    /// 创建播放窗口并把同一个播放组件搬进去（窗口正好盖住页面里的画面位置）。
+    private func presentPlaybackWindow(detached: Bool) {
         bindSystemPlayer()
-        let vw = VideoWindow()
-        VideoWindow.shared = vw
-        vw.open(playerController: player,
-                engine: danmaku,
-                parent: window,
-                frame: frame,
-                onToggleFullscreen: toggleFullscreen,
-                onToggleDetach: toggleVideoWindowDetach)
-        vw.focusPlayer()
+        var frame = playerArea.frame
+        if frame.width < 40 || frame.height < 40 {
+            frame = AppDelegate.mainWindow()?.frame
+                ?? CGRect(x: 240, y: 240, width: 640, height: 360)
+        }
+        let controller = playbackWindow
+        controller.onCloseRequested = { [weak controller] in
+            controller?.onCloseRequested = nil
+            controller?.close()
+        }
+        controller.present(frame: frame,
+                           detached: detached,
+                           title: "视频播放",
+                           content: AnyView(surface(isFullscreen: false, isDetached: false)))
+    }
+
+    /// 关闭播放窗口：画面自动回到页面内继续播放。
+    private func closePlaybackWindow() {
+        playbackWindow.onCloseRequested = nil
+        playbackWindow.close()
+    }
+
+    /// 播放组件：同一份视图既放在页内，也放进按需窗口。
+    private func surface(isFullscreen: Bool, isDetached: Bool) -> VideoPlayerSurface {
+        VideoPlayerSurface(playerController: player,
+                           engine: danmaku,
+                           isFullscreen: isFullscreen,
+                           isDetached: isDetached,
+                           onToggleFullscreen: toggleFullscreen,
+                           onToggleDetach: toggleDetach)
+    }
+
+    /// 窗口内全屏/分离状态变化后重建内容，让控制条与按钮形态同步。
+    private func syncWindowContent() {
+        guard playbackWindow.isOpen else { return }
+        playbackWindow.updateContent(AnyView(surface(isFullscreen: playbackWindow.isFullscreen,
+                                                     isDetached: playbackWindow.isDetached)))
     }
 
     /// 播放窗口建起时把当前视频注册为系统“正在播放”，媒体键（F7/F8/F9）

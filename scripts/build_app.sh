@@ -106,3 +106,12 @@ mkdir -p "$ARCHIVE_DIR"
 ARCHIVE="$ARCHIVE_DIR/$APP_NAME-v$VERSION.app.zip"
 ditto -c -k --keepParent "$APP_DIR" "$ARCHIVE"
 echo "Archived: $ARCHIVE"
+
+# 编译完成后自动打开最新的 App 方便查看（设 NO_OPEN=1 可跳过）。
+# 先结束正在运行的旧实例，确保打开的是本次编译产物而不是旧二进制。
+if [ "${NO_OPEN:-0}" != "1" ]; then
+  pkill -f "$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+  sleep 0.3
+  open "$APP_DIR"
+  echo "Opened: $APP_DIR"
+fi
