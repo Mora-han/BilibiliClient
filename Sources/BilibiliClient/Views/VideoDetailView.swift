@@ -24,6 +24,7 @@ struct VideoDetailView: View {
     @State private var shareMessage: String?
     @State private var showCoinMenu = false
     @State private var showShareMenu = false
+    @State private var showQualityMenu = false
     @State private var isFollowing = false
     @State private var relationLoaded = false
     @State private var likeCount = 0
@@ -425,18 +426,8 @@ struct VideoDetailView: View {
                 Spacer(minLength: 0)
 
                 if !player.qualities.isEmpty {
-                    Menu {
-                        ForEach(player.qualities) { quality in
-                            Button {
-                                Task { await player.selectQuality(quality) }
-                            } label: {
-                                if quality.id == player.currentQualityId {
-                                    Label(quality.name, systemImage: "checkmark")
-                                } else {
-                                    Text(quality.name)
-                                }
-                            }
-                        }
+                    Button {
+                        showQualityMenu = true
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "gear")
@@ -446,8 +437,10 @@ struct VideoDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showQualityMenu, arrowEdge: .bottom) {
+                        qualityActionCard
+                    }
                 }
             }
         }
@@ -591,7 +584,26 @@ struct VideoDetailView: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - 投币 / 分享 悬浮小卡片
+    // MARK: - 画质 / 投币 / 分享 悬浮小卡片
+
+    /// 点击清晰度按钮弹出的液态玻璃小卡片（与投币、分享同一套弹层样式）。
+    private var qualityActionCard: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(player.qualities.enumerated()), id: \.element.id) { index, quality in
+                if index > 0 {
+                    Divider().padding(.horizontal, 10)
+                }
+                MenuActionRow(icon: quality.id == player.currentQualityId ? "checkmark.circle.fill" : "circle",
+                              title: quality.name) {
+                    showQualityMenu = false
+                    Task { await player.selectQuality(quality) }
+                }
+            }
+        }
+        .padding(6)
+        .frame(width: 190)
+    }
+
 
     /// 点击投币按钮弹出的液态玻璃小卡片（与左下角账户卡片同一套弹层样式）。
     private var coinActionCard: some View {
