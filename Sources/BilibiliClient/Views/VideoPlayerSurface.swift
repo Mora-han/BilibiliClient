@@ -1,21 +1,18 @@
 import AppKit
 import SwiftUI
 
-/// 视频播放组件：系统 AVPlayerView（画面 + 原生播放控件 + 原生全屏）+ 弹幕层 +
-/// 悬浮按钮（在线人数、弹幕开关、分离窗口）。
+/// 视频播放组件：系统 AVPlayerView（画面 + 原生播放控件 + 原生全屏）+ 弹幕层。
 ///
 /// 这个视图不包含任何窗口逻辑——它既可以直接放在播放页里（默认形态），
 /// 也可以在点击“分离窗口”时被放进按需创建的窗口中使用。播放与全屏（含全屏
 /// 动画）全部由 AVKit 负责，这里不再自绘播放/全屏控件。
+///
+/// 观看人数、弹幕开关、分离窗口都不再浮在画面上：页内放在视频下方那一行
+/// （与清晰度切换同排），分离窗口里则完全交给系统控件条，画面全净。
 struct VideoPlayerSurface: View {
     @ObservedObject var playerController: PlayerController
     let engine: DanmakuEngine
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
-    /// 是否处于窗口全屏（分离窗口按绿色按钮放大）：此时隐藏“吸附回播放页”。
-    let isFullscreen: Bool
-    /// 是否处于分离出来的独立窗口：决定“分离/吸附”按钮的形态。
-    let isDetached: Bool
-    let onToggleDetach: () -> Void
 
     var body: some View {
         ZStack {
@@ -27,28 +24,6 @@ struct VideoPlayerSurface: View {
                                   onSpace: { playerController.togglePlay() },
                                   onSkip: { playerController.skip(by: $0) })
                     .id(player)
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            // 在线人数
-            if let text = playerController.onlineText {
-                PlayerOnlineBadge(text: text)
-                    .padding(10)
-                    .allowsHitTesting(false)
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            // 播放/全屏控件交给 AVKit；这里只放弹幕开关与分离窗口按钮
-            if playerController.player != nil {
-                HStack(spacing: 8) {
-                    DanmakuToggleButton(isOn: $danmakuEnabled)
-                    if !isFullscreen {
-                        PlayerWindowButton(systemName: isDetached ? "pin" : "pin.slash",
-                                           help: isDetached ? "吸附回播放页" : "分离为独立窗口",
-                                           action: onToggleDetach)
-                    }
-                }
-                .padding(10)
             }
         }
         .clipped()

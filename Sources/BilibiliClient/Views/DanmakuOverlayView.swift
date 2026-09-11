@@ -444,33 +444,3 @@ final class DanmakuOverlayNSView: NSView {
 }
 
 /// 播放器右上角的弹幕开关（液态玻璃胶囊样式）。
-struct DanmakuToggleButton: View {
-    @Binding var isOn: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Button {
-            isOn.toggle()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: isOn ? "text.bubble.fill" : "text.bubble")
-                Text("弹幕")
-            }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(isOn ? Color.primary : Color.primary.opacity(0.55))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background {
-                Capsule()
-                    .fill(colorScheme == .dark ? .black.opacity(0.35) : .white.opacity(0.25))
-                    .overlay {
-                        Capsule()
-                            .stroke(.primary.opacity(0.15), lineWidth: 1)
-                            .glassEffect(.regular, in: .capsule)
-                    }
-            }
-        }
-        .buttonStyle(.plain)
-        .help(isOn ? "关闭弹幕" : "开启弹幕")
-    }
-}

@@ -267,31 +267,3 @@ extension DanmakuPlayerView: AVPlayerViewDelegate {
         isNativeFullscreen = false
     }
 }
-
-/// 播放器右上角的小图标按钮（液态玻璃圆钮），与弹幕开关同一套外观。
-struct PlayerWindowButton: View {
-    let systemName: String
-    let help: String
-    let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.primary)
-                .frame(width: 28, height: 28)
-                .background {
-                    Circle()
-                        .fill(colorScheme == .dark ? .black.opacity(0.35) : .white.opacity(0.25))
-                        .overlay {
-                            Circle()
-                                .stroke(.primary.opacity(0.15), lineWidth: 1)
-                                .glassEffect(.regular, in: .circle)
-                        }
-                }
-        }
-        .buttonStyle(.plain)
-        .help(help)
-    }
-}

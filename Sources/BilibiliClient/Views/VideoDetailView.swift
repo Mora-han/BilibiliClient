@@ -99,13 +99,6 @@ struct VideoDetailView: View {
             player.stop()
             danmaku.reset()
         }
-        // 窗口（分离窗口绿色按钮放大/缩回）状态变化后同步窗口内按钮形态
-        .onChange(of: playbackWindow.isFullscreen) { _, _ in
-            syncWindowContent()
-        }
-        .onChange(of: playbackWindow.isDetached) { _, _ in
-            syncWindowContent()
-        }
         .onChange(of: player.state) { _, state in
             if state == .ready { bindSystemPlayer() }
         }
@@ -190,34 +183,7 @@ struct VideoDetailView: View {
 
                 ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if !player.qualities.isEmpty {
-                        HStack {
-                            Spacer()
-                            Menu {
-                                ForEach(player.qualities) { quality in
-                                    Button {
-                                        Task { await player.selectQuality(quality) }
-                                    } label: {
-                                        if quality.id == player.currentQualityId {
-                                            Label(quality.name, systemImage: "checkmark")
-                                        } else {
-                                            Text(quality.name)
-                                        }
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "gear")
-                                    Text(player.currentQualityName ?? "清晰度")
-                                    Image(systemName: "chevron.up.chevron.down")
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                            .menuStyle(.borderlessButton)
-                            .fixedSize()
-                        }
-                    }
+                    playbackToolbar
 
                     Text(view.title)
                         .font(.title2.bold())
@@ -385,7 +351,7 @@ struct VideoDetailView: View {
             case .ready:
                 if isPlayingInline, let avPlayer = player.player {
                     // 默认形态：播放组件就是页面里的普通视图
-                    surface(isFullscreen: false, isDetached: false)
+                    surface()
                         .id(avPlayer)
                 } else {
                     // 画面已移入播放窗口（分离/全屏）：页面位置留空
@@ -411,6 +377,80 @@ struct VideoDetailView: View {
     /// 画面当前是否正在页面内播放（决定页面显示播放组件还是空位）。
     private var isPlayingInline: Bool {
         player.state == .ready && player.player != nil && !playbackWindow.isOpen
+    }
+
+    /// 视频下方那一行：观看人数、弹幕开关、分离窗口与清晰度切换。
+    /// 页内播放时这三个控件原本浮在画面上，现在统一收在这一行里，画面保持干净。
+    @ViewBuilder
+    private var playbackToolbar: some View {
+        if player.player != nil {
+            HStack(spacing: 16) {
+                if let text = player.onlineText {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2.fill")
+                        Text("\(text) 人在看")
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help("同时在看的观众数")
+                }
+
+                Button {
+                    danmakuEnabled.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: danmakuEnabled ? "text.bubble.fill" : "text.bubble")
+                        Text("弹幕")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(danmakuEnabled ? Color.primary : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(danmakuEnabled ? "关闭弹幕" : "开启弹幕")
+
+                Button {
+                    toggleDetach()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: playbackWindow.isDetached ? "pin" : "pin.slash")
+                        Text(playbackWindow.isDetached ? "吸附回播放页" : "分离窗口")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(playbackWindow.isDetached ? "把画面收回播放页" : "把画面分离为独立窗口")
+
+                Spacer(minLength: 0)
+
+                if !player.qualities.isEmpty {
+                    Menu {
+                        ForEach(player.qualities) { quality in
+                            Button {
+                                Task { await player.selectQuality(quality) }
+                            } label: {
+                                if quality.id == player.currentQualityId {
+                                    Label(quality.name, systemImage: "checkmark")
+                                } else {
+                                    Text(quality.name)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gear")
+                            Text(player.currentQualityName ?? "清晰度")
+                            Image(systemName: "chevron.up.chevron.down")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+            }
+        }
     }
 
     private func infoRow(_ view: VideoDetailData.VideoView) -> some View {
@@ -889,7 +929,7 @@ struct VideoDetailView: View {
         }
         controller.present(frame: frame,
                            title: "视频播放",
-                           content: AnyView(surface(isFullscreen: false, isDetached: false)))
+                           content: AnyView(surface()))
     }
 
     /// 关闭播放窗口：画面自动回到页面内继续播放。
@@ -898,21 +938,9 @@ struct VideoDetailView: View {
         playbackWindow.close()
     }
 
-    /// 播放组件：同一份视图既放在页内，也放进按需窗口。
-    /// 播放与全屏（含全屏动画）都由 AVKit 负责，这里只保留弹幕开关与分离按钮。
-    private func surface(isFullscreen: Bool, isDetached: Bool) -> VideoPlayerSurface {
-        VideoPlayerSurface(playerController: player,
-                           engine: danmaku,
-                           isFullscreen: isFullscreen,
-                           isDetached: isDetached,
-                           onToggleDetach: toggleDetach)
-    }
-
-    /// 窗口内全屏/分离状态变化后重建内容，让控制条与按钮形态同步。
-    private func syncWindowContent() {
-        guard playbackWindow.isOpen else { return }
-        playbackWindow.updateContent(AnyView(surface(isFullscreen: playbackWindow.isFullscreen,
-                                                     isDetached: playbackWindow.isDetached)))
+    /// 播放组件：同一份视图既放在页内，也放进按需窗口；画面区不带任何悬浮按钮。
+    private func surface() -> VideoPlayerSurface {
+        VideoPlayerSurface(playerController: player, engine: danmaku)
     }
 
     /// 播放窗口建起时把当前视频注册为系统“正在播放”，媒体键（F7/F8/F9）

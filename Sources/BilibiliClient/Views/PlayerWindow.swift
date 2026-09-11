@@ -22,16 +22,13 @@ final class PlayerHostWindow: NSWindow {
 final class PlayerWindowController: NSObject, ObservableObject {
     /// 窗口当前是否存在（存在 = 播放画面已从页面移入窗口）
     @Published private(set) var isOpen = false
-    /// 是否为用户手动分离出来的独立窗口（false = 为全屏临时创建）
+    /// 是否为用户手动分离出来的独立窗口
     @Published private(set) var isDetached = false
-    /// 是否处于系统全屏
-    @Published private(set) var isFullscreen = false
 
     /// 用户主动关闭窗口（红点 / Cmd+W / 关闭按钮）时回调，页面据此把画面收回页内
     var onCloseRequested: (() -> Void)?
 
     private var window: PlayerHostWindow?
-    private var host: NSHostingView<AnyView>?
     private var observers: [NSObjectProtocol] = []
 
     /// 创建分离窗口并把播放组件搬进窗口。frame 为屏幕坐标（通常是页面里播放区域的位置）。
@@ -52,9 +49,7 @@ final class PlayerWindowController: NSObject, ObservableObject {
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.delegate = self
 
-        let host = NSHostingView(rootView: content)
-        window.contentView = host
-        self.host = host
+        window.contentView = NSHostingView(rootView: content)
         self.window = window
 
         // 窗口被外部关闭（系统收尾等）时同步内部状态，避免页面与窗口状态不一致
@@ -66,29 +61,9 @@ final class PlayerWindowController: NSObject, ObservableObject {
                 self.teardown()
             }
         })
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.isFullscreen = true }
-        })
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main
-        ) { [weak self, weak window] _ in
-            Task { @MainActor in
-                guard let self, let window, self.window === window else { return }
-                self.isFullscreen = false
-            }
-        })
-
         isOpen = true
         isDetached = true
-        isFullscreen = false
         window.makeKeyAndOrderFront(nil)
-    }
-
-    /// 刷新窗口内的播放组件（全屏/分离状态变化后重建内容）。
-    func updateContent(_ content: AnyView) {
-        host?.rootView = content
     }
 
     /// 关闭窗口：播放组件随之回到页面内。
@@ -108,10 +83,8 @@ final class PlayerWindowController: NSObject, ObservableObject {
         }
         observers = []
         window = nil
-        host = nil
         isOpen = false
         isDetached = false
-        isFullscreen = false
     }
 }
 
