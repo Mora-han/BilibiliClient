@@ -56,6 +56,15 @@ final class DanmakuOverlayNSView: NSView {
     /// 尺寸连续变化中：舞台按 freezeBaseSize -> 当前 bounds 等比缩放，引擎暂停推进。
     private var layerFreezeActive = false
     private var freezeBaseSize: CGSize = .zero
+    /// AVKit 全屏过渡中（由 delegate 精确开合，比轮询尺寸更准）
+    private var transitionActive = false
+    /// 进入过渡时的容器尺寸：整层缩放的基准
+    private var transitionBaseSize: CGSize = .zero
+    /// 退出全屏时用于预热的"进全屏前尺寸"
+    private var preFullscreenSize: CGSize?
+    /// 待预热的文字位图（过渡期间每帧只栅格化少量，避免单帧峰值）
+    private var prewarmQueue: [PrewarmJob] = []
+    private static let prewarmPerTick = 6
     /// 最后一次尺寸变化时间：用于判断缩放是否已结束（0.12s 无变化即重建）
     private var lastResizeTime: TimeInterval = 0
     /// 突发批量重建时每帧新增上限：把单帧栅格化峰值拆散到连续几帧
@@ -149,6 +158,24 @@ final class DanmakuOverlayNSView: NSView {
             lastSize = .zero
             endFreeze()
         }
+        // AVKit 全屏过渡：现有弹幕原样保留，整层绕画面中心缩放跟随视频，
+        // 引擎不推进（过渡结束由 rebuildAllLayers 一次性补齐并原子重建）。
+        // 这样全程没有逐帧重建、没有文字重新栅格化，也不会斜向漂移。
+        if transitionActive {
+            // 兜底：万一副屏/异常路径下 AVKit 没回调 didEnter/didExit，
+            // 尺寸稳定超过 1.2s 就自行收尾，避免弹幕永久冻结在过渡态。
+            if abs(size.width - lastSize.width) > 0.5 || abs(size.height - lastSize.height) > 0.5 {
+                lastResizeTime = CACurrentMediaTime()
+            } else if CACurrentMediaTime() - lastResizeTime > 1.2 {
+                endSizeTransition()
+                return
+            }
+            applyStageScale(from: transitionBaseSize, to: size)
+            drainPrewarmQueue()
+            lastSize = size
+            return
+        }
+
         let sizeChanged = abs(size.width - lastSize.width) > 0.5
             || abs(size.height - lastSize.height) > 0.5
         if sizeChanged {
@@ -161,7 +188,7 @@ final class DanmakuOverlayNSView: NSView {
             }
             lastResizeTime = CACurrentMediaTime()
             if layerFreezeActive {
-                applyStageScale(to: size)
+                applyStageScale(from: freezeBaseSize, to: size)
                 lastSize = size
                 // 冻结推进：等尺寸稳定后统一补帧，避免动画期间引擎与层不同步
                 return
@@ -197,17 +224,119 @@ final class DanmakuOverlayNSView: NSView {
         CATransaction.commit()
     }
 
-    /// 把舞台从 freezeBaseSize 等比缩放到当前尺寸（左下角为原点）。
-    private func applyStageScale(to size: CGSize) {
-        let base = freezeBaseSize
-        guard base.width > 0, base.height > 0 else { return }
+    /// 把舞台从 base 尺寸缩放到当前容器尺寸，缩放中心取画面中心。
+    ///
+    /// 视频在全屏动画里是绕画面中心放大的，弹幕层必须绕同一点缩放才"贴着画面走"；
+    /// 之前绕左下角缩放，弹幕会相对视频斜向漂移，看起来就是抖。
+    private func applyStageScale(from base: CGSize, to size: CGSize) {
+        guard base.width > 0.5, base.height > 0.5 else { return }
         let sx = size.width / base.width
         let sy = size.height / base.height
-        guard abs(sx - 1) > 0.001 || abs(sy - 1) > 0.001 else { return }
+        guard abs(sx - 1) > 0.0005 || abs(sy - 1) > 0.0005 else { return }
+        let cx = base.width / 2
+        let cy = base.height / 2
+        var transform = CATransform3DIdentity
+        transform = CATransform3DTranslate(transform, cx, cy, 0)
+        transform = CATransform3DScale(transform, sx, sy, 1)
+        transform = CATransform3DTranslate(transform, -cx, -cy, 0)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        stageLayer.transform = CATransform3DMakeScale(sx, sy, 1)
+        stageLayer.transform = transform
         CATransaction.commit()
+    }
+
+    // MARK: - 进出全屏过渡
+
+    /// AVKit 全屏动画开始：冻结推进，只做整层缩放跟随，并准备预热目标尺寸的文字位图。
+    /// - Parameter target: 过渡结束时的预期尺寸（未知传 nil，例如退出全屏时按进全屏前的尺寸推算）。
+    func beginSizeTransition(target: CGSize?) {
+        guard enabled, window != nil else { return }
+        if preFullscreenSize == nil { preFullscreenSize = bounds.size }
+        transitionActive = true
+        transitionBaseSize = bounds.size
+        layerFreezeActive = false
+        freezeBaseSize = .zero
+        lastResizeTime = CACurrentMediaTime()
+        preparePrewarm(target: target ?? preFullscreenSize)
+    }
+
+    /// AVKit 全屏动画结束：复位缩放，并按最终尺寸在同一帧内原子重建全部弹幕层。
+    /// 位图已在过渡期间预热完（命中缓存），因此不会出现逐帧栅格化的卡顿与闪断。
+    func endSizeTransition() {
+        guard transitionActive else { return }
+        transitionActive = false
+        preFullscreenSize = nil
+        prewarmQueue.removeAll()
+        rebuildAllLayers()
+    }
+
+    /// 过渡结束后的一次性重建：清空旧层 -> 按新尺寸补齐引擎 -> 单帧建好全部新层。
+    private func rebuildAllLayers() {
+        guard enabled, let player, window != nil else { return }
+        let size = bounds.size
+        guard size.width > 0, size.height > 0 else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        stageLayer.transform = CATransform3DIdentity
+        stageLayer.frame = CGRect(origin: .zero, size: size)
+        for layer in layers.values {
+            layer.removeFromSuperlayer()
+        }
+        layers.removeAll()
+        CATransaction.commit()
+        lastSize = size
+        lastScale = scale
+
+        let raw = player.currentTime().seconds
+        guard raw.isFinite else { return }
+        engine.tick(playerTime: raw, size: size)
+        drivePlaying = player.timeControlStatus == .playing
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for item in engine.active {
+            addLayer(for: item, size: size, scale: scale, time: raw)
+        }
+        CATransaction.commit()
+    }
+
+    /// 收集过渡结束尺寸下需要重新栅格化的文字，攒成待预热队列。
+    private func preparePrewarm(target: CGSize?) {
+        prewarmQueue.removeAll()
+        guard let target, target.width > 1, window != nil else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        prewarmQueue = engine.active.prefix(140).map {
+            PrewarmJob(text: $0.text,
+                       color: $0.color,
+                       fontSize: $0.fontSize(for: target.width),
+                       scale: scale)
+        }
+    }
+
+    /// 过渡期间每帧只栅格化少量文字：把一个可能几十毫秒的峰值摊到整段动画里，
+    /// 过渡结束时缓存已经就绪，重建因此是"零成本"的。
+    private func drainPrewarmQueue() {
+        guard !prewarmQueue.isEmpty else { return }
+        var remaining = prewarmQueue.count
+        var budget = Self.prewarmPerTick
+        while budget > 0, remaining > 0 {
+            let job = prewarmQueue[prewarmQueue.count - remaining]
+            _ = Self.cachedOutlineImage(text: job.text,
+                                        color: job.color,
+                                        fontSize: job.fontSize,
+                                        scale: job.scale)
+            remaining -= 1
+            budget -= 1
+        }
+        prewarmQueue.removeFirst(prewarmQueue.count - remaining)
+    }
+
+    /// 预热任务：文字位图的输入参数（纯值，可安全在缓存里流转）。
+    private struct PrewarmJob {
+        let text: String
+        let color: CGColor
+        let fontSize: CGFloat
+        let scale: CGFloat
     }
 
     // MARK: - 层同步
@@ -442,5 +571,3 @@ final class DanmakuOverlayNSView: NSView {
 
     private static let moveKey = "dmMove"
 }
-
-/// 播放器右上角的弹幕开关（液态玻璃胶囊样式）。

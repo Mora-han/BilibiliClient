@@ -77,6 +77,13 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <string>${ICON_NAME}</string>
     <key>CFBundleExecutable</key>
     <string>BilibiliClient</string>
+    <!-- 声明为简体中文 App：系统提供的菜单（编辑/显示/窗口/帮助等）随之汉化 -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>zh-Hans</string>
+    </array>
     <key>CFBundleIdentifier</key>
     <string>com.codex.bilibili-client</string>
     <key>CFBundleName</key>

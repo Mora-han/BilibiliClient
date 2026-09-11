@@ -24,6 +24,39 @@ struct BilibiliClientApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1280, height: 860)
+        .commands { PlaybackCommands() }
+    }
+}
+
+/// 顶部菜单栏的“播放”菜单：进入视频播放页后可用。
+///
+/// 三个开关（弹幕 / 分离窗口 / 视频全屏）与页面上的按钮共用同一份状态，
+/// 从菜单点与在页面上点完全等价。
+struct PlaybackCommands: Commands {
+    @ObservedObject private var state = PlaybackMenuState.shared
+
+    var body: some Commands {
+        CommandMenu("播放") {
+            Button(state.danmakuEnabled ? "关闭弹幕" : "开启弹幕") {
+                state.performToggleDanmaku()
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            .disabled(!state.isActive)
+
+            Button(state.isDetached ? "吸附回播放页" : "分离为独立窗口") {
+                state.performToggleDetach()
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+            .disabled(!state.isActive)
+
+            Divider()
+
+            Button(state.isFullscreen ? "退出视频全屏" : "进入视频全屏") {
+                state.performToggleFullscreen()
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .disabled(!state.hasPlayer)
+        }
     }
 }
 

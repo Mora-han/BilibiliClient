@@ -83,6 +83,13 @@ struct VideoDetailView: View {
         .task { await load() }
         .onAppear {
             navBaseCount = router.path.count
+            bindPlaybackMenu()
+        }
+        .onChange(of: danmakuEnabled) { _, newValue in
+            PlaybackMenuState.shared.setDanmakuEnabled(newValue)
+        }
+        .onChange(of: playbackWindow.isDetached) { _, newValue in
+            PlaybackMenuState.shared.setDetached(newValue)
         }
         .onChange(of: router.path.count) { _, newCount in
             if newCount > navBaseCount {
@@ -96,6 +103,7 @@ struct VideoDetailView: View {
             }
         }
         .onDisappear {
+            PlaybackMenuState.shared.unbind()
             closePlaybackWindow()
             player.stop()
             danmaku.reset()
@@ -948,6 +956,16 @@ struct VideoDetailView: View {
     private func closePlaybackWindow() {
         playbackWindow.onCloseRequested = nil
         playbackWindow.close()
+    }
+
+    /// 把页面上的三个开关挂到顶部“播放”菜单：菜单点与页面点完全等价。
+    private func bindPlaybackMenu() {
+        PlaybackMenuState.shared.bind(
+            danmakuEnabled: danmakuEnabled,
+            isDetached: playbackWindow.isDetached,
+            toggleDanmaku: { danmakuEnabled.toggle() },
+            toggleDetach: { toggleDetach() }
+        )
     }
 
     /// 播放组件：同一份视图既放在页内，也放进按需窗口；画面区不带任何悬浮按钮。

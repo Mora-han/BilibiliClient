@@ -40,6 +40,10 @@ struct PlayerSurfaceView: NSViewRepresentable {
         view.setDanmakuEnabled(danmakuEnabled)
         view.attachDanmakuIfNeeded()
     }
+
+    static func dismantleNSView(_ view: DanmakuPlayerView, coordinator: ()) {
+        PlaybackMenuState.shared.detachPlayerView(view)
+    }
 }
 
 /// `AVPlayerView` 子类：在原生控件之下挂弹幕层，并保留页面原有的键盘操作。
@@ -154,6 +158,12 @@ final class DanmakuPlayerView: AVPlayerView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if delegate == nil { delegate = self }
+        // 挂上窗口即登记为"当前播放器"，顶部菜单的全屏开关据此找到它
+        if window != nil {
+            PlaybackMenuState.shared.attachPlayerView(self)
+        } else {
+            PlaybackMenuState.shared.detachPlayerView(self)
+        }
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
@@ -246,6 +256,17 @@ final class DanmakuPlayerView: AVPlayerView {
         }
     }
 
+    /// 交给 AVKit 自己的全屏入口——控件条上那个全屏按钮走的就是它。
+    /// `enterFullScreen:` / `exitFullScreen:` 没有出现在公开头文件里，先探测再调用，
+    /// 不可用时返回 false，由调用方退回窗口全屏。
+    func toggleNativeFullscreen() -> Bool {
+        let name = isNativeFullscreen ? "exitFullScreen:" : "enterFullScreen:"
+        let selector = NSSelectorFromString(name)
+        guard responds(to: selector) else { return false }
+        _ = perform(selector, with: nil)
+        return true
+    }
+
     private func cancelHold() {
         guard rightKeyHeld else { return }
         holdTask?.cancel()
@@ -259,11 +280,26 @@ final class DanmakuPlayerView: AVPlayerView {
 }
 
 extension DanmakuPlayerView: AVPlayerViewDelegate {
+    /// 全屏动画开始：弹幕层冻结推进、整层缩放跟随，并开始预热目标尺寸的文字位图。
+    /// 这条路径由 AVKit 精确开合，比轮询尺寸判断可靠得多。
     func playerViewWillEnterFullScreen(_ playerView: AVPlayerView) {
         isNativeFullscreen = true
+        PlaybackMenuState.shared.setFullscreen(true)
+        danmakuView?.beginSizeTransition(target: window?.screen?.frame.size
+            ?? NSScreen.main?.frame.size)
+    }
+
+    func playerViewDidEnterFullScreen(_ playerView: AVPlayerView) {
+        danmakuView?.endSizeTransition()
+    }
+
+    func playerViewWillExitFullScreen(_ playerView: AVPlayerView) {
+        danmakuView?.beginSizeTransition(target: nil)
     }
 
     func playerViewDidExitFullScreen(_ playerView: AVPlayerView) {
         isNativeFullscreen = false
+        PlaybackMenuState.shared.setFullscreen(false)
+        danmakuView?.endSizeTransition()
     }
 }
