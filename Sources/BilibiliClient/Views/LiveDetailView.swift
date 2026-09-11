@@ -31,10 +31,6 @@ struct LiveDetailView: View {
     @EnvironmentObject private var router: AppRouter
     @StateObject private var model = LivePlayerModel()
     @StateObject private var danmaku: LiveDanmakuEngine
-    /// 按需创建的播放窗口：默认不存在，直播画面就播在页面里
-    @StateObject private var playbackWindow = PlayerWindowController()
-    /// 页面里播放区域的屏幕位置：创建播放窗口时用它把窗口精确覆盖到画面处
-    @State private var playerArea = PlayerAreaFrameBox()
     /// 本页首次出现时导航栈的深度（记录后，栈变深=被新页面覆盖，变回=回到本页）
     @State private var navBaseCount = 0
     @State private var detail: LiveRoomDetail?
@@ -94,13 +90,6 @@ struct LiveDetailView: View {
         .onDisappear {
             closePlayback()
         }
-        .onChange(of: playbackWindow.isFullscreen) { _, isFullscreen in
-            syncWindowContent()
-            // 为全屏临时创建的窗口：退出全屏后把画面收回页面内
-            if !isFullscreen, playbackWindow.isOpen {
-                closePlaybackWindow()
-            }
-        }
         .onChange(of: danmaku.popularity) { _, popularity in
             // 心跳会带实时热度，刷新播放窗口左上角与状态行的在线人数
             if let popularity, popularity > 0 {
@@ -149,9 +138,8 @@ struct LiveDetailView: View {
         isLoading = false
     }
 
-    /// 页面销毁/被覆盖时统一收尾：关闭播放窗口、停流、断开弹幕。
+    /// 页面销毁/被覆盖时统一收尾：停流、断开弹幕。
     private func closePlayback() {
-        closePlaybackWindow()
         model.stop()
         danmaku.disconnect()
         danmaku.reset()
@@ -209,7 +197,7 @@ struct LiveDetailView: View {
         }
     }
 
-    /// 顶部 16:9 播放区域：默认直接内嵌播放组件，需要全屏时按需创建播放窗口。
+    /// 顶部 16:9 播放区域：画面就是页面里的普通视图，全屏走 AVKit 原生全屏。
     @ViewBuilder
     private var playerSection: some View {
         ZStack {
@@ -250,12 +238,11 @@ struct LiveDetailView: View {
                 }
                 .padding()
             case .ready:
-                if isPlayingInline, let avPlayer = model.player {
-                    // 默认形态：播放组件就是页面里的普通视图
-                    surface(isFullscreen: false)
+                if let avPlayer = model.player {
+                    // 画面就是页面里的普通视图，播放/全屏控件由 AVKit 提供
+                    LivePlayerSurface(model: model)
                         .id(avPlayer)
                 } else {
-                    // 画面已移入播放窗口（全屏）：页面位置留空
                     Color.clear
                 }
             }
@@ -263,75 +250,11 @@ struct LiveDetailView: View {
         .aspectRatio(16 / 9, contentMode: .fit)
         .overlay {
             // 有画面时保持完整矩形画面，不画边框；占位状态保留一圈细边
-            if !isPlayingInline {
+            if model.player == nil {
                 Rectangle()
                     .strokeBorder(.white.opacity(0.08), lineWidth: 1)
             }
         }
-        .background(
-            PlayerAreaReporter(onFrame: { frame in
-                playerArea.frame = frame
-            })
-        )
-    }
-
-    /// 画面当前是否正在页面内播放（决定页面显示播放组件还是空位）。
-    private var isPlayingInline: Bool {
-        model.state == .ready && model.player != nil && !playbackWindow.isOpen
-    }
-
-    /// 切换全屏：页面内播放时按需创建播放窗口（正好覆盖在画面位置），
-    /// 由窗口自己走系统原生全屏；已在窗口里则直接切换。
-    private func toggleFullscreen() {
-        guard model.state == .ready, model.player != nil else { return }
-        if playbackWindow.isOpen {
-            playbackWindow.toggleFullScreen()
-            return
-        }
-        presentPlaybackWindow()
-        // 系统全屏动画使用窗口快照：等窗口里先渲染出画面再切换，
-        // 否则动画会拍到空画面（黑场放大）
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(90))
-            playbackWindow.toggleFullScreen()
-        }
-    }
-
-    /// 创建播放窗口并把同一个直播组件搬进去（窗口正好盖住页面里的画面位置）。
-    private func presentPlaybackWindow() {
-        var frame = playerArea.frame
-        if frame.width < 40 || frame.height < 40 {
-            frame = AppDelegate.mainWindow()?.frame
-                ?? CGRect(x: 240, y: 240, width: 640, height: 360)
-        }
-        let controller = playbackWindow
-        controller.onCloseRequested = { [weak controller] in
-            controller?.onCloseRequested = nil
-            controller?.close()
-        }
-        controller.present(frame: frame,
-                           detached: false,
-                           title: "直播播放",
-                           content: AnyView(surface(isFullscreen: false)))
-    }
-
-    /// 关闭播放窗口：画面自动回到页面内继续播放。
-    private func closePlaybackWindow() {
-        playbackWindow.onCloseRequested = nil
-        playbackWindow.close()
-    }
-
-    /// 直播播放组件：同一份视图既放在页内，也放进按需窗口。
-    private func surface(isFullscreen: Bool) -> LivePlayerSurface {
-        LivePlayerSurface(model: model,
-                          isFullscreen: isFullscreen,
-                          onToggleFullscreen: toggleFullscreen)
-    }
-
-    /// 窗口内全屏状态变化后重建内容，让控制条与全屏按钮形态同步。
-    private func syncWindowContent() {
-        guard playbackWindow.isOpen else { return }
-        playbackWindow.updateContent(AnyView(surface(isFullscreen: playbackWindow.isFullscreen)))
     }
 
     /// 主播信息行：头像 + 昵称（可点击进入 UP 主页）。

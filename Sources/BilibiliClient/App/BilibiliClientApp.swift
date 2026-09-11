@@ -33,6 +33,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private var menuBar: MenuBarController?
 
+    /// 主窗口（Scene id “main”）。只有它套用“关闭窗口”行为；
+    /// 分离播放窗口、菜单栏面板、AVKit 自建的全屏窗口都不接管。
+    private weak var mainWindowRef: NSWindow?
+
+    /// 由 RootView 在出现时调用，把主窗口交给 AppDelegate 接管。
+    func adoptMainWindow(_ window: NSWindow) {
+        mainWindowRef = window
+        window.delegate = self
+    }
+
     func showDockIcon() {
         NSApp.setActivationPolicy(.regular)
     }
@@ -52,15 +62,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// 定位主窗口：优先按 Scene id “main”，并排除菜单栏 popover 等 NSPanel
-    /// 与分离/全屏播放窗口。
+    /// 定位主窗口：优先用 RootView 绑定过的那一个，其次按 Scene id “main” 查找，
+    /// 并排除菜单栏 popover 等 NSPanel、分离播放窗口与全屏中的窗口。
     static func mainWindow() -> NSWindow? {
-        NSApp.windows.first {
+        if let adopted = shared?.mainWindowRef,
+           !adopted.styleMask.contains(.fullScreen),
+           !Self.isPlaybackWindow(adopted) {
+            return adopted
+        }
+        return NSApp.windows.first {
             $0.identifier?.rawValue == "main"
-                && !$0.styleMask.contains(.fullScreen)
-                && !Self.isPlaybackWindow($0)
-        } ?? NSApp.windows.first {
-            !($0 is NSPanel)
                 && !$0.styleMask.contains(.fullScreen)
                 && !Self.isPlaybackWindow($0)
         }
@@ -89,17 +100,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // 启动后延迟重挂一次：SwiftUI 创建窗口并可能接管 delegate
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self else { return }
-            Self.mainWindow()?.delegate = self
+            guard let self, let window = Self.mainWindow() else { return }
+            self.adoptMainWindow(window)
         }
     }
 
     @objc private func reattachWindowDelegate(_ note: Notification) {
-        // 只对主窗口重挂 delegate：菜单栏 popover 面板、播放窗口等
-        // 一律不接管，避免播放窗口的退出/关闭流程被关闭行为拦截破坏。
+        // 只对主窗口重挂 delegate：菜单栏 popover 面板、分离播放窗口，以及
+        // AVKit 自建的全屏窗口一律不接管——接管后者会让系统全屏窗口的关闭
+        // 走成“关闭窗口”行为（隐藏窗口/弹询问），表现为退出全屏卡死。
         guard let window = note.object as? NSWindow,
-              !(window is NSPanel),
-              !Self.isPlaybackWindow(window) else { return }
+              window === mainWindowRef else { return }
         window.delegate = self
     }
 
@@ -111,8 +122,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// 关闭主窗口时按用户设置处理：完全退出 / 菜单栏模式 / 每次询问。
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        // 播放窗口的关闭由播放窗口自己处理（关窗=画面收回页面内）
-        guard !Self.isPlaybackWindow(sender) else { return true }
+        // 只有主窗口套用“关闭窗口”行为：播放窗口的关闭由它自己处理
+        // （关窗=画面收回页面内），AVKit 全屏窗口等其它窗口正常关闭。
+        guard sender === mainWindowRef, !Self.isPlaybackWindow(sender) else { return true }
         switch CloseBehavior.current {
         case .quit:
             showDockIcon()

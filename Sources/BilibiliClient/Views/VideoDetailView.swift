@@ -99,13 +99,9 @@ struct VideoDetailView: View {
             player.stop()
             danmaku.reset()
         }
-        // 窗口内容里的全屏/分离状态变化后同步控制条形态
-        .onChange(of: playbackWindow.isFullscreen) { _, isFullscreen in
+        // 窗口（分离窗口绿色按钮放大/缩回）状态变化后同步窗口内按钮形态
+        .onChange(of: playbackWindow.isFullscreen) { _, _ in
             syncWindowContent()
-            // 为全屏临时创建的窗口：退出全屏后把画面收回页面内
-            if !isFullscreen, playbackWindow.isOpen, !playbackWindow.isDetached {
-                closePlaybackWindow()
-            }
         }
         .onChange(of: playbackWindow.isDetached) { _, _ in
             syncWindowContent()
@@ -868,35 +864,18 @@ struct VideoDetailView: View {
         isLoadingComments = false
     }
 
-    /// 切换全屏：页面内播放时按需创建播放窗口（正好覆盖在画面位置），
-    /// 由窗口自己走系统原生全屏；已在窗口里则直接切换。
-    private func toggleFullscreen() {
-        guard player.state == .ready, player.player != nil else { return }
-        if playbackWindow.isOpen {
-            playbackWindow.toggleFullScreen()
-            return
-        }
-        presentPlaybackWindow(detached: false)
-        // 系统全屏动画使用窗口快照：等窗口里先渲染出画面再切换，
-        // 否则动画会拍到空画面（黑场放大）
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(90))
-            playbackWindow.toggleFullScreen()
-        }
-    }
-
     /// 分离/吸附：分离后成为普通可移动缩放窗口，再点一次把画面收回页面内。
     private func toggleDetach() {
         guard player.state == .ready, player.player != nil else { return }
         if playbackWindow.isDetached {
             closePlaybackWindow()
         } else if !playbackWindow.isOpen {
-            presentPlaybackWindow(detached: true)
+            presentPlaybackWindow()
         }
     }
 
-    /// 创建播放窗口并把同一个播放组件搬进去（窗口正好盖住页面里的画面位置）。
-    private func presentPlaybackWindow(detached: Bool) {
+    /// 创建分离窗口并把同一个播放组件搬进去（窗口正好盖住页面里的画面位置）。
+    private func presentPlaybackWindow() {
         bindSystemPlayer()
         var frame = playerArea.frame
         if frame.width < 40 || frame.height < 40 {
@@ -909,7 +888,6 @@ struct VideoDetailView: View {
             controller?.close()
         }
         controller.present(frame: frame,
-                           detached: detached,
                            title: "视频播放",
                            content: AnyView(surface(isFullscreen: false, isDetached: false)))
     }
@@ -921,12 +899,12 @@ struct VideoDetailView: View {
     }
 
     /// 播放组件：同一份视图既放在页内，也放进按需窗口。
+    /// 播放与全屏（含全屏动画）都由 AVKit 负责，这里只保留弹幕开关与分离按钮。
     private func surface(isFullscreen: Bool, isDetached: Bool) -> VideoPlayerSurface {
         VideoPlayerSurface(playerController: player,
                            engine: danmaku,
                            isFullscreen: isFullscreen,
                            isDetached: isDetached,
-                           onToggleFullscreen: toggleFullscreen,
                            onToggleDetach: toggleDetach)
     }
 

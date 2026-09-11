@@ -1,54 +1,54 @@
 import AppKit
 import SwiftUI
 
-/// 视频播放组件：视频渲染层 + 弹幕层 + 控制条 + 右上角弹幕开关 + 在线人数徽标。
+/// 视频播放组件：系统 AVPlayerView（画面 + 原生播放控件 + 原生全屏）+ 弹幕层 +
+/// 悬浮按钮（在线人数、弹幕开关、分离窗口）。
 ///
 /// 这个视图不包含任何窗口逻辑——它既可以直接放在播放页里（默认形态），
-/// 也可以在点击“分离窗口”/“全屏”时被放进按需创建的窗口中使用。
+/// 也可以在点击“分离窗口”时被放进按需创建的窗口中使用。播放与全屏（含全屏
+/// 动画）全部由 AVKit 负责，这里不再自绘播放/全屏控件。
 struct VideoPlayerSurface: View {
     @ObservedObject var playerController: PlayerController
     let engine: DanmakuEngine
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
-    @State private var controlsVisible = true
-    /// 是否处于系统全屏：决定控制条样式与弹幕开关是否显示。
+    /// 是否处于窗口全屏（分离窗口按绿色按钮放大）：此时隐藏“吸附回播放页”。
     let isFullscreen: Bool
-    /// 是否处于分离出来的独立窗口：决定控制条“分离/吸附”按钮的形态。
+    /// 是否处于分离出来的独立窗口：决定“分离/吸附”按钮的形态。
     let isDetached: Bool
-    let onToggleFullscreen: () -> Void
     let onToggleDetach: () -> Void
 
     var body: some View {
         ZStack {
             Color.black
             if let player = playerController.player {
-                CustomPlayerView(player: player,
-                                 autofocus: true,
-                                 onSpace: { playerController.togglePlay() },
-                                 onSkip: { playerController.skip(by: $0) },
-                                 onSingleClick: { controlsVisible.toggle() },
-                                 onDoubleClick: onToggleFullscreen)
-                DanmakuOverlayView(engine: engine, player: player, enabled: danmakuEnabled)
-            }
-            PlayerControlsView(player: playerController,
-                               controlsVisible: $controlsVisible,
-                               isFullscreen: isFullscreen,
-                               isDetached: isDetached,
-                               onToggleFullscreen: onToggleFullscreen,
-                               onToggleDetach: onToggleDetach)
-        }
-        .overlay(alignment: .topTrailing) {
-            if !isFullscreen, playerController.player != nil {
-                DanmakuToggleButton(isOn: $danmakuEnabled)
-                    .padding(10)
+                PlayerSurfaceView(player: player,
+                                  engine: engine,
+                                  danmakuEnabled: danmakuEnabled,
+                                  onSpace: { playerController.togglePlay() },
+                                  onSkip: { playerController.skip(by: $0) })
+                    .id(player)
             }
         }
         .overlay(alignment: .topLeading) {
-            // 在线人数：随控制条唤起显示在播放区域左上角
-            if controlsVisible, let text = playerController.onlineText {
+            // 在线人数
+            if let text = playerController.onlineText {
                 PlayerOnlineBadge(text: text)
                     .padding(10)
                     .allowsHitTesting(false)
-                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            // 播放/全屏控件交给 AVKit；这里只放弹幕开关与分离窗口按钮
+            if playerController.player != nil {
+                HStack(spacing: 8) {
+                    DanmakuToggleButton(isOn: $danmakuEnabled)
+                    if !isFullscreen {
+                        PlayerWindowButton(systemName: isDetached ? "pin" : "pin.slash",
+                                           help: isDetached ? "吸附回播放页" : "分离为独立窗口",
+                                           action: onToggleDetach)
+                    }
+                }
+                .padding(10)
             }
         }
         .clipped()
