@@ -46,11 +46,18 @@ final class DanmakuOverlayNSView: NSView {
     private var link: CADisplayLink?
     private var windowCloseObserver: NSObjectProtocol?
     private var layers: [Int: CALayer] = [:]
-    /// 弹幕统一挂在 stageLayer 下。容器宽度变化（进出全屏、拖拽窗口）时只把这一层
-    /// 绕原点等比缩放跟随画面，不逐帧重建文字位图；尺寸稳定后再原子重建一次，
-    /// 让文字位图恢复清晰。缩放发生在视图布局的同一拍里（见 syncStageScale），
-    /// 因此弹幕与视频画面天然同帧——不存在"另起一个动画去追画面"的错位与抖动。
+    /// 弹幕分挂在两个容器下。容器尺寸变化（进出全屏、拖拽窗口）时只缩放这两层
+    /// 跟随画面，不逐帧重建文字位图；尺寸稳定后再原子重建一次，让文字恢复清晰。
+    /// 缩放发生在视图布局的同一拍里（见 syncStageScale），因此弹幕与视频画面
+    /// 天然同帧——不存在"另起一个动画去追画面"的错位与抖动。
+    ///
+    /// 之所以要两个容器：引擎里滚动/顶部弹幕的 y 是从**顶边**量出来的、底部弹幕
+    /// 是从**底边**量的，而全屏和窗口画面的宽高比通常并不相同（差值是
+    /// `newH - newW/baseW*baseH`）。一个缩放容器只能锚住一条边，锚底则顶部弹幕
+    /// 在过渡结束时必然要"瞬移"这一段差值——这就是之前那一下跳变的来源。
     private let stageLayer = CALayer()
+    /// 底部固定弹幕（mode 4）专用：绕画面底边等比缩放
+    private let bottomStageLayer = CALayer()
     private var lastScale: CGFloat = 0
     /// 弹幕是否处于“随播放头行进”的状态（播放中）。暂停/缓冲时置为静态。
     private var drivePlaying = false
@@ -59,8 +66,8 @@ final class DanmakuOverlayNSView: NSView {
     private var stageBaseSize: CGSize = .zero
     /// 最近一次容器宽度变化的时刻（同步于视图布局）；尺寸稳定后据此重建
     private var lastStageChangeTime: CFTimeInterval = 0
-    /// 最近一次见到的容器宽度：用来识别“这一拍确实变了”
-    private var lastStageWidth: CGFloat = 0
+    /// 最近一次见到的容器尺寸：用来识别“这一拍确实变了”
+    private var lastStageSize: CGSize = .zero
     /// 文字位图需要按新的 backingScale 重新栅格化（换屏 / 改分辨率）
     private var backingScaleChanged = false
     /// 进入全屏前的窗口内尺寸：退出全屏时按它预热文字位图
@@ -87,9 +94,14 @@ final class DanmakuOverlayNSView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.masksToBounds = true
-        stageLayer.anchorPoint = .zero
+        // 顶部/滚动弹幕：锚在画面顶边（anchorPoint.y = 1），position 每帧跟到当前顶边
+        stageLayer.anchorPoint = CGPoint(x: 0, y: 1)
         stageLayer.position = .zero
         layer?.addSublayer(stageLayer)
+        // 底部弹幕：锚在画面左下角
+        bottomStageLayer.anchorPoint = .zero
+        bottomStageLayer.position = .zero
+        layer?.addSublayer(bottomStageLayer)
     }
 
     @available(*, unavailable)
@@ -114,24 +126,30 @@ final class DanmakuOverlayNSView: NSView {
     /// 零延迟。任何“另起一个动画去追画面”的做法（不管怎么拟合延迟、时长和曲线）
     /// 都只能近似，而且会把主线程的掉帧放大成弹幕抖动。
     private func syncStageScale() {
-        let width = bounds.width
-        guard width > 0.5 else { return }
-        guard abs(width - lastStageWidth) > 0.01 else { return }
-        lastStageWidth = width
+        let size = bounds.size
+        guard size.width > 0.5, size.height > 0.5 else { return }
+        guard abs(size.width - lastStageSize.width) > 0.01
+            || abs(size.height - lastStageSize.height) > 0.01 else { return }
+        lastStageSize = size
         lastStageChangeTime = CACurrentMediaTime()
         guard stageBaseSize.width > 0.5 else { return }
-        applyStageScale(width: width)
+        applyStageScale(width: size.width, height: size.height)
     }
 
     /// 绕原点（左上角）等比缩放：引擎里所有几何量都只按“容器宽度 / baseWidth”推导，
     /// 所以这样缩放出来的画面与按新尺寸重建的结果逐像素一致，过渡结束不会跳。
-    private func applyStageScale(width: CGFloat) {
+    private func applyStageScale(width: CGFloat, height: CGFloat) {
         let factor = width / stageBaseSize.width
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        stageLayer.transform = abs(factor - 1) < 0.0005
+        let transform = abs(factor - 1) < 0.0005
             ? CATransform3DIdentity
             : CATransform3DMakeScale(factor, factor, 1)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        stageLayer.transform = transform
+        stageLayer.bounds = CGRect(origin: .zero, size: stageBaseSize)
+        // 锚点始终落在当前画面的顶边
+        stageLayer.position = CGPoint(x: 0, y: height)
+        bottomStageLayer.transform = transform
         CATransaction.commit()
     }
 
@@ -141,7 +159,11 @@ final class DanmakuOverlayNSView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         stageLayer.transform = CATransform3DIdentity
-        stageLayer.frame = CGRect(origin: .zero, size: size)
+        stageLayer.bounds = CGRect(origin: .zero, size: size)
+        stageLayer.position = CGPoint(x: 0, y: size.height)
+        bottomStageLayer.transform = CATransform3DIdentity
+        bottomStageLayer.bounds = CGRect(origin: .zero, size: size)
+        bottomStageLayer.position = .zero
         CATransaction.commit()
     }
 
@@ -310,9 +332,7 @@ final class DanmakuOverlayNSView: NSView {
             layer.removeFromSuperlayer()
         }
         layers.removeAll(keepingCapacity: true)
-        stageBaseSize = size
-        stageLayer.transform = CATransform3DIdentity
-        stageLayer.frame = CGRect(origin: .zero, size: size)
+        beginStage(size: size)
         engine.tick(playerTime: raw, size: size)
         drivePlaying = player.timeControlStatus == .playing
         for item in engine.active {
@@ -506,7 +526,8 @@ final class DanmakuOverlayNSView: NSView {
             "position": NSNull(),
             "contents": NSNull(),
         ]
-        stageLayer.addSublayer(layer)
+        // 底部固定弹幕走另一个容器：它的 y 是从画面底边量的
+        (item.mode == 4 ? bottomStageLayer : stageLayer).addSublayer(layer)
         layers[item.id] = layer
         if drivePlaying, item.mode == 1 {
             startScrollAnimation(for: item, layer: layer, in: size, time: time)
@@ -624,6 +645,7 @@ final class DanmakuOverlayNSView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         stageLayer.transform = CATransform3DIdentity
+        bottomStageLayer.transform = CATransform3DIdentity
         CATransaction.commit()
     }
 
