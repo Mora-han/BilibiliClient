@@ -10,10 +10,6 @@ final class PlayerController: ObservableObject {
     @Published var errorMessage: String?
     @Published var qualities: [Quality] = []
     @Published var currentQualityId: Int?
-    /// 控制条展示用：当前播放时间 / 总时长 / 播放状态
-    @Published var currentTime: Double = 0
-    @Published var duration: Double = 0
-    @Published var isPlaying = false
     /// 视频在线人数展示文本（如 "9.4万+"），随播放加载拉取
     @Published var onlineText: String?
 
@@ -37,7 +33,7 @@ final class PlayerController: ObservableObject {
     private(set) var cid = 0
     private var loadedKey: String?
     private var reportTask: Task<Void, Never>?
-    /// 控制条时间/状态观察者
+    /// 播放监控：只为系统"正在播放"上报（控制中心/媒体键）服务的时间/状态观察者
     private var playbackObserver: Any?
     private var statusObservation: NSKeyValueObservation?
     private var durationObservation: NSKeyValueObservation?
@@ -98,32 +94,18 @@ final class PlayerController: ObservableObject {
         }
     }
 
-    func seek(to seconds: Double, completion: ((Bool) -> Void)? = nil) {
-        guard let player else {
-            completion?(false)
-            return
-        }
-        let time = CMTime(seconds: seconds, preferredTimescale: 600)
-        if let completion {
-            player.seek(to: time,
-                        toleranceBefore: .zero,
-                        toleranceAfter: .zero,
-                        completionHandler: completion)
-        } else {
-            player.seek(to: time,
-                        toleranceBefore: .zero,
-                        toleranceAfter: .zero)
-        }
+    func seek(to seconds: Double) {
+        guard let player else { return }
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600),
+                    toleranceBefore: .zero,
+                    toleranceAfter: .zero)
+        SystemMediaCenter.shared.syncNowPlaying(force: true)
     }
 
     func skip(by seconds: Double) {
         guard let player else { return }
         let target = player.currentTime().seconds + seconds
         seek(to: max(target, 0))
-    }
-
-    func setVolume(_ value: Double) {
-        player?.volume = Float(value)
     }
 
     func load(aid: Int, bvid: String, cid: Int) async {
@@ -314,36 +296,29 @@ final class PlayerController: ObservableObject {
 
     // MARK: - 播放监控
 
-    /// 播放监控：0.25s 采样一次播放时间，驱动控制条数据（时间/时长/播放状态）。
+    /// 播放监控：只为系统“正在播放”上报（控制中心/媒体键）服务。
+    /// 画面与控制条全部由 AVKit 原生负责，这里不再采样时间、不再发布状态，
+    /// 避免每秒数次把整个播放页的 SwiftUI body 全部重算。
     private func startPlaybackMonitoring() {
         stopPlaybackMonitoring()
         guard let player else { return }
         playbackObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+            forInterval: CMTime(seconds: 1, preferredTimescale: 600),
             queue: .main
-        ) { [weak self] time in
-            let seconds = time.seconds
-            Task { @MainActor in
-                self?.currentTime = seconds
+        ) { _ in
+            MainActor.assumeIsolated {
                 SystemMediaCenter.shared.syncNowPlaying()
             }
         }
-        statusObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
-            let playing = player.timeControlStatus == .playing
+        statusObservation = player.observe(\.timeControlStatus, options: [.initial, .new]) { _, _ in
             Task { @MainActor in
-                self?.isPlaying = playing
                 SystemMediaCenter.shared.syncNowPlaying(force: true)
             }
         }
-        durationObservation = player.currentItem?.observe(\.duration, options: [.initial, .new]) { [weak self] item, _ in
-            let d = item.duration.seconds
+        durationObservation = player.currentItem?.observe(\.duration, options: [.initial, .new]) { _, _ in
             Task { @MainActor in
-                self?.duration = d.isFinite ? d : 0
                 SystemMediaCenter.shared.syncNowPlaying(force: true)
             }
-        }
-        if let d = player.currentItem?.duration.seconds, d.isFinite {
-            duration = d
         }
     }
 

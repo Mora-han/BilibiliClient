@@ -104,6 +104,10 @@ final class DanmakuEngine {
 
     private(set) var active: [Active] = []
 
+    /// 弹幕集合版本号：生成 / 回收 / 清空 / seek 时自增。
+    /// 渲染层据此在“集合完全没变”的帧上跳过 id 比对（高刷屏下每秒上百次）。
+    private(set) var revision: UInt64 = 0
+
     private var all: [DanmakuItem] = []
     private var nextIndex = 0
     private var configuredSize: CGSize = .zero
@@ -129,17 +133,13 @@ final class DanmakuEngine {
 
     func reset() {
         active = []
+        revision &+= 1
         nextIndex = 0
         lastTickTime = 0
         scrollLanes = []
         topLanes = []
         bottomLanes = []
         configuredSize = .zero
-    }
-
-    /// 清空当前屏幕上的弹幕（关闭开关时调用）。
-    func clear() {
-        active = []
     }
 
     // MARK: - 每帧更新
@@ -156,6 +156,7 @@ final class DanmakuEngine {
         let jump = t - lastTickTime
         if t < lastTickTime || jump > Self.seekThreshold {
             active = []
+            revision &+= 1
             rebuildLanes(size: size)
             nextIndex = firstIndex(atOrAfter: t - 2.5)
             lastTickTime = t
@@ -180,9 +181,11 @@ final class DanmakuEngine {
             }
         }
 
-        // 回收已离开画面的弹幕
+        // 回收已离开画面的弹幕（removeAll(where:) 原地压缩，不额外分配）
         if !active.isEmpty {
+            let before = active.count
             active.removeAll { $0.isFinished(at: t) }
+            if active.count != before { revision &+= 1 }
         }
     }
 
@@ -223,6 +226,7 @@ final class DanmakuEngine {
         switch item.mode {
         case 1:
             guard let lane = freeScrollLane(time: time) else { return }
+            revision &+= 1
             let duration = DanmakuSpeed.current.duration
             let tailEnter = duration * (textWidth / Active.baseWidth) /
                 (1 + textWidth / Active.baseWidth)
@@ -239,6 +243,7 @@ final class DanmakuEngine {
         case 5:
             guard let lane = freeFixedLane(topLanes, time: time, isTop: true),
                   lane >= 0, lane < topLanes.count else { return }
+            revision &+= 1
             topLanes[lane] = LaneState(busyUntil: time + Active.fixedDuration + 0.2)
             active.append(Active(id: item.id,
                                  text: item.text,
@@ -252,6 +257,7 @@ final class DanmakuEngine {
         case 4:
             guard let lane = freeFixedLane(bottomLanes, time: time, isTop: false),
                   lane >= 0, lane < bottomLanes.count else { return }
+            revision &+= 1
             bottomLanes[lane] = LaneState(busyUntil: time + Active.fixedDuration + 0.2)
             active.append(Active(id: item.id,
                                  text: item.text,
@@ -275,14 +281,12 @@ final class DanmakuEngine {
     }
 
     private func freeFixedLane(_ lanes: [LaneState], time: Double, isTop: Bool) -> Int? {
-        let count = lanes.count
-        // 顶部：从上往下找；底部：从下往上找
-        let order = isTop ? Array(0..<count) : Array((0..<count).reversed())
-        for i in order {
-            let lane = lanes[i]
-            if time >= lane.busyUntil {
-                return i
-            }
+        // 顶部：从上往下找；底部：从下往上找。按下标直接遍历，避免为每句话
+        // 都构造一次顺序数组（原来这里的 Array(0..<n) / reversed() 是纯开销）。
+        if isTop {
+            for i in lanes.indices where time >= lanes[i].busyUntil { return i }
+        } else {
+            for i in lanes.indices.reversed() where time >= lanes[i].busyUntil { return i }
         }
         return nil
     }

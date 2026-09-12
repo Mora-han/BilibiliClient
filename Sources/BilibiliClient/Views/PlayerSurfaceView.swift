@@ -65,6 +65,8 @@ final class DanmakuPlayerView: AVPlayerView {
 
     private var keyMonitor: Any?
     private var itemStatusObservation: NSKeyValueObservation?
+    /// 当前已装 KVO 的播放项：同一个 item 不重复安装
+    private weak var observedItem: AVPlayerItem?
     /// AVKit 原生全屏期间，播放器在 AVKit 自己的全屏窗口里
     private var isNativeFullscreen = false
     private var holdTask: Task<Void, Never>?
@@ -91,10 +93,15 @@ final class DanmakuPlayerView: AVPlayerView {
     }
 
     private func observeItemStatus() {
+        // SwiftUI 每次更新都会走到 setPlayer，但只有播放项真的换了才需要重装 KVO，
+        // 否则每轮更新都会拆掉再建一次观察者、还顺带重算一遍控件条样式。
+        applyControlsStyle()
+        let item = player?.currentItem
+        guard item !== observedItem else { return }
+        observedItem = item
         itemStatusObservation?.invalidate()
         itemStatusObservation = nil
-        applyControlsStyle()
-        guard let item = player?.currentItem else { return }
+        guard let item else { return }
         itemStatusObservation = item.observe(\.status, options: [.new, .initial]) { [weak self] _, _ in
             Task { @MainActor in self?.applyControlsStyle() }
         }

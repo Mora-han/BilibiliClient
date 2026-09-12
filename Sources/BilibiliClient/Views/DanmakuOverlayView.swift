@@ -2,31 +2,13 @@ import AppKit
 import AVFoundation
 import CoreText
 import QuartzCore
-import SwiftUI
 
 /// 弹幕渲染层：完全脱离 SwiftUI 渲染管线。
-/// 每条弹幕 = 一个 CALayer（文字预渲染成带外侧描边的位图，由 GPU 缓存）。
-/// 滚动弹幕的运动交给 Core Animation 在渲染进程按播放时间推进（不依赖回调帧率），
-/// CADisplayLink 只做轻量的生成/回收；暂停、seek、倍速时直接修正模型值，
-/// 不触发任何 SwiftUI 视图更新或 Canvas 重绘，对视频渲染几乎零干扰。
-struct DanmakuOverlayView: NSViewRepresentable {
-    let engine: DanmakuEngine
-    let player: AVPlayer
-    let enabled: Bool
-
-    func makeNSView(context: Context) -> DanmakuOverlayNSView {
-        let view = DanmakuOverlayNSView(engine: engine, player: player)
-        view.enabled = enabled
-        return view
-    }
-
-    func updateNSView(_ view: DanmakuOverlayNSView, context: Context) {
-        view.player = player
-        view.enabled = enabled
-    }
-}
-
-/// 弹幕承载视图：透明、不拦截鼠标、生命周期与窗口绑定（窗口消失即停表）。
+/// 每条弹幕 = 一个 CALayer（文字预渲染成带外侧描边的位图，由 GPU 缓存）；
+/// 滚动交给 Core Animation 在渲染进程按播放时间推进，CADisplayLink 只做轻量的
+/// 生成/回收，暂停/seek/倍速时只改模型值，不触发任何 SwiftUI 重绘。
+///
+/// 承载视图：透明、不拦截鼠标、生命周期与窗口绑定（窗口消失即停表）。
 final class DanmakuOverlayNSView: NSView {
     let engine: DanmakuEngine
     weak var player: AVPlayer? {
@@ -61,6 +43,13 @@ final class DanmakuOverlayNSView: NSView {
     private var lastScale: CGFloat = 0
     /// 弹幕是否处于“随播放头行进”的状态（播放中）。暂停/缓冲时置为静态。
     private var drivePlaying = false
+    /// 当前图层集合对应的引擎版本号：与 engine.revision 一致时说明没有增删，
+    /// 这一帧不需要再做任何 id 比对。
+    private var syncedRevision: UInt64 = 0
+    /// 上一帧的播放头：暂停/缓冲时播放头不动，据此跳过整帧。
+    private var lastPlayerTime: Double = .nan
+    /// 单帧新增上限被触发后还有弹幕没建好：下一帧继续，且不能走“无事可做”快路径
+    private var addBacklog = false
     /// 当前这批弹幕层是按哪个容器尺寸搭出来的：坐标、字号、动画起点都基于它。
     /// 与当前 bounds 宽度不一致即表示舞台处于缩放跟随态（按宽度比等比缩放）。
     private var stageBaseSize: CGSize = .zero
@@ -84,8 +73,21 @@ final class DanmakuOverlayNSView: NSView {
     private static let maxAddPerTick = 14
     /// 尺寸稳定多久后按新尺寸重建文字位图（只影响清晰度，不影响位置）
     private static let rebuildQuietPeriod: CFTimeInterval = 0.10
-    /// 文字位图缓存：同文案/字号/颜色/scale 直接复用 GPU 图，省去重复栅格化
-    private static let textureCache = NSCache<NSString, CGImage>()
+    /// 文字位图缓存：同文案/字号/颜色/scale 直接复用 GPU 图，省去重复栅格化。
+    /// 设了上限，长时间播放也不会无限吃内存（位图按字节数计费）。
+    private static let textureCache: NSCache<NSString, CGImage> = {
+        let cache = NSCache<NSString, CGImage>()
+        cache.countLimit = 600
+        cache.totalCostLimit = 64 * 1024 * 1024
+        return cache
+    }()
+    /// 图层不需要任何隐式动画：所有几何变化都显式提交，字典提到静态常量，
+    /// 免得每建一条弹幕都分配一次
+    private static let layerActions: [String: CAAction] = [
+        "position": NSNull(),
+        "contents": NSNull(),
+        "bounds": NSNull(),
+    ]
 
     init(engine: DanmakuEngine, player: AVPlayer?) {
         self.engine = engine
@@ -231,8 +233,10 @@ final class DanmakuOverlayNSView: NSView {
         if shouldRun {
             guard link == nil else { return }
             let newLink = displayLink(target: self, selector: #selector(frameTick))
-            // 跟随显示器原生刷新率（60/120/160Hz）：弹幕只是图层位移，
-            // 高刷下每帧开销依然极低，不影响视频渲染
+            // 跟随显示器原生刷新率（60/120/160Hz）：弹幕位移由 Core Animation 在
+            // 渲染服务端推进，这条回调只负责“生成 / 回收 / 暂停钉位”，生成与回收的
+            // 时机因此和屏幕刷新对齐，不会晚一拍；高刷下每帧开销依然极低，因为
+            // 集合没变的帧已被 frameTick 开头的静止帧快路径直接跳过。
             newLink.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 160)
             newLink.add(to: .main, forMode: .common)
             link = newLink
@@ -246,6 +250,7 @@ final class DanmakuOverlayNSView: NSView {
         link?.invalidate()
         link = nil
         rebuildAwaitingPrewarm = false
+        lastPlayerTime = .nan
         removeAllLayers()
     }
 
@@ -281,6 +286,16 @@ final class DanmakuOverlayNSView: NSView {
         let raw = player.currentTime().seconds
         // seek 瞬间可能返回非有限值：跳过本帧，由引擎的 seek 检测接管
         guard raw.isFinite else { return }
+        let playing = player.timeControlStatus == .playing
+        // 静止帧：播放头没动、播放状态没变、引擎也没有生成/回收任何弹幕——这一帧
+        // 必然无事可做，直接返回（暂停时整条链路都跳过，CPU 占用降到接近 0）。
+        // 播放中播放头每帧都在前进；暂停时拖进度条会让播放头跳变，都不会被漏掉。
+        if !addBacklog, raw == lastPlayerTime,
+           playing == drivePlaying, engine.revision == syncedRevision {
+            return
+        }
+        lastPlayerTime = raw
+
         engine.tick(playerTime: raw, size: size)
         syncLayers(size: size, scale: scale, time: raw)
     }
@@ -343,6 +358,11 @@ final class DanmakuOverlayNSView: NSView {
         lastScale = scale
         backingScaleChanged = false
         lastStageChangeTime = CACurrentMediaTime()
+        // 这次是按当前尺寸把 engine.active 全量建层，图层集合与引擎此刻完全一致：
+        // 直接把同步标记推进到位，免得下一帧再白比对一次集合。
+        syncedRevision = engine.revision
+        addBacklog = false
+        lastPlayerTime = raw
     }
 
     /// 提前在后台把过渡结束尺寸下要用的文字位图栅格化好，等过渡末尾做一次性重建时
@@ -438,21 +458,19 @@ final class DanmakuOverlayNSView: NSView {
         let rate = playing ? max(player?.rate ?? 1, 0.1) : 1
 
         if playing != drivePlaying {
-            if playing {
-                // 恢复播放：给暂停/缓冲期间静态放置的滚动层补上续走动画
-                for (id, layer) in layers {
-                    if let item = engine.active.first(where: { $0.id == id }) {
-                        startScrollAnimation(for: item, layer: layer, in: size, time: time)
-                    }
+            // 播放/暂停/缓冲切换：给在场弹幕续走或钉在播放头位置。先按 id 建一次
+            // 索引再遍历图层——原来是每条图层都线性扫一遍 active（O(n²)）。
+            let index = Dictionary(engine.active.map { ($0.id, $0) },
+                                   uniquingKeysWith: { first, _ in first })
+            for (id, layer) in layers {
+                guard let item = index[id] else {
+                    layer.removeAnimation(forKey: Self.moveKey)
+                    continue
                 }
-            } else {
-                // 暂停/缓冲：取消动画，钉在播放头当前时间对应的位置
-                for (id, layer) in layers {
-                    if let item = engine.active.first(where: { $0.id == id }) {
-                        freeze(layer, for: item, in: size, time: time)
-                    } else {
-                        layer.removeAnimation(forKey: Self.moveKey)
-                    }
+                if playing {
+                    startScrollAnimation(for: item, layer: layer, in: size, time: time)
+                } else {
+                    freeze(layer, for: item, in: size, time: time)
                 }
             }
             drivePlaying = playing
@@ -462,7 +480,18 @@ final class DanmakuOverlayNSView: NSView {
             self.layer?.speed = rate
         }
 
+        // 引擎这一帧没有生成/回收任何弹幕 → 图层集合与上一帧完全一致，
+        // 无需再建集合做比对（高刷屏下这是每帧最贵的一段）。
+        // addBacklog：上一帧受单帧新增上限所限还没建完，必须继续补。
+        guard addBacklog || engine.revision != syncedRevision else { return }
+        syncedRevision = engine.revision
+        // 走到这里表示马上要对图层集合与引擎做一次权威比对，上一帧的新增欠账随之
+        // 清零；若欠账弹幕已被引擎回收，下面的比对会确认"无需改动"，不能把标志
+        // 留成永久 true（否则之后每帧都要白做一次集合比对，快路径形同失效）。
+        addBacklog = false
+
         guard !engine.active.isEmpty else {
+            guard !layers.isEmpty else { return }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             removeAllLayers()
@@ -492,7 +521,10 @@ final class DanmakuOverlayNSView: NSView {
         // 某一帧承担全部栅格化，未补完的下一帧继续，观感更平滑。
         var added = 0
         for item in engine.active where layers[item.id] == nil {
-            guard added < Self.maxAddPerTick else { break }
+            if added >= Self.maxAddPerTick {
+                addBacklog = true
+                break
+            }
             addLayer(for: item, size: size, scale: scale, time: time)
             added += 1
         }
@@ -522,10 +554,7 @@ final class DanmakuOverlayNSView: NSView {
         } else {
             layer.bounds = CGRect(x: 0, y: 0, width: 1, height: 1)
         }
-        layer.actions = [
-            "position": NSNull(),
-            "contents": NSNull(),
-        ]
+        layer.actions = Self.layerActions
         // 底部固定弹幕走另一个容器：它的 y 是从画面底边量的
         (item.mode == 4 ? bottomStageLayer : stageLayer).addSublayer(layer)
         layers[item.id] = layer
@@ -584,7 +613,8 @@ final class DanmakuOverlayNSView: NSView {
                                            fontSize: fontSize, scale: scale) else {
             return nil
         }
-        textureCache.setObject(image, forKey: key as NSString)
+        textureCache.setObject(image, forKey: key as NSString,
+                               cost: image.bytesPerRow * image.height)
         return image
     }
 
@@ -635,6 +665,10 @@ final class DanmakuOverlayNSView: NSView {
     }
 
     private func removeAllLayers() {
+        addBacklog = false
+        // 图层集合被清空：同步版本号随之失效。只有引擎也空着时，
+        // “空图层 = 空集合”才算仍然同步，这样暂停且无弹幕的静止帧还能走快路径。
+        syncedRevision = engine.active.isEmpty ? engine.revision : .max
         guard !layers.isEmpty else { return }
         for layer in layers.values {
             layer.removeFromSuperlayer()
