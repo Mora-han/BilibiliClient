@@ -107,12 +107,19 @@ PLIST
 codesign --force --sign - "$APP_DIR" 2>/dev/null || true
 echo "Built: $APP_DIR"
 
-# 按版本归档，方便直接回退到任意历史版本
-ARCHIVE_DIR="dist/archive/$VERSION"
-mkdir -p "$ARCHIVE_DIR"
-ARCHIVE="$ARCHIVE_DIR/$APP_NAME-v$VERSION.app.zip"
-ditto -c -k --keepParent "$APP_DIR" "$ARCHIVE"
-echo "Archived: $ARCHIVE"
+# 历史版本归档：默认不做。任何版本都能用
+#   git checkout vX.Y.Z && NO_OPEN=1 ./scripts/build_app.sh release
+# 原样重建出来（实测约 20 秒），本地再堆一份 .app zip 只会白占空间；
+# 正式发布的版本由 GitHub Releases 留存。需要临时留档时设 KEEP_ARCHIVE=1。
+if [ "${KEEP_ARCHIVE:-0}" = "1" ]; then
+  ARCHIVE_DIR="dist/archive/$VERSION"
+  mkdir -p "$ARCHIVE_DIR"
+  ARCHIVE="$ARCHIVE_DIR/$APP_NAME-v$VERSION.app.zip"
+  ditto -c -k --keepParent "$APP_DIR" "$ARCHIVE"
+  echo "Archived: $ARCHIVE"
+else
+  echo "Skipped archive (KEEP_ARCHIVE=1 可保留一份本地归档)"
+fi
 
 # 编译完成后自动打开最新的 App 方便查看（设 NO_OPEN=1 可跳过）。
 # 先结束正在运行的旧实例，确保打开的是本次编译产物而不是旧二进制。
