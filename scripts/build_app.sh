@@ -104,7 +104,25 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --sign - "$APP_DIR" 2>/dev/null || true
+# 签名身份优先用固定的开发证书，而不是 ad-hoc。
+# 原因：ad-hoc 签名的「设计要求」就是 cdhash，而 cdhash 每次编译都会变，
+# macOS 因此把每个新构建都当成另一个 App —— 登录 cookie 存在钥匙串里，
+# 于是每编译运行一次就弹一次钥匙串授权框。换成固定证书后该要求稳定在
+# identifier + 证书主体上，授权过第一次之后就不再打扰。
+# 可用 SIGN_IDENTITY=... 覆盖；找不到证书时退回 ad-hoc（功能不受影响）。
+if [ -z "${SIGN_IDENTITY:-}" ]; then
+  SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -o '"\(Apple Development\|Developer ID Application\|Mac Developer\)[^"]*"' \
+    | head -1 | tr -d '"')"
+fi
+if [ -n "$SIGN_IDENTITY" ]; then
+  codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR" 2>/dev/null \
+    || codesign --force --sign - "$APP_DIR" 2>/dev/null || true
+  echo "Signed with: $SIGN_IDENTITY"
+else
+  codesign --force --sign - "$APP_DIR" 2>/dev/null || true
+  echo "Signed ad-hoc (未找到开发证书)"
+fi
 echo "Built: $APP_DIR"
 
 # 历史版本归档：默认不做。任何版本都能用

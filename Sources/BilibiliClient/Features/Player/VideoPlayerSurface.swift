@@ -21,6 +21,7 @@ struct VideoPlayerSurface: View {
                 PlayerSurfaceView(player: player,
                                   engine: engine,
                                   danmakuEnabled: danmakuEnabled,
+                                  isLive: false,
                                   onSpace: { playerController.togglePlay() },
                                   onSkip: { playerController.skip(by: $0) })
                     .id(player)

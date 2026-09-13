@@ -13,6 +13,8 @@ struct PlayerSurfaceView: NSViewRepresentable {
     /// 弹幕引擎；直播没有叠加弹幕时传 nil
     let engine: DanmakuEngine?
     let danmakuEnabled: Bool
+    /// 直播流：时长恒为不定值，控件条要一直避开时间轴（见 `applyControlsStyle`）
+    let isLive: Bool
     let onSpace: () -> Void
     let onSkip: (Double) -> Void
 
@@ -27,6 +29,7 @@ struct PlayerSurfaceView: NSViewRepresentable {
         view.updatesNowPlayingInfoCenter = false
         view.onSpace = onSpace
         view.onSkip = onSkip
+        view.isLive = isLive
         if let engine {
             view.installDanmaku(engine: engine, enabled: danmakuEnabled)
         }
@@ -37,6 +40,7 @@ struct PlayerSurfaceView: NSViewRepresentable {
         view.setPlayer(player)
         view.onSpace = onSpace
         view.onSkip = onSkip
+        view.isLive = isLive
         view.setDanmakuEnabled(danmakuEnabled)
         view.attachDanmakuIfNeeded()
     }
@@ -57,6 +61,10 @@ struct PlayerSurfaceView: NSViewRepresentable {
 final class DanmakuPlayerView: AVPlayerView {
     var onSpace: (() -> Void)?
     var onSkip: ((Double) -> Void)?
+    /// 直播流：控件条不使用带时间轴的样式
+    var isLive = false {
+        didSet { if isLive != oldValue { applyControlsStyle() } }
+    }
 
     private var danmakuView: DanmakuOverlayNSView?
     private var danmakuEngine: DanmakuEngine?
@@ -65,6 +73,7 @@ final class DanmakuPlayerView: AVPlayerView {
 
     private var keyMonitor: Any?
     private var itemStatusObservation: NSKeyValueObservation?
+    private var itemDurationObservation: NSKeyValueObservation?
     /// 当前已装 KVO 的播放项：同一个 item 不重复安装
     private weak var observedItem: AVPlayerItem?
     /// AVKit 原生全屏期间，播放器在 AVKit 自己的全屏窗口里
@@ -79,6 +88,7 @@ final class DanmakuPlayerView: AVPlayerView {
         holdTask?.cancel()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         itemStatusObservation?.invalidate()
+        itemDurationObservation?.invalidate()
     }
 
     // MARK: - 播放器与控件条
@@ -105,15 +115,34 @@ final class DanmakuPlayerView: AVPlayerView {
         itemStatusObservation = item.observe(\.status, options: [.new, .initial]) { [weak self] _, _ in
             Task { @MainActor in self?.applyControlsStyle() }
         }
+        // 时长可能晚于 ready 才拿到（分片索引解析完才知道），拿到后要把控件条
+        // 从无时间轴样式补回成可拖动的浮动样式
+        itemDurationObservation = item.observe(\.duration, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in self?.applyControlsStyle() }
+        }
     }
 
-    /// 播放项就绪才显示原生控件条，避免 AVKit 滑块拿到 NaN 时长崩溃。
+    /// 按播放项状态挑选原生控件条样式。
+    ///
+    /// 两条约束：
+    /// 1. 播放项就绪之前一律 `.none`——AVKit 的时间轴滑块拿到未就绪的播放项会崩。
+    /// 2. 直播项时长恒为不定值（NaN），只要控件条里带时间轴，AVKit 的
+    ///    `AVTimelineScrubberViewModel` 就会在控件条淡入的动画事务里触发内部
+    ///    precondition 崩溃（表现为进入直播间、画面刚出来就闪退）。所以直播
+    ///    固定用不含时间轴的 `.minimal`（保留播放/暂停与全屏按钮），VOD 才用
+    ///    可拖动的 `.floating`；VOD 万一拿不到时长也降级为 `.minimal`。
     private func applyControlsStyle() {
-        let ready = player?.currentItem?.status == .readyToPlay
-        let style: AVPlayerViewControlsStyle = ready ? .floating : .none
+        let style = resolvedControlsStyle()
         if controlsStyle != style {
             controlsStyle = style
         }
+    }
+
+    private func resolvedControlsStyle() -> AVPlayerViewControlsStyle {
+        guard let item = player?.currentItem, item.status == .readyToPlay else { return .none }
+        if isLive { return .minimal }
+        let seconds = item.duration.seconds
+        return seconds.isFinite && seconds > 0 ? .floating : .minimal
     }
 
     // MARK: - 弹幕
