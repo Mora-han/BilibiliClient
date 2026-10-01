@@ -10,6 +10,8 @@ struct SearchView: View {
     @State private var hasMore = true
     @State private var isLoading = false
     @State private var isLoadingMore = false
+    /// 上一次翻页是否失败（失败时底部显示可点重试行）
+    @State private var loadMoreFailed = false
     @State private var errorMessage: String?
     @State private var order: SearchOrder = .totalrank
 
@@ -151,7 +153,9 @@ struct SearchView: View {
                     }
 
                     if !results.isEmpty {
-                        LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                        LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                            await search(reset: false)
+                        } onRetry: {
                             await search(reset: false)
                         }
                     }
@@ -188,11 +192,14 @@ struct SearchView: View {
             results = []
             numResults = 0
             hasMore = true
+            loadMoreFailed = false
             errorMessage = nil
             isLoading = true
         } else {
             guard !isLoadingMore, hasMore, !results.isEmpty else { return }
             isLoadingMore = true
+            loadMoreFailed = false
+        loadMoreFailed = false
         }
 
         do {
@@ -217,6 +224,8 @@ struct SearchView: View {
         } catch {
             if reset {
                 errorMessage = error.localizedDescription
+            } else {
+                loadMoreFailed = true
             }
         }
         isLoading = false

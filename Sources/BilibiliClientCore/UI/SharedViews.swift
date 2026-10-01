@@ -13,13 +13,35 @@ struct FavoritePickerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("选择收藏夹").font(.headline)
-            ForEach(folders) { folder in
-                Button { onSelect(folder) } label: {
-                    HStack { Text(folder.title ?? "未命名"); Spacer(); if let count = folder.mediaCount { Text("\(count)").foregroundStyle(.secondary) } }
-                }.buttonStyle(.plain)
+            // 收藏夹可以有几十个，必须能滚动，否则靠后的收藏夹和「取消」会被裁掉够不到
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(folders) { folder in
+                        Button {
+                            onSelect(folder)
+                        } label: {
+                            HStack {
+                                Text(folder.title ?? "未命名")
+                                Spacer()
+                                if let count = folder.mediaCount {
+                                    Text("\(count)").foregroundStyle(.secondary)
+                                }
+                            }
+                            // 44pt 行高，手机上更好点
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
-            Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-        }.padding(24).frame(width: 360)
+            .frame(maxHeight: 380)
+            Button("取消") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+        }
+        .padding(24)
+        // 375pt 宽的机型上固定 360pt 会横向溢出
+        .frame(maxWidth: 360)
     }
 }
 
@@ -48,6 +70,7 @@ enum VideoDisplayMode: String, CaseIterable, Identifiable {
 /// 各页面只需提供卡片与行两种内容，容器与切换逻辑统一由这里处理。
 struct VideoFeedLayout<CardContent: View, RowContent: View>: View {
     var mode: VideoDisplayMode
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ViewBuilder var cardContent: CardContent
     @ViewBuilder var rowContent: RowContent
 
@@ -59,8 +82,17 @@ struct VideoFeedLayout<CardContent: View, RowContent: View>: View {
         self.rowContent = rowContent()
     }
 
+    /// 双列列表在 iPhone 宽度下放不下：`MediaListRow` 的封面本身固定 132pt，
+    /// 加间距与内边距后每列需要 ~170pt，而 iPhone 竖屏减去页面 `padding(20)` 后
+    /// 单列只剩 ~170pt、两列各 ~85pt —— 标题/UP 主/播放量会被压成一条竖线。
+    /// 所以紧凑宽度下把 `.list2` 降级成单列，而不是照常渲染。
+    private var effectiveMode: VideoDisplayMode {
+        if mode == .list2, horizontalSizeClass == .compact { return .list }
+        return mode
+    }
+
     var body: some View {
-        switch mode {
+        switch effectiveMode {
         case .card:
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
                       spacing: 16) {
@@ -81,33 +113,52 @@ struct VideoFeedLayout<CardContent: View, RowContent: View>: View {
 }
 
 /// 列表底部加载指示：只在真正请求时显示“加载中”，空闲时保持透明占位；
-/// 没有更多内容时显示“没有更多内容了”作为到达末尾的反馈。
+/// 没有更多内容时显示“没有更多内容了”作为到达末尾的反馈；
+/// 翻页失败时显示可点的一行“加载失败，点按重试”。
+///
+/// `failed` 由调用方显式传入（各页在 catch 里置位、开始下一次请求时清掉）：
+/// 之前这里对失败完全静默，只有一块透明占位，移动网络下用户只能靠反复下拉
+/// 才发现「底部加载没反应了」。
 struct LoadMoreFooter: View {
     var isBusy: Bool
     var hasMore: Bool
+    var failed = false
     var onLoad: () async -> Void
+    var onRetry: (() async -> Void)?
 
     var body: some View {
         if hasMore {
-            Group {
-                if isBusy {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("加载中…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                } else {
-                    // 透明占位：保持 onAppear 兜底触发，视觉上无任何提示
-                    Color.clear
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+            if isBusy {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("加载中…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .onAppear {
-                Task { await onLoad() }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            } else if failed {
+                Button {
+                    guard let onRetry else { return }
+                    Task { await onRetry() }
+                } label: {
+                    Label("加载失败，点按重试", systemImage: "arrow.clockwise")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        // 一行也要有 44pt 的点击高度
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                // 透明占位：保持 onAppear 兜底触发，视觉上无任何提示
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .onAppear {
+                        Task { await onLoad() }
+                    }
             }
         } else {
             Text("没有更多内容了")

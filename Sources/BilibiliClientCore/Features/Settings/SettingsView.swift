@@ -73,6 +73,7 @@ enum UpBarPosition: String, CaseIterable, Identifiable {
 /// 选项使用系统原生弹出按钮（Picker .menu，即 NSPopUpButton），
 /// 点击小方块即以其为中心展开列表，已选选项居中。
 struct SettingsView: View {
+    @EnvironmentObject private var session: SessionStore
     @AppStorage("appearance") private var appearance = AppearanceMode.system.rawValue
     @AppStorage("danmakuEnabled") private var danmakuEnabled = true
     @AppStorage("danmakuSpeed") private var danmakuSpeed = DanmakuSpeed.normal.rawValue
@@ -86,11 +87,33 @@ struct SettingsView: View {
     @AppStorage(SponsorPreferences.modeKey) private var sponsorMode = SponsorSkipMode.automatic.rawValue
     @AppStorage(SponsorPreferences.categoriesKey) private var sponsorCategories = SponsorPreferences.defaultCategoriesStorage
     @AppStorage(SponsorPreferences.muteSegmentsKey) private var sponsorMutesSegments = true
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var cacheCleared = false
+    @State private var showLogin = false
+
+    /// 紧凑宽度（iPhone 竖屏）下能真正生效的显示模式：双列列表会被运行时降级成单列，
+    /// 动态页的左侧 UP 栏在紧凑宽度下也会退回上侧。把无效选项藏起来，避免设置了看不到效果。
+    private var isCompactWidth: Bool { horizontalSizeClass == .compact }
+
+    private var availableDisplayModes: [VideoDisplayMode] {
+        isCompactWidth ? VideoDisplayMode.allCases.filter { $0 != .list2 } : VideoDisplayMode.allCases
+    }
+
+    private var availableUpBarPositions: [UpBarPosition] {
+        isCompactWidth ? UpBarPosition.allCases.filter { $0 != .left } : UpBarPosition.allCases
+    }
+
+    private var displayModeHint: String {
+        isCompactWidth
+            ? "卡片：首页式网格；列表：单列紧凑。双列列表在 iPhone 竖屏放不下内容，已隐藏。"
+            : "卡片：首页式网格；列表：单列紧凑；两列列表：双列紧凑，全局所有视频列表同步切换。"
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                accountSection.padding(.vertical, 16)
+                Divider()
                 appearanceSection.padding(.vertical, 16)
                 Divider()
                 // 「关闭窗口后行为」只对有窗口/菜单栏概念的平台有意义（macOS）
@@ -118,9 +141,64 @@ struct SettingsView: View {
             .padding(.vertical, 8)
         }
         .navigationTitle("设置")
+        .sheet(isPresented: $showLogin) { LoginView() }
     }
 
     // MARK: - 分组
+
+    /// 账户：登录 / 退出登录入口。
+    ///
+    /// 侧边栏底部那张账户卡片靠 `tabViewSidebarFooter` 呈现，而苹果明确说明它
+    /// 「只在 TabView 显示为侧边栏时可见」——iPhone 永远是标签栏形态，那块内容
+    /// 整块不会出现。于是 iPhone 上既看不到当前账号，也没有任何地方能退出登录
+    /// （`AccountPanelView` 的唯一入口就在那张卡片上）。这里补一个端点两边都有的入口。
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("账户")
+            if session.loggedIn {
+                HStack(spacing: 12) {
+                    if let user = session.user {
+                        RemoteImage(url: Formatters.https(user.face), variant: .avatar)
+                            .frame(width: 44, height: 44)
+                            .clipShape(Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(user.name)
+                                .font(.body.weight(.medium))
+                                .lineLimit(1)
+                            Text("Lv.\(user.level) · 关注 \(Formatters.count(user.following)) · 粉丝 \(Formatters.count(user.follower))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    } else {
+                        ProgressView()
+                            .frame(width: 44, height: 44)
+                        Text("同步中…")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+
+                Button(role: .destructive) {
+                    session.logout()
+                } label: {
+                    Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            } else {
+                Button {
+                    showLogin = true
+                } label: {
+                    Label("扫码登录", systemImage: "qrcode")
+                }
+                .buttonStyle(.borderedProminent)
+                Text("登录后可同步收藏夹、观看历史与稍后再看。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
 
     private var favoriteSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -195,7 +273,7 @@ struct SettingsView: View {
             sectionTitle("视频显示")
             optionRow("视频显示") {
                 Picker("视频显示", selection: $displayMode) {
-                    ForEach(VideoDisplayMode.allCases) { mode in
+                    ForEach(availableDisplayModes) { mode in
                         Text(mode.label).tag(mode.rawValue)
                     }
                 }
@@ -213,7 +291,7 @@ struct SettingsView: View {
                 .labelsHidden()
                 .fixedSize()
             }
-            Text("卡片：首页式网格；列表：单列紧凑；两列列表：双列紧凑，全局所有视频列表同步切换。")
+            Text(displayModeHint)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -224,7 +302,7 @@ struct SettingsView: View {
             sectionTitle("动态")
             optionRow("UP 栏位置") {
                 Picker("UP 栏位置", selection: $upBarPosition) {
-                    ForEach(UpBarPosition.allCases) { position in
+                    ForEach(availableUpBarPositions) { position in
                         Text(position.label).tag(position.rawValue)
                     }
                 }
@@ -232,7 +310,9 @@ struct SettingsView: View {
                 .labelsHidden()
                 .fixedSize()
             }
-            Text("选择“左侧”后，UP 筛选栏固定在动态列表左侧竖排展示。")
+            Text(isCompactWidth
+                 ? "选择“左侧”后 UP 筛选栏固定在动态列表左侧竖排展示；iPhone 竖屏放不下，已隐藏。"
+                 : "选择“左侧”后，UP 筛选栏固定在动态列表左侧竖排展示。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

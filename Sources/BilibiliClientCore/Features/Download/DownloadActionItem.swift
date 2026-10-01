@@ -27,6 +27,9 @@ struct DownloadActionItem: View {
         .help("下载这个视频")
         .popover(isPresented: $controller.showPicker, arrowEdge: .bottom) {
             card
+                // iPhone 上 popover 会自适应成 sheet：清晰度/进度卡片被拉成整屏很别扭，
+                // 显式要求紧凑宽度下仍按 popover 呈现。
+                .presentationCompactAdaptation(.popover)
                 .onDisappear { controller.dismiss() }
         }
     }

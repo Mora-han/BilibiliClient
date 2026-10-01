@@ -7,6 +7,8 @@ struct RecommendView: View {
     @State private var page = 0
     @State private var isLoading = false
     @State private var isLoadingMore = false
+    /// 上一次翻页是否失败（失败时底部显示可点重试行）
+    @State private var loadMoreFailed = false
     @State private var errorMessage: String?
     @State private var hasLoaded = false
     @State private var hasMore = true
@@ -57,7 +59,9 @@ struct RecommendView: View {
             .padding(20)
 
             if !items.isEmpty {
-                LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                    await loadMore()
+                } onRetry: {
                     await loadMore()
                 }
             }
@@ -113,6 +117,7 @@ struct RecommendView: View {
     private func loadMore() async {
         guard !isLoadingMore, hasMore, !items.isEmpty else { return }
         isLoadingMore = true
+        loadMoreFailed = false
         do {
             let newItems = try await FeedService().recommend(page: page + 1)
             let seen = Set(items.map(\.id))
@@ -122,7 +127,7 @@ struct RecommendView: View {
             // 本页没有新增内容（接口翻页返回重复或空）时停止自动加载，避免无限转圈
             hasMore = !fresh.isEmpty
         } catch {
-            // 翻页失败：保留 hasMore，点击底部提示可重试
+            loadMoreFailed = true
         }
         isLoadingMore = false
     }

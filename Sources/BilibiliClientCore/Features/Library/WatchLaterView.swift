@@ -25,7 +25,8 @@ struct WatchLaterView: View {
         }
         .navigationTitle("稍后再看")
         .sheet(isPresented: $showLogin) { LoginView() }
-        .task { await loadIfNeeded() }
+        // 扫码登录后重新拉取（原因见 `FavoritesView` 同名处）
+        .task(id: session.loggedIn) { await loadIfNeeded() }
     }
 
     private var loginPrompt: some View {

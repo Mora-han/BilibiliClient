@@ -7,6 +7,8 @@ struct HistoryView: View {
     @State private var cursor: HistoryCursor?
     @State private var isLoading = false
     @State private var isLoadingMore = false
+    /// 上一次翻页是否失败（失败时底部显示可点重试行）
+    @State private var loadMoreFailed = false
     @State private var hasMore = true
     @State private var errorMessage: String?
     @State private var hasLoaded = false
@@ -94,7 +96,9 @@ struct HistoryView: View {
                         }
                     }
 
-                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                        await loadMore()
+                    } onRetry: {
                         await loadMore()
                     }
                 }
@@ -147,6 +151,7 @@ struct HistoryView: View {
     private func loadMore() async {
         guard !isLoadingMore, hasMore, !items.isEmpty, let cursor else { return }
         isLoadingMore = true
+        loadMoreFailed = false
         do {
             let data = try await LibraryService().history(
                 max: cursor.max ?? 0,
@@ -159,7 +164,7 @@ struct HistoryView: View {
             self.cursor = data.cursor
             hasMore = !fresh.isEmpty
         } catch {
-            // 静默失败
+            loadMoreFailed = true
         }
         isLoadingMore = false
     }

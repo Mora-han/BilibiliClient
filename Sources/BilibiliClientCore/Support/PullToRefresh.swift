@@ -7,6 +7,10 @@ import SwiftUI
 /// - **iOS / iPadOS**：`.refreshable` 只对 `List` / `Form` 生效，`ScrollView` 上拿不到
 ///   刷新控件。这里把系统的 `UIRefreshControl` 直接装到底层 `UIScrollView` 上——
 ///   `List` 用的就是同一个控件，拉拽手感与动画完全一致。
+///
+/// 两个坑都在挂载时序上，`AnchorView.attachIfNeeded()` 的注释里有详细说明：
+/// 定位 `UIScrollView` 要绕开「`.background` 是兄弟节点」，挂上去之后还要在每次
+/// 布局回调里核对控件是否**仍然**挂在上面（推入详情页时 SwiftUI 会把它摘掉）。
 extension View {
     @ViewBuilder
     func feedRefreshable(_ action: @escaping @Sendable () async -> Void) -> some View {
@@ -86,15 +90,36 @@ private struct SystemRefreshControl: UIViewRepresentable {
             }
         }
 
+        /// 确保控件此刻**真的**挂在目标 `UIScrollView` 上；已经挂好则是一次指针比较的廉价返回。
+        ///
+        /// 这里刻意不能只判断「是否挂过」：推入详情页时 SwiftUI 会把整个
+        /// `UIRefreshControl` 从 `scrollView` 上摘掉（离开窗口时清空 `refreshControl`），
+        /// 但那个 `UIScrollView` 本身在导航栈里活着、锚点也还指着它。若只在
+        /// `attachedTo == nil` 时才挂，弹回首页后就再也不会补挂 —— 表现就是
+        /// **第一次下拉刷新正常，进出一次视频详情后下拉刷新失效**。
+        ///
+        /// 因此每次布局回调都核对一遍：目标没变但控件被清掉，就把**原来那个**控件挂回去
+        /// （复用而非重建，避免重挂瞬间打断正在进行的刷新动画）。
         func attachIfNeeded() {
-            guard attachedTo == nil, attempts < 40 else { return }
+            if let current = attachedTo,
+               let control = coordinator.control,
+               current.refreshControl === control {
+                return
+            }
+            guard attempts < 60 else { return }
             attempts += 1
             guard let scrollView = locateScrollView() else { return }
-            let control = UIRefreshControl()
-            control.addTarget(coordinator, action: #selector(Coordinator.handle(_:)), for: .valueChanged)
-            scrollView.refreshControl = control
+            let control = coordinator.control ?? {
+                let fresh = UIRefreshControl()
+                fresh.addTarget(coordinator, action: #selector(Coordinator.handle(_:)), for: .valueChanged)
+                coordinator.control = fresh
+                return fresh
+            }()
+            if scrollView.refreshControl !== control {
+                scrollView.refreshControl = control
+            }
+            // 内容不满一屏时也要能下拉
             scrollView.alwaysBounceVertical = true
-            coordinator.control = control
             attachedTo = scrollView
         }
 

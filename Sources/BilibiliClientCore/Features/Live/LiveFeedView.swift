@@ -9,6 +9,8 @@ struct LiveFeedView: View {
     @State private var hasMore = true
     @State private var isLoading = false
     @State private var isLoadingMore = false
+    /// 上一次翻页是否失败（失败时底部显示可点重试行）
+    @State private var loadMoreFailed = false
     @State private var errorMessage: String?
     @State private var hasLoaded = false
 
@@ -48,7 +50,9 @@ struct LiveFeedView: View {
                 }
 
                 if !usableRooms.isEmpty {
-                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                        await loadMore()
+                    } onRetry: {
                         await loadMore()
                     }
                 }
@@ -109,6 +113,7 @@ struct LiveFeedView: View {
     private func loadMore() async {
         guard !isLoadingMore, hasMore, !rooms.isEmpty else { return }
         isLoadingMore = true
+        loadMoreFailed = false
         do {
             let fresh = try await LiveService().recommend(page: page + 1)
             let seen = Set(rooms.map(\.roomid))
@@ -118,7 +123,7 @@ struct LiveFeedView: View {
             // 推荐接口没有明确的“到底”标记：本页不足一页即视为没有更多
             hasMore = fresh.count >= 50
         } catch {
-            // 翻页失败：保留 hasMore，下拉可重试
+            loadMoreFailed = true
         }
         isLoadingMore = false
     }

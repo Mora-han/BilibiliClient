@@ -15,6 +15,8 @@ struct UpProfileView: View {
     @State private var isLoadingInfo = true
     @State private var isLoadingVideos = true
     @State private var isLoadingMore = false
+    /// 上一次翻页是否失败（失败时底部显示可点重试行）
+    @State private var loadMoreFailed = false
     @State private var infoError: String?
     @State private var videoError: String?
     @State private var isFollowing = false
@@ -150,7 +152,9 @@ struct UpProfileView: View {
                 }
 
                 if !usableVideos.isEmpty {
-                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                        await loadMore()
+                    } onRetry: {
                         await loadMore()
                     }
                 }
@@ -276,6 +280,7 @@ struct UpProfileView: View {
     private func loadMore() async {
         guard !isLoadingMore, hasMore, !videos.isEmpty else { return }
         isLoadingMore = true
+        loadMoreFailed = false
         do {
             let data = try await UpService().videos(mid: mid, page: page + 1, order: order.apiValue)
             let seen = Set(videos.map(\.id))
@@ -284,7 +289,7 @@ struct UpProfileView: View {
             page += 1
             hasMore = !fresh.isEmpty
         } catch {
-            // 翻页失败静默，滚动后可重试
+            loadMoreFailed = true
         }
         isLoadingMore = false
     }

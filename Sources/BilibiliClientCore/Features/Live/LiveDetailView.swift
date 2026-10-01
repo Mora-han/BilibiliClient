@@ -29,6 +29,8 @@ struct LiveDetailView: View {
     let route: LiveRoute
 
     @EnvironmentObject private var router: AppRouter
+    /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化，见 `\.isTabVisible`
+    @Environment(\.isTabVisible) private var isTabVisible
     @StateObject private var model = LivePlayerModel()
     @StateObject private var danmaku: LiveDanmakuEngine
     /// 本页首次出现时导航栈的深度（记录后，栈变深=被新页面覆盖，变回=回到本页）
@@ -79,6 +81,8 @@ struct LiveDetailView: View {
             navBaseCount = router.path.count
         }
         .onChange(of: router.path.count) { _, newCount in
+            // 同 `VideoDetailView`：隐藏标签里的这一页不能跟着全局计数醒来重新拉流
+            guard isTabVisible else { return }
             if newCount > navBaseCount {
                 // 被推入的新页面覆盖（如 UP 主页）：关闭直播窗口并停止播放
                 closePlayback()
@@ -88,6 +92,12 @@ struct LiveDetailView: View {
             }
         }
         .onDisappear {
+            // iOS 的系统全屏（`AVPlayerViewController` 自带）会把整页盖住，SwiftUI 因此
+            // 也会发 `onDisappear` —— 可用户并没有离开直播间。按"离开"处理就会：一点
+            // 全屏就停流、弹幕直接断开，退出全屏回来也没有任何东西重新拉流（`.task`
+            // 早已跑完），只能退出房间重进。这里的判断必须和 `VideoDetailView` 一致。
+            // macOS 没有这个形态，恒为 false，行为与改动前完全一致。
+            guard !PlayerPresentationState.shared.isSystemFullscreen else { return }
             closePlayback()
         }
         .onChange(of: danmaku.popularity) { _, popularity in

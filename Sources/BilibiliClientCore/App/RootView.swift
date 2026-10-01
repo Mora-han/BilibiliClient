@@ -3,6 +3,25 @@ import AppKit
 #endif
 import SwiftUI
 
+private struct TabVisibilityKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// 当前页面所在的标签页是否正被选中（可见）。
+    ///
+    /// iOS 的每个标签页有各自独立的导航栈（见 `RootView.tabStack(_:)`），但 `AppRouter.path`
+    /// 是**全局**的、只跟着当前选中的标签镜像。详情页若拿它来判断"我是不是栈顶"，
+    /// 隐藏标签里的那个页面也会跟着响应 —— 表现为切回来发现视频/直播被重新拉起来了。
+    /// 所以详情页的导航计数判断必须先过这道闸。
+    ///
+    /// macOS 是单一导航栈、不存在这个问题，恒定 `true`。
+    var isTabVisible: Bool {
+        get { self[TabVisibilityKey.self] }
+        set { self[TabVisibilityKey.self] = newValue }
+    }
+}
+
 public struct UpRoute: Hashable {
     let mid: Int
 }
@@ -226,8 +245,11 @@ public struct RootView: View {
         #if os(macOS)
         selection = .search
         #else
-        // iOS 的搜索不在标签栏里，直接推进导航栈（与点站内搜索结果同一条路径）
-        router.path.append(SearchRoute(query: trimmed))
+        // iOS 的搜索不在标签栏里，直接推进导航栈（与点站内搜索结果同一条路径）。
+        // 这里必须**替换**整条路径而不是 append：`router.path` 是全局的、会残留上一个
+        // 标签栈里的内容，直接 append 会让当前标签继承「视频详情 → 搜索页」这样的
+        // 整条旧栈，返回按钮于是指向一个毫不相干的视频页。
+        router.path = NavigationPath([SearchRoute(query: trimmed)])
         #endif
     }
 
@@ -310,6 +332,8 @@ private struct TabNavStack: View {
             RootView.rootPage(for: item, query: query)
                 .biliNavDestinations()
         }
+        // 详情页靠这个判断"我所在的标签还可见吗"，避免隐藏标签被全局 path 计数唤醒
+        .environment(\.isTabVisible, isSelected)
         // 外部程序化导航（搜索、评论里点视频、菜单栏卡片…）落进**当前**标签的栈。
         .onChange(of: router.path) { _, incoming in
             guard isSelected, incoming != path else { return }

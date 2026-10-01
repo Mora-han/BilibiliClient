@@ -9,6 +9,8 @@ struct FavoritesView: View {
     @State private var page = 0
     @State private var isLoading = false
     @State private var isLoadingMore = false
+    /// 上一次翻页是否失败（失败时底部显示可点重试行）
+    @State private var loadMoreFailed = false
     @State private var hasMore = true
     @State private var errorMessage: String?
     @State private var hasLoaded = false
@@ -106,7 +108,9 @@ struct FavoritesView: View {
                         }
                     }
 
-                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                        await loadMore()
+                    } onRetry: {
                         await loadMore()
                     }
                 }
@@ -210,6 +214,7 @@ struct FavoritesView: View {
     private func loadMore() async {
         guard !isLoadingMore, hasMore, !medias.isEmpty, let folderId = selectedFolderId else { return }
         isLoadingMore = true
+        loadMoreFailed = false
         do {
             let data = try await LibraryService().favoriteResources(mediaId: folderId, page: page + 1)
             let seen = Set(medias.map(\.id))
@@ -218,7 +223,7 @@ struct FavoritesView: View {
             page += 1
             hasMore = (data.hasMore ?? false) && !fresh.isEmpty
         } catch {
-            // 静默失败
+            loadMoreFailed = true
         }
         isLoadingMore = false
     }

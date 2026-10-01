@@ -4,6 +4,7 @@ struct DynamicFeedView: View {
     @EnvironmentObject private var session: SessionStore
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @AppStorage("upBarPosition") private var upBarPosition = UpBarPosition.top.rawValue
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var items: [DynamicItem] = []
     @State private var followedUPs: [FollowedUser] = []
     @State private var selectedUP: Int?
@@ -11,18 +12,22 @@ struct DynamicFeedView: View {
     @State private var hasMore = true
     @State private var isLoading = false
     @State private var isLoadingMore = false
+    /// 上一次翻页是否失败（失败时底部显示可点重试行）
+    @State private var loadMoreFailed = false
+    /// 请求代次：切 UP 时自增，用来丢弃过期请求的结果
+    @State private var loadToken = 0
     @State private var errorMessage: String?
     @State private var hasLoaded = false
 
     var body: some View {
         HStack(spacing: 0) {
-            if upBarPosition == UpBarPosition.left.rawValue {
+            if showsLeftBar {
                 leftBar
                 Divider()
             }
 
             VStack(spacing: 0) {
-                if upBarPosition == UpBarPosition.top.rawValue {
+                if !showsLeftBar {
                     topBar
                     Divider()
                 }
@@ -49,10 +54,19 @@ struct DynamicFeedView: View {
                 }
             }
         }
-        .task {
-            guard !hasLoaded else { return }
+        // 登录状态变化要重新拉一次关注 UP 栏：首次进入未登录时它会直接跳过，
+        // 而扫码登录走的是 sheet，不会让本页 disappear，裸 `.task` 不会重跑。
+        .task(id: session.loggedIn) {
+            guard !hasLoaded || session.loggedIn else { return }
             await prepare()
         }
+    }
+
+    /// 是否竖排 UP 栏。iPhone 紧凑宽度下强制回到上侧横向栏：
+    /// 固定 170pt 的侧栏会把 393pt 宽的屏挤到信息流只剩 ~180pt，
+    /// 卡片里的固定 128pt 封面直接把标题压没。
+    private var showsLeftBar: Bool {
+        upBarPosition == UpBarPosition.left.rawValue && horizontalSizeClass != .compact
     }
 
     private var displayItems: [DynamicItem] {
@@ -102,8 +116,9 @@ struct DynamicFeedView: View {
     private var feedContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if displayMode == .list2 {
-                    // 两列列表：动态卡片双列排布，与其他页面保持一致
+                if displayMode == .list2, horizontalSizeClass != .compact {
+                    // 两列列表：动态卡片双列排布，与其他页面保持一致。
+                    // iPhone 紧凑宽度下同样降级成单列（原因见 `VideoFeedLayout`）。
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
                                         GridItem(.flexible(), spacing: 12)],
                               spacing: 12) {
@@ -120,7 +135,9 @@ struct DynamicFeedView: View {
                 }
 
                 if !items.isEmpty {
-                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore) {
+                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                        await loadMore()
+                    } onRetry: {
                         await loadMore()
                     }
                 }
@@ -167,6 +184,13 @@ struct DynamicFeedView: View {
         items = []
         offset = nil
         hasMore = true
+        // 作废在途请求：否则旧 UP 的结果会在稍后写回 `items`，
+        // 芯片高亮已经是新 UP，列表里却是上一个 UP 的内容。
+        loadToken += 1
+        if isLoading {
+            // 正在加载时 `load()` 会被 guard 挡掉；放掉标记，等它按 token 丢弃旧结果后补一次。
+            isLoading = false
+        }
         Task { await load() }
     }
 
@@ -191,31 +215,44 @@ struct DynamicFeedView: View {
         guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
+        loadToken += 1
+        let token = loadToken
         do {
             let data = try await DynamicService().feed(hostMid: selectedUP)
+            // 请求期间用户又切了 UP：这份结果已经过期，直接丢弃
+            guard token == loadToken else { return }
             items = data.items
             BiliImages.prefetchDynamic(data.items)
             offset = data.offset
             hasMore = data.hasMore ?? false
             hasLoaded = true
         } catch {
+            guard token == loadToken else { return }
             errorMessage = error.localizedDescription
         }
-        isLoading = false
+        if token == loadToken {
+            isLoading = false
+        }
     }
 
     private func loadMore() async {
         guard !isLoadingMore, let offset, hasMore, !items.isEmpty else { return }
         isLoadingMore = true
+        loadMoreFailed = false
+        let token = loadToken
         do {
             let data = try await DynamicService().feed(offset: offset, hostMid: selectedUP)
+            guard token == loadToken else {
+                isLoadingMore = false
+                return
+            }
             let seen = Set(items.map(\.id))
             let fresh = data.items.filter { !seen.contains($0.id) }
             items.append(contentsOf: fresh)
             self.offset = data.offset
             hasMore = (data.hasMore ?? false) && !fresh.isEmpty
         } catch {
-            // 翻页失败静默
+            if token == loadToken { loadMoreFailed = true }
         }
         isLoadingMore = false
     }

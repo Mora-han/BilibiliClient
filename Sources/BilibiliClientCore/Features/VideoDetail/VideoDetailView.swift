@@ -8,6 +8,8 @@ struct VideoDetailView: View {
 
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var router: AppRouter
+    /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化，见 `\.isTabVisible`
+    @Environment(\.isTabVisible) private var isTabVisible
     /// 宽度类：用来区分 iPad（regular）与 iPhone / 窄 iPad（compact）。
     /// 只在 iOS 的两栏布局里读；macOS 不参与，行为不变。
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -107,6 +109,10 @@ struct VideoDetailView: View {
             PlaybackMenuState.shared.setDetached(newValue)
         }
         .onChange(of: router.path.count) { _, newCount in
+            // 隐藏标签里这一页的 `navBaseCount` 与全局计数是两回事：别的标签把深度动回
+            // 这个数时会误判成「回到本页」，于是被停止的播放器又被 `load()` 拉起来，
+            // 出现两个标签同时出声。不可见时一律不响应。
+            guard isTabVisible else { return }
             if newCount > navBaseCount {
                 // 被推入的新页面覆盖（如 UP 主页、评论中的 UP 等）：收起播放窗口并停止播放
                 closePlaybackWindow()
@@ -555,6 +561,9 @@ struct VideoDetailView: View {
                 .help("调整不透明度、字号、显示区域、速度与显示类型")
                 .popover(isPresented: $showDanmakuSettings, arrowEdge: .bottom) {
                     DanmakuSettingsCard()
+                        // iPhone 上 popover 默认会自适应成 sheet / 全屏 cover，
+                        // 一个设置小卡片被拉成整屏很突兀；显式要求紧凑宽度下仍按 popover 呈现。
+                        .presentationCompactAdaptation(.popover)
                 }
 
                 #if os(macOS)
@@ -589,6 +598,7 @@ struct VideoDetailView: View {
                     .buttonStyle(.plain)
                     .popover(isPresented: $showQualityMenu, arrowEdge: .bottom) {
                         qualityActionCard
+                            .presentationCompactAdaptation(.popover)
                     }
                 }
             }
@@ -743,10 +753,13 @@ struct VideoDetailView: View {
                         .font(.caption2)
                 }
                 .foregroundStyle(coined ? Color.orange : Color.primary)
+                // 手机上把整块 44pt 的行高都纳入点击范围，避免点空白处没反应
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .popover(isPresented: $showCoinMenu, arrowEdge: .bottom) {
                 coinActionCard
+                    .presentationCompactAdaptation(.popover)
             }
             .hoverScale(scale: 1.06)
 
@@ -759,6 +772,7 @@ struct VideoDetailView: View {
                         .font(.caption2)
                 }
                 .foregroundStyle(faved ? Color.blue : Color.primary)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .hoverScale(scale: 1.06)
@@ -772,10 +786,12 @@ struct VideoDetailView: View {
                         .font(.caption2)
                 }
                 .foregroundStyle(.primary)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .popover(isPresented: $showShareMenu, arrowEdge: .bottom) {
                 shareActionCard
+                    .presentationCompactAdaptation(.popover)
             }
             .hoverScale(scale: 1.06)
 
@@ -783,7 +799,9 @@ struct VideoDetailView: View {
                 VStack(spacing: 3) {
                     Image(systemName: watchLaterAdded ? "clock.fill" : "clock")
                     Text("稍后再看").font(.caption2)
-                }.foregroundStyle(watchLaterAdded ? .pink : .primary)
+                }
+                .foregroundStyle(watchLaterAdded ? .pink : .primary)
+                .contentShape(Rectangle())
             }.buttonStyle(.plain).hoverScale(scale: 1.06)
 
             // 下载入口：跟随当前选中的分P
@@ -792,6 +810,9 @@ struct VideoDetailView: View {
             Spacer()
         }
         .font(.title3)
+        // 动作栏整体保证 44pt 高：HIG 的最小可点尺寸，手机上点赞/投币/收藏
+        // 原先的热区只有 ~36pt 且相邻仅隔 14pt，很容易点到隔壁
+        .frame(minHeight: 44)
         .padding(.vertical, 4)
     }
 
