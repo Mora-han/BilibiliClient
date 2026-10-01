@@ -50,6 +50,7 @@ public struct RootView: View {
     @State private var showAccountPanel = false
     @State private var searchText = ""
     @State private var submittedQuery = ""
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     enum SidebarItem: String, CaseIterable, Identifiable {
         case home = "推荐"
@@ -61,10 +62,15 @@ public struct RootView: View {
         case history = "历史"
         case watchLater = "稍后再看"
         case settings = "设置"
+        // 仅 iPhone 紧凑宽度：把分区/收藏/历史/稍后再看/设置收进去的聚合页
+        case mine = "我的"
         // 搜索仅由顶部搜索框进入，不出现在侧边栏
         case search = "搜索"
 
         var id: String { rawValue }
+
+        /// 紧凑宽度下「我的」页里列出的入口（顺序即展示顺序）。
+        static let mineEntries: [SidebarItem] = [.zones, .favorites, .history, .watchLater, .settings]
 
         var icon: String {
             switch self {
@@ -77,6 +83,7 @@ public struct RootView: View {
             case .history: return "clock.arrow.circlepath"
             case .watchLater: return "clock.badge.checkmark"
             case .settings: return "gearshape"
+            case .mine: return "person.crop.circle"
             case .search: return "magnifyingglass"
             }
         }
@@ -107,20 +114,37 @@ public struct RootView: View {
         // iPhone 底部标签栏 / iPad 顶部标签栏，iPad 上可一键切到侧边栏（Apple Music 式）。
         // 分组用 SwiftUI 的 `TabSection`（嵌套 `Tab` 不被 SwiftUI 支持：Tab 只 conform
         // TabContent，不 conform View）。侧边栏里的「浏览 / 我的」分组与 macOS 侧边栏一致。
-        TabView(selection: $selection) {
-            TabSection("浏览") {
-                Tab("推荐", systemImage: SidebarItem.home.icon, value: SidebarItem.home) { tabStack(.home) }
-                Tab("分区", systemImage: SidebarItem.zones.icon, value: SidebarItem.zones) { tabStack(.zones) }
-                Tab("热门", systemImage: SidebarItem.popular.icon, value: SidebarItem.popular) { tabStack(.popular) }
-                Tab("直播", systemImage: SidebarItem.live.icon, value: SidebarItem.live) { tabStack(.live) }
-                Tab("动态", systemImage: SidebarItem.dynamics.icon, value: SidebarItem.dynamics) { tabStack(.dynamics) }
+        //
+        // 紧凑宽度（iPhone / 窄 iPad）下必须收窄到 5 个 tab：系统只保证 5 个位置，
+        // 多出来的会被塞进「更多」列表，而 `TabSection` 的分组标题在紧凑宽度下本来
+        // 就不显示，9 个 tab 只会变成一团。「我的」做成一个真正的页面（`MineView`），
+        // 把分区 / 收藏 / 历史 / 稍后再看 / 设置收进去。
+        Group {
+            if horizontalSizeClass == .compact {
+                TabView(selection: $selection) {
+                    Tab("推荐", systemImage: SidebarItem.home.icon, value: SidebarItem.home) { tabStack(.home) }
+                    Tab("热门", systemImage: SidebarItem.popular.icon, value: SidebarItem.popular) { tabStack(.popular) }
+                    Tab("直播", systemImage: SidebarItem.live.icon, value: SidebarItem.live) { tabStack(.live) }
+                    Tab("动态", systemImage: SidebarItem.dynamics.icon, value: SidebarItem.dynamics) { tabStack(.dynamics) }
+                    Tab("我的", systemImage: SidebarItem.mine.icon, value: SidebarItem.mine) { tabStack(.mine) }
+                }
+            } else {
+                TabView(selection: $selection) {
+                    TabSection("浏览") {
+                        Tab("推荐", systemImage: SidebarItem.home.icon, value: SidebarItem.home) { tabStack(.home) }
+                        Tab("分区", systemImage: SidebarItem.zones.icon, value: SidebarItem.zones) { tabStack(.zones) }
+                        Tab("热门", systemImage: SidebarItem.popular.icon, value: SidebarItem.popular) { tabStack(.popular) }
+                        Tab("直播", systemImage: SidebarItem.live.icon, value: SidebarItem.live) { tabStack(.live) }
+                        Tab("动态", systemImage: SidebarItem.dynamics.icon, value: SidebarItem.dynamics) { tabStack(.dynamics) }
+                    }
+                    TabSection("我的") {
+                        Tab("收藏", systemImage: SidebarItem.favorites.icon, value: SidebarItem.favorites) { tabStack(.favorites) }
+                        Tab("历史", systemImage: SidebarItem.history.icon, value: SidebarItem.history) { tabStack(.history) }
+                        Tab("稍后再看", systemImage: SidebarItem.watchLater.icon, value: SidebarItem.watchLater) { tabStack(.watchLater) }
+                    }
+                    Tab("设置", systemImage: SidebarItem.settings.icon, value: SidebarItem.settings) { tabStack(.settings) }
+                }
             }
-            TabSection("我的") {
-                Tab("收藏", systemImage: SidebarItem.favorites.icon, value: SidebarItem.favorites) { tabStack(.favorites) }
-                Tab("历史", systemImage: SidebarItem.history.icon, value: SidebarItem.history) { tabStack(.history) }
-                Tab("稍后再看", systemImage: SidebarItem.watchLater.icon, value: SidebarItem.watchLater) { tabStack(.watchLater) }
-            }
-            Tab("设置", systemImage: SidebarItem.settings.icon, value: SidebarItem.settings) { tabStack(.settings) }
         }
         .tabViewStyle(.sidebarAdaptable)
         .tabViewSidebarFooter {
@@ -287,10 +311,17 @@ extension RootView {
             WatchLaterView()
         case .settings:
             SettingsView()
+        case .mine:
+            MineView()
         case nil:
             RecommendView()
         }
     }
+}
+
+/// 「我的」入口的路由值：紧凑宽度下 `MineView` 用它推进分区/收藏/历史/稍后再看/设置。
+struct SidebarRoute: Hashable {
+    let item: RootView.SidebarItem
 }
 
 extension View {
@@ -315,10 +346,102 @@ extension View {
             .navigationDestination(for: LiveRoute.self) { route in
                 LiveDetailView(route: route)
             }
+            .navigationDestination(for: SidebarRoute.self) { route in
+                RootView.rootPage(for: route.item, query: "")
+            }
     }
 }
 
 #if os(iOS)
+/// 紧凑宽度下的「我的」聚合页：账户信息 + 分区/收藏/历史/稍后再看/设置入口。
+///
+/// iPhone 的标签栏只放得下 5 个 tab，而 `tabViewSidebarFooter` 里的账户卡片在
+/// 标签栏形态下整块不可见（苹果只在显示侧边栏时展示它）。于是把账户入口和其余
+/// 次级入口一起收进这一页，登录/退出登录也终于有地方可点。
+private struct MineView: View {
+    @EnvironmentObject private var session: SessionStore
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                accountCard
+
+                VStack(spacing: 0) {
+                    ForEach(RootView.SidebarItem.mineEntries) { item in
+                        NavigationLink(value: SidebarRoute(item: item)) {
+                            HStack(spacing: 12) {
+                                Label(item.rawValue, systemImage: item.icon)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .frame(minHeight: 46)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        if item != RootView.SidebarItem.mineEntries.last {
+                            Divider().padding(.leading, 4)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .contentCard(cornerRadius: 14)
+            }
+            .padding(16)
+            .frame(maxWidth: 560, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+        .navigationTitle("我的")
+    }
+
+    @ViewBuilder
+    private var accountCard: some View {
+        if session.loggedIn, let user = session.user {
+            HStack(spacing: 14) {
+                RemoteImage(url: Formatters.https(user.face), variant: .avatar)
+                    .frame(width: 56, height: 56)
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(user.name)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text("Lv.\(user.level) · 关注 \(Formatters.count(user.following)) · 粉丝 \(Formatters.count(user.follower))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .contentCard(cornerRadius: 14)
+        } else {
+            HStack(spacing: 14) {
+                Image(systemName: "person.crop.circle.badge.questionmark")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("未登录").font(.headline)
+                    Text("登录后可同步收藏夹、观看历史与稍后再看")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .contentCard(cornerRadius: 14)
+        }
+    }
+}
+#else
+/// macOS 走侧边栏，不存在紧凑宽度下的「我的」聚合页。
+/// 保留一个空实现，让 `RootView.rootPage` 的 switch 两端都能编译。
+private struct MineView: View {
+    var body: some View { EmptyView() }
+}
+#endif
+
 /// 单个标签页自己的导航栈。动机见 `RootView.tabStack(_:)` 的说明。
 private struct TabNavStack: View {
     let item: RootView.SidebarItem
@@ -346,4 +469,3 @@ private struct TabNavStack: View {
         }
     }
 }
-#endif

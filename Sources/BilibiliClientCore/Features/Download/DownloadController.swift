@@ -134,13 +134,22 @@ final class DownloadController: ObservableObject {
 
     // MARK: - 产物
 
-    /// 在访达（macOS）中定位产物。
+    /// 在访达（macOS）/ 「文件」App（iOS）中定位产物。
     func revealResult() {
         guard let result else { return }
         #if os(macOS)
         NSWorkspace.shared.activateFileViewerSelecting([result.fileURL])
         #else
-        AppPlatform.openExternally(result.fileURL)
+        // iOS 上把 `file://` 交给 `UIApplication.open` 是静默失败的 —— 用户点了没反应。
+        // 产物在 App 的 Documents 里（Info.plist 已开 `UIFileSharingEnabled`，所以
+        // 「文件」App 的「我的 iPhone」下能看到），这里直接跳到「文件」App。
+        let folder = result.fileURL.deletingLastPathComponent()
+        if let filesURL = URL(string: "shareddocuments://\(folder.path)"),
+           UIApplication.shared.canOpenURL(filesURL) {
+            UIApplication.shared.open(filesURL)
+        } else if let fallback = URL(string: "shareddocuments://") {
+            UIApplication.shared.open(fallback)
+        }
         #endif
     }
 

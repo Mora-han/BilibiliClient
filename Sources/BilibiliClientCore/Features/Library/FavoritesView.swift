@@ -15,6 +15,7 @@ struct FavoritesView: View {
     @State private var errorMessage: String?
     @State private var hasLoaded = false
     @State private var showLogin = false
+    @State private var isEditing = false
 
     private var usableMedias: [FavMedia] {
         medias.filter { $0.isUsable && ($0.type ?? 0) == 2 && !($0.bvid ?? "").isEmpty }
@@ -29,6 +30,14 @@ struct FavoritesView: View {
             }
         }
         .navigationTitle("收藏")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(isEditing ? "完成" : "编辑") {
+                    withAnimation { isEditing.toggle() }
+                }
+                .disabled(usableMedias.isEmpty)
+            }
+        }
         .sheet(isPresented: $showLogin) { LoginView() }
         .task { await loadIfNeeded() }
     }
@@ -62,46 +71,46 @@ struct FavoritesView: View {
                 } else {
                     VideoFeedLayout(mode: displayMode) {
                         ForEach(usableMedias) { media in
-                            NavigationLink(value: media.bvid ?? "") {
-                                VideoCardView(
-                                    bvid: media.bvid ?? "",
-                                    title: media.title ?? "",
-                                    pic: media.cover ?? "",
-                                    duration: media.duration ?? 0,
-                                    ownerName: media.upper?.name ?? "未知UP主",
-                                    viewCount: media.cntInfo?.play ?? 0,
-                                    badgeText: nil
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("从收藏夹移除", role: .destructive) {
-                                    Task {
-                                        guard let folderID = selectedFolderId else { return }
-                                        try? await LibraryService().removeFavorite(aid: media.id, folderId: folderID)
-                                        medias.removeAll { $0.id == media.id }
+                            EditableFeedItem(isEditing: isEditing) {
+                                remove(media)
+                            } content: {
+                                NavigationLink(value: media.bvid ?? "") {
+                                    VideoCardView(
+                                        bvid: media.bvid ?? "",
+                                        title: media.title ?? "",
+                                        pic: media.cover ?? "",
+                                        duration: media.duration ?? 0,
+                                        ownerName: media.upper?.name ?? "未知UP主",
+                                        viewCount: media.cntInfo?.play ?? 0,
+                                        badgeText: nil
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("从收藏夹移除", role: .destructive) {
+                                        remove(media)
                                     }
                                 }
                             }
                         }
                     } rowContent: {
                         ForEach(usableMedias) { media in
-                            NavigationLink(value: media.bvid ?? "") {
-                                MediaListRow(
-                                    coverURL: media.cover ?? "",
-                                    title: media.title ?? "",
-                                    line2: media.upper?.name ?? "未知UP主",
-                                    line3: "收藏于 \(Formatters.timeAgo(media.favTime ?? 0)) · 播放 \(Formatters.count(media.cntInfo?.play ?? 0))",
-                                    durationText: Formatters.duration(media.duration ?? 0)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("从收藏夹移除", role: .destructive) {
-                                    Task {
-                                        guard let folderID = selectedFolderId else { return }
-                                        try? await LibraryService().removeFavorite(aid: media.id, folderId: folderID)
-                                        medias.removeAll { $0.id == media.id }
+                            EditableFeedItem(isEditing: isEditing) {
+                                remove(media)
+                            } content: {
+                                NavigationLink(value: media.bvid ?? "") {
+                                    MediaListRow(
+                                        coverURL: media.cover ?? "",
+                                        title: media.title ?? "",
+                                        line2: media.upper?.name ?? "未知UP主",
+                                        line3: "收藏于 \(Formatters.timeAgo(media.favTime ?? 0)) · 播放 \(Formatters.count(media.cntInfo?.play ?? 0))",
+                                        durationText: Formatters.duration(media.duration ?? 0)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("从收藏夹移除", role: .destructive) {
+                                        remove(media)
                                     }
                                 }
                             }
@@ -209,6 +218,15 @@ struct FavoritesView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    /// 从当前收藏夹移除一条：接口成功后本地同步删除。
+    private func remove(_ media: FavMedia) {
+        Task {
+            guard let folderID = selectedFolderId else { return }
+            try? await LibraryService().removeFavorite(aid: media.id, folderId: folderID)
+            medias.removeAll { $0.id == media.id }
+        }
     }
 
     private func loadMore() async {

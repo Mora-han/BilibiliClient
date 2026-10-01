@@ -10,6 +10,7 @@ struct WatchLaterView: View {
     @State private var errorMessage: String?
     @State private var hasLoaded = false
     @State private var showLogin = false
+    @State private var isEditing = false
 
     private var usableItems: [ToViewItem] {
         items.filter { !($0.bvid ?? "").isEmpty }
@@ -24,6 +25,14 @@ struct WatchLaterView: View {
             }
         }
         .navigationTitle("稍后再看")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(isEditing ? "完成" : "编辑") {
+                    withAnimation { isEditing.toggle() }
+                }
+                .disabled(usableItems.isEmpty)
+            }
+        }
         .sheet(isPresented: $showLogin) { LoginView() }
         // 扫码登录后重新拉取（原因见 `FavoritesView` 同名处）
         .task(id: session.loggedIn) { await loadIfNeeded() }
@@ -62,38 +71,40 @@ struct WatchLaterView: View {
 
                     VideoFeedLayout(mode: displayMode) {
                         ForEach(usableItems) { item in
-                            NavigationLink(value: item.bvid ?? "") {
-                                VideoCardView(
-                                    bvid: item.bvid ?? "",
-                                    title: item.title ?? "未知标题",
-                                    pic: item.pic ?? "",
-                                    duration: item.duration ?? 0,
-                                    ownerName: item.owner?.name ?? "未知UP主",
-                                    viewCount: item.stat?.view ?? 0,
-                                    badgeText: nil
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("移出稍后再看", role: .destructive) {
-                                    Task {
-                                        try? await LibraryService().removeFromWatchLater(aid: item.aid)
-                                        items.removeAll { $0.id == item.id }
+                            EditableFeedItem(isEditing: isEditing) {
+                                remove(item)
+                            } content: {
+                                NavigationLink(value: item.bvid ?? "") {
+                                    VideoCardView(
+                                        bvid: item.bvid ?? "",
+                                        title: item.title ?? "未知标题",
+                                        pic: item.pic ?? "",
+                                        duration: item.duration ?? 0,
+                                        ownerName: item.owner?.name ?? "未知UP主",
+                                        viewCount: item.stat?.view ?? 0,
+                                        badgeText: nil
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("移出稍后再看", role: .destructive) {
+                                        remove(item)
                                     }
                                 }
                             }
                         }
                     } rowContent: {
                         ForEach(usableItems) { item in
-                            NavigationLink(value: item.bvid ?? "") {
-                                row(item)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("移出稍后再看", role: .destructive) {
-                                    Task {
-                                        try? await LibraryService().removeFromWatchLater(aid: item.aid)
-                                        items.removeAll { $0.id == item.id }
+                            EditableFeedItem(isEditing: isEditing) {
+                                remove(item)
+                            } content: {
+                                NavigationLink(value: item.bvid ?? "") {
+                                    row(item)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("移出稍后再看", role: .destructive) {
+                                        remove(item)
                                     }
                                 }
                             }
@@ -120,6 +131,14 @@ struct WatchLaterView: View {
             durationText: Formatters.duration(item.duration ?? 0),
             progress: progress
         )
+    }
+
+    /// 移出稍后再看：接口成功后本地同步删除（编辑模式与长按菜单共用）。
+    private func remove(_ item: ToViewItem) {
+        Task {
+            try? await LibraryService().removeFromWatchLater(aid: item.aid)
+            items.removeAll { $0.id == item.id }
+        }
     }
 
     private func loadIfNeeded() async {

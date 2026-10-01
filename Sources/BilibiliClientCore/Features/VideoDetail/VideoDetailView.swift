@@ -13,6 +13,11 @@ struct VideoDetailView: View {
     /// 宽度类：用来区分 iPad（regular）与 iPhone / 窄 iPad（compact）。
     /// 只在 iOS 的两栏布局里读；macOS 不参与，行为不变。
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// 高度类：iPhone 横屏为 compact。用来切横屏的播放页布局。
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    /// iPhone 横屏（垂直方向紧凑）：此时可用高度不足以同时容纳 16:9 画面与信息区。
+    private var isCompactHeight: Bool { verticalSizeClass == .compact }
     @StateObject private var player = PlayerController()
     @State private var danmaku = DanmakuEngine()
     /// 按需创建的播放窗口：默认不存在，画面就播在页面里
@@ -232,34 +237,61 @@ struct VideoDetailView: View {
     }
 
     /// 单栏：macOS 与 iPhone / 窄 iPad 共用。画面固定在页面顶部，下方内容整体滚动。
+    ///
+    /// 例外是 iPhone 横屏（垂直方向紧凑）：可用高度只有 ~330pt，把画面钉在顶部会
+    /// 占掉 16:9 所需的一大半，剩下的信息区被压到放不下。此时改成画面占满整幅宽度、
+    /// 随内容一起滚动 —— 看画面时它就在最上方，往下读评论时它自然滚走。
     private func stackedContent(_ view: VideoDetailData.VideoView) -> some View {
-        VStack(spacing: 0) {
-            // 视频固定在页面顶部：滚动时保持原位完整可见，下方内容独立滑动
-            playerSection
-                .frame(maxWidth: 980)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
+        // 紧凑宽度下 24pt 的左右留白对 390pt 的屏来说太多，画面会明显窄一圈
+        let horizontalPadding: CGFloat = horizontalSizeClass == .compact ? 16 : 24
+        return Group {
+            if isCompactHeight {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        playerSection
+                        videoInfoSection(view)
 
-            // 固定空隙：不属于滚动内容，滚动时始终保留在视频与内容之间
-            Color.clear
-                .frame(height: 18)
+                        Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    videoInfoSection(view)
+                        commentHeader
+                        commentSection(view)
 
-                    Divider()
-
-                    commentHeader
-                    commentSection(view)
-
-                    Spacer(minLength: 40)
+                        Spacer(minLength: 40)
+                    }
+                    .frame(maxWidth: 980)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 24)
                 }
-                .frame(maxWidth: 980)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
+            } else {
+                VStack(spacing: 0) {
+                    // 视频固定在页面顶部：滚动时保持原位完整可见，下方内容独立滑动
+                    playerSection
+                        .frame(maxWidth: 980)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.top, 24)
+
+                    // 固定空隙：不属于滚动内容，滚动时始终保留在视频与内容之间
+                    Color.clear
+                        .frame(height: 18)
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            videoInfoSection(view)
+
+                            Divider()
+
+                            commentHeader
+                            commentSection(view)
+
+                            Spacer(minLength: 40)
+                        }
+                        .frame(maxWidth: 980)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.bottom, 24)
+                    }
+                }
             }
         }
     }
@@ -857,6 +889,19 @@ struct VideoDetailView: View {
     /// 点击分享按钮弹出的液态玻璃小卡片。
     private var shareActionCard: some View {
         VStack(spacing: 0) {
+            // iPhone 用户的预期是系统分享面板（微信/AirDrop/…），而不是只有复制链接。
+            // `ShareLink` 在 macOS 上同样表现为系统分享，两端都合适。
+            if let url = shareURL {
+                ShareLink(item: url) {
+                    Label("分享…", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Divider().padding(.horizontal, 10)
+            }
             MenuActionRow(icon: "doc.on.doc", title: "复制链接") {
                 showShareMenu = false
                 Task { await copyLink() }
@@ -1052,9 +1097,14 @@ struct VideoDetailView: View {
     }
 
     private func openInBrowser() {
-        guard let bvid = detail?.view.bvid,
-              let url = URL(string: "https://www.bilibili.com/video/\(bvid)") else { return }
+        guard let url = shareURL else { return }
         AppPlatform.openExternally(url)
+    }
+
+    /// 本视频的网页地址（分享与「在浏览器打开」共用）。
+    private var shareURL: URL? {
+        guard let bvid = detail?.view.bvid else { return nil }
+        return URL(string: "https://www.bilibili.com/video/\(bvid)")
     }
 
     private func stat(_ value: Int, _ icon: String) -> some View {

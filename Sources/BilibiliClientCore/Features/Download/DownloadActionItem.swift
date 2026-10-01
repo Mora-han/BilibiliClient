@@ -36,6 +36,15 @@ struct DownloadActionItem: View {
 
     // MARK: - 按钮外观
 
+    /// 产物定位那一行的文案：macOS 是访达，iOS 是「文件」App。
+    private var revealTitle: String {
+        #if os(macOS)
+        "在访达中显示"
+        #else
+        "在「文件」中查看"
+        #endif
+    }
+
     private var iconName: String {
         switch controller.phase {
         case .downloading, .loadingQualities: "arrow.down.circle"
@@ -274,7 +283,7 @@ struct DownloadActionItem: View {
                     .padding(.horizontal, 10)
             }
 
-            MenuActionRow(icon: "folder", title: "在访达中显示") {
+            MenuActionRow(icon: "folder", title: revealTitle) {
                 controller.revealResult()
             }
             MenuActionRow(icon: "arrow.down.circle", title: "再下载一次") {

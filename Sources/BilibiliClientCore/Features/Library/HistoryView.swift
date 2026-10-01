@@ -13,6 +13,7 @@ struct HistoryView: View {
     @State private var errorMessage: String?
     @State private var hasLoaded = false
     @State private var showLogin = false
+    @State private var isEditing = false
 
     private var usableItems: [HistoryItem] {
         items.filter { !($0.history?.bvid ?? "").isEmpty }
@@ -27,6 +28,14 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("历史记录")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(isEditing ? "完成" : "编辑") {
+                    withAnimation { isEditing.toggle() }
+                }
+                .disabled(usableItems.isEmpty)
+            }
+        }
         .sheet(isPresented: $showLogin) { LoginView() }
         .task { await loadIfNeeded() }
     }
@@ -56,40 +65,40 @@ struct HistoryView: View {
                 } else {
                     VideoFeedLayout(mode: displayMode) {
                         ForEach(usableItems) { item in
-                            NavigationLink(value: item.history?.bvid ?? "") {
-                                VideoCardView(
-                                    bvid: item.history?.bvid ?? "",
-                                    title: item.title ?? "未知标题",
-                                    pic: item.cover ?? "",
-                                    duration: item.duration ?? 0,
-                                    ownerName: item.authorName ?? "未知UP主",
-                                    viewCount: 0,
-                                    badgeText: nil
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("删除历史记录", role: .destructive) {
-                                    Task {
-                                        guard let aid = item.history?.oid else { return }
-                                        try? await LibraryService().removeHistory(aid: aid)
-                                        items.removeAll { $0.id == item.id }
+                            EditableFeedItem(isEditing: isEditing) {
+                                remove(item)
+                            } content: {
+                                NavigationLink(value: item.history?.bvid ?? "") {
+                                    VideoCardView(
+                                        bvid: item.history?.bvid ?? "",
+                                        title: item.title ?? "未知标题",
+                                        pic: item.cover ?? "",
+                                        duration: item.duration ?? 0,
+                                        ownerName: item.authorName ?? "未知UP主",
+                                        viewCount: 0,
+                                        badgeText: nil
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("删除历史记录", role: .destructive) {
+                                        remove(item)
                                     }
                                 }
                             }
                         }
                     } rowContent: {
                         ForEach(usableItems) { item in
-                            NavigationLink(value: item.history?.bvid ?? "") {
-                                row(item)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button("删除历史记录", role: .destructive) {
-                                    Task {
-                                        guard let aid = item.history?.oid else { return }
-                                        try? await LibraryService().removeHistory(aid: aid)
-                                        items.removeAll { $0.id == item.id }
+                            EditableFeedItem(isEditing: isEditing) {
+                                remove(item)
+                            } content: {
+                                NavigationLink(value: item.history?.bvid ?? "") {
+                                    row(item)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("删除历史记录", role: .destructive) {
+                                        remove(item)
                                     }
                                 }
                             }
@@ -146,6 +155,15 @@ struct HistoryView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    /// 删除一条历史：接口成功后本地同步删除（编辑模式与长按菜单共用）。
+    private func remove(_ item: HistoryItem) {
+        Task {
+            guard let aid = item.history?.oid else { return }
+            try? await LibraryService().removeHistory(aid: aid)
+            items.removeAll { $0.id == item.id }
+        }
     }
 
     private func loadMore() async {

@@ -112,6 +112,44 @@ struct VideoFeedLayout<CardContent: View, RowContent: View>: View {
     }
 }
 
+/// 列表项外层的「编辑」包装：编辑模式下在项首显示一个删除按钮，否则只是一个
+/// 正常的 `NavigationLink`。
+///
+/// 收藏 / 历史 / 稍后再看这些页都是自定义 `ScrollView` + `LazyVStack`/`LazyVGrid`
+/// 排版，塞不进 `List`，所以拿不到系统的 `.swipeActions`。这里用一个显式的
+/// 「编辑」开关 + 项首删除按钮替代：比长按 `contextMenu` 可发现得多，
+/// 而且卡片 / 单列 / 双列三种排版都能用。
+struct EditableFeedItem<Content: View>: View {
+    var isEditing: Bool
+    var onDelete: () -> Void
+    @ViewBuilder var content: Content
+
+    init(isEditing: Bool, onDelete: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.isEditing = isEditing
+        self.onDelete = onDelete
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if isEditing {
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.red)
+                        // 44pt 的点击热区，并让整块区域都可点
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            content
+                // 编辑时禁用内部导航链接，避免误触进详情
+                .disabled(isEditing)
+        }
+    }
+}
+
 /// 列表底部加载指示：只在真正请求时显示“加载中”，空闲时保持透明占位；
 /// 没有更多内容时显示“没有更多内容了”作为到达末尾的反馈；
 /// 翻页失败时显示可点的一行“加载失败，点按重试”。

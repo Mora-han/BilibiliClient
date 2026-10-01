@@ -145,6 +145,10 @@ plist = {
     "NSAppTransportSecurity": {
         "NSAllowsLocalNetworking": True,
     },
+    # 下载产物写在 Documents 下（见 DownloadOptions.defaultOutputDirectory）：
+    # 缺这两个键，那些 mp4 在「文件」App 里根本看不到，等于下载进了黑洞。
+    "UIFileSharingEnabled": True,
+    "LSSupportsOpeningDocumentsInPlace": True,
     # 后台继续播放（与 macOS 的「关闭窗口后行为」无关，是 iOS 必需的能力）
     "UIBackgroundModes": ["audio"],
 }
