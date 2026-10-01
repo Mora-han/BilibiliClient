@@ -1,0 +1,64 @@
+# XcodeGen 工程描述：只用于「在 Xcode 里连真机调试 + 签名」。
+#
+# 为什么需要它：本仓库是纯 SwiftPM 包，iOS 侧是 `.executableTarget`。SwiftPM 给真机
+# 只产出一个裸 Mach-O 可执行文件，**不产 `.app` bundle**，所以 Xcode 没有可以签名的
+# 对象 —— 直接跑就是「The executable is not codesigned」。这里补一个真正的 iOS App
+# 工程，把现有源码包进来，交给 Xcode 的自动签名去处理证书与 provisioning profile。
+#
+# 关键点：只声明对 `BilibiliClientCore` 这个 product 的依赖。
+# `Package.swift` 里 macOS target `BilibiliClient` 才依赖 Sparkle，而 Sparkle 的
+# XCFramework 没有 iOS slice —— 只依赖 Core 就不会把它拉进 iOS 构建。
+#
+# 生成：`xcodegen generate`（改完本文件后重新跑一次）
+# 注意：本工程不参与 `scripts/build_app.sh` / `build_ios_app.sh`，那两条线仍然走
+# `swift build`，行为完全不受影响。
+name: BilibiliClient
+options:
+  bundleIdPrefix: com.mora
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+packages:
+  BilibiliClientPackage:
+    path: .
+
+targets:
+  # 名字刻意不叫 BilibiliClient：本地 SwiftPM 包本身也有同名 scheme，
+  # 重名会让 Xcode / xcodebuild 选错，也会让菜单里出现两个一样的名字。
+  BilibiliClientIOS:
+    type: application
+    platform: iOS
+    sources:
+      # 同步文件夹：直接引用现有源码，不复制。也只引用这两个目录，
+      # 避免把 macOS target / 共享层源码重复编进 App。
+      - path: Sources/BilibiliClientiOS
+      - path: Sources/BilibiliClientCore/Generated
+      - path: assets/Bilibiliclient.icon
+        buildPhase: resources
+    dependencies:
+      - package: BilibiliClientPackage
+        product: BilibiliClientCore
+    settings:
+      base:
+        PRODUCT_NAME: BilibiliClient
+        PRODUCT_BUNDLE_IDENTIFIER: com.mora.BilibiliClient
+        SWIFT_VERSION: "5.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        # Info.plist 手写并受版本控制，与 build_ios_app.sh 生成的那份保持一致
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Xcode/Info.plist
+        # Icon Composer 资源（.icon）由 actool 编译
+        ASSETCATALOG_COMPILER_APPICON_NAME: Bilibiliclient
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: WTANQ3L4S3
+        SWIFT_EMIT_LOC_STRINGS: NO
+        # 版本号单点来源仍是 version.txt：改了之后连同本文件一起更新这两行
+        # 这两个值由 `scripts/gen_xcode_project.sh` 从 version.txt / git 历史注入，
+        # 不要手改；直接跑 `xcodegen generate` 时必须自己传这两个环境变量。
+        MARKETING_VERSION: "${MARKETING_VERSION}"
+        CURRENT_PROJECT_VERSION: "${CURRENT_PROJECT_VERSION}"
+    scheme:
+      testTargets: []

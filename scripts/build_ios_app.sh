@@ -101,8 +101,10 @@ for png in "$ICON_BUILD_DIR"/*.png; do
 done
 
 # actool 产出的 CFBundleIcons / CFBundleIcons~ipad 直接并进 Info.plist
-BUNDLE_ID="${BUNDLE_ID:-com.codex.bilibili-client}"
 ICON_PLIST="$ICON_BUILD_DIR/partial.plist"
+# 与 Xcode 工程（project.yml 的 PRODUCT_BUNDLE_IDENTIFIER）保持一致，
+# 否则侧载装的版本和 Xcode 真机调试的版本会被当成两个不同的 App。
+BUNDLE_ID="${BUNDLE_ID:-com.mora.BilibiliClient}"
 
 python3 - "$APP_DIR/Info.plist" "$ICON_PLIST" "$VERSION" "$BUILD" "$BUNDLE_ID" "$APP_NAME" <<'PY'
 import plistlib, sys

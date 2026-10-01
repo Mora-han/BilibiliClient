@@ -51,7 +51,7 @@
 
 ## 从源码运行
 
-要求 macOS 26.0+ / iOS 26.0+、Xcode 26 或匹配版本的 Swift 工具链。用 Xcode 打开 `Package.swift`，或执行：
+要求 macOS 26.0+ / iOS 26.0+、Xcode 26 或匹配版本的 Swift 工具链。
 
 ```bash
 # macOS
@@ -64,6 +64,38 @@ swift run
 ```
 
 macOS 构建产物位于 `dist/`，iOS 产物位于 `dist/ios/`。
+
+### 在 Xcode 里连真机调试
+
+**请打开 `BilibiliClient.xcodeproj`，不要直接打开 `Package.swift`。**
+
+包工程有两个坑，都来自「SwiftPM 的 `.executableTarget` 在真机平台只产出裸可执行文件、
+不产 `.app` bundle」这一点：
+
+1. 直接开 `Package.swift` 时默认选中的是 `BilibiliClient-Package`（聚合 scheme，构建
+   所有 target）。它会尝试为 iOS 构建 macOS 专属的 `BilibiliClient`，从而把
+   **Sparkle**（其 XCFramework 没有 iOS slice）拉进来，报
+   `no library for this platform was found in ... Sparkle.xcframework`。
+2. 就算换对 scheme，SwiftPM 也不产 `.app`，Xcode 没有可签名的对象，真机安装报
+   **`The executable is not codesigned`**。`build_ios_app.sh` 是手工拼 bundle 再
+   ad-hoc 签名，只够模拟器用。
+
+`BilibiliClient.xcodeproj` 只含一个 iOS App target，引用现有源码（不复制），并且
+**只依赖 `BilibiliClientCore` 这一个 product**，所以 Sparkle 根本不会进入 iOS 构建。
+打开它 → scheme 选 `BilibiliClientIOS` → 选你的 iPad → Run 即可。
+
+首次需要在 **Xcode ▸ Settings ▸ Accounts** 登录 Apple ID，自动签名才能签发
+provisioning profile（只装了证书、没登录账号时会报 `No Account for Team`）。
+
+工程由 `project.yml` 描述，改完跑：
+
+```bash
+./scripts/gen_xcode_project.sh     # 需要 brew install xcodegen
+```
+
+它会从 `version.txt` 注入版本号，避免和命令行打包的版本漂移。生成的
+`BilibiliClient.xcodeproj` 也提交进仓库，因此不装 xcodegen 也能直接打开。
+`build_app.sh` / `build_ios_app.sh` 走的是 `swift build`，与本工程完全无关。
 
 ## 平台差异
 

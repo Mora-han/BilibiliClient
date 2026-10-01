@@ -2,3 +2,7 @@
 dist/
 .DS_Store
 *.xcuserstate
+
+# Xcode：用户级状态与工作区状态不提交
+*.xcuserdatad/
+xcuserdata/

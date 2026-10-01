@@ -6,6 +6,15 @@ let package = Package(
     // macOS 是原有目标平台；iOS（iPhone / iPad）是新增平台，仅新增声明，
     // 不改变 macOS 侧的构建、产物与发布流程。
     platforms: [.macOS(.v26), .iOS(.v26)],
+    // 显式声明产品。虽然 SwiftPM 会为每个 target 隐式生成同名产物，但 Xcode 的
+    // 工程引用（`Xcode/BilibiliClient.xcodeproj` 里对 `BilibiliClientCore` 的依赖）
+    // 必须能找到显式声明的 library product，否则报 "Missing package product"。
+    // 对命令行 `swift build` 无影响。
+    products: [
+        .library(name: "BilibiliClientCore", targets: ["BilibiliClientCore"]),
+        .executable(name: "BilibiliClient", targets: ["BilibiliClient"]),
+        .executable(name: "BilibiliClientiOS", targets: ["BilibiliClientiOS"]),
+    ],
     dependencies: [
         // 图片加载：后台解码 + 按尺寸降采样、预取、可见性优先级与取消、两级缓存
         .package(url: "https://github.com/kean/Nuke.git", from: "12.8.0"),

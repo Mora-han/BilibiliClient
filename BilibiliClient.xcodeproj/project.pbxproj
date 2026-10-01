@@ -1,0 +1,404 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		00789899A4BB5FC854F4B154 /* BuildInfo.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B4838F70C57CA600C3C2C0B /* BuildInfo.generated.swift */; };
+		2E8805C815D39F0118F7C984 /* BilibiliClientCore in Frameworks */ = {isa = PBXBuildFile; productRef = 20B8A82986D4E3CF0E270571 /* BilibiliClientCore */; };
+		8493D7EA87FF73C61A14C42B /* Bilibiliclient.icon in Resources */ = {isa = PBXBuildFile; fileRef = 3FE99A0985E031C293BCE2B8 /* Bilibiliclient.icon */; };
+		E3EDD1B2A8F9946AB1170B40 /* BilibiliClientiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1777E85443A0453F8EA7ABC5 /* BilibiliClientiOSApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1777E85443A0453F8EA7ABC5 /* BilibiliClientiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BilibiliClientiOSApp.swift; sourceTree = "<group>"; };
+		3FE99A0985E031C293BCE2B8 /* Bilibiliclient.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = Bilibiliclient.icon; sourceTree = "<group>"; };
+		6B4838F70C57CA600C3C2C0B /* BuildInfo.generated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildInfo.generated.swift; sourceTree = "<group>"; };
+		B8208803DD786236B3154DD3 /* BilibiliClient */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BilibiliClient; path = .; sourceTree = SOURCE_ROOT; };
+		E338B4AA2D7436F2532BE6E1 /* BilibiliClientIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BilibiliClientIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E0CCA1EA0D7059A6477084A1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2E8805C815D39F0118F7C984 /* BilibiliClientCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0EB5730B7FD45B918A033270 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				DD57EA60F0F5F5CEC9B3A2B4 /* BilibiliClientCore */,
+				94E364BD93BF29EC2FFD7D53 /* BilibiliClientiOS */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		5D93443B05B6C01B5DB75FEA /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E338B4AA2D7436F2532BE6E1 /* BilibiliClientIOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		66120F14F1957607CD515555 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				B8208803DD786236B3154DD3 /* BilibiliClient */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		910B9CD86B63994552A524D8 /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				6B4838F70C57CA600C3C2C0B /* BuildInfo.generated.swift */,
+			);
+			path = Generated;
+			sourceTree = "<group>";
+		};
+		94E364BD93BF29EC2FFD7D53 /* BilibiliClientiOS */ = {
+			isa = PBXGroup;
+			children = (
+				FAD9C8D8628AA0CC98E9402E /* App */,
+			);
+			path = BilibiliClientiOS;
+			sourceTree = "<group>";
+		};
+		B9AE14B42CF85929FFC926E0 = {
+			isa = PBXGroup;
+			children = (
+				CA215DC934842823A1559D39 /* assets */,
+				66120F14F1957607CD515555 /* Packages */,
+				0EB5730B7FD45B918A033270 /* Sources */,
+				5D93443B05B6C01B5DB75FEA /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CA215DC934842823A1559D39 /* assets */ = {
+			isa = PBXGroup;
+			children = (
+				3FE99A0985E031C293BCE2B8 /* Bilibiliclient.icon */,
+			);
+			path = assets;
+			sourceTree = "<group>";
+		};
+		DD57EA60F0F5F5CEC9B3A2B4 /* BilibiliClientCore */ = {
+			isa = PBXGroup;
+			children = (
+				910B9CD86B63994552A524D8 /* Generated */,
+			);
+			path = BilibiliClientCore;
+			sourceTree = "<group>";
+		};
+		FAD9C8D8628AA0CC98E9402E /* App */ = {
+			isa = PBXGroup;
+			children = (
+				1777E85443A0453F8EA7ABC5 /* BilibiliClientiOSApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		3A879B83C604DC1E3D024B9F /* BilibiliClientIOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 06D43F4A7A89AB437F21B3BA /* Build configuration list for PBXNativeTarget "BilibiliClientIOS" */;
+			buildPhases = (
+				08A2341484FDFFC43A780C8D /* Sources */,
+				B12771BB8CD81F5B08117A78 /* Resources */,
+				E0CCA1EA0D7059A6477084A1 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BilibiliClientIOS;
+			packageProductDependencies = (
+				20B8A82986D4E3CF0E270571 /* BilibiliClientCore */,
+			);
+			productName = BilibiliClientIOS;
+			productReference = E338B4AA2D7436F2532BE6E1 /* BilibiliClientIOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8F72BB522E123F2CAED85B15 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					3A879B83C604DC1E3D024B9F = {
+						DevelopmentTeam = WTANQ3L4S3;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 5F6AB88F8019008792CC0467 /* Build configuration list for PBXProject "BilibiliClient" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = B9AE14B42CF85929FFC926E0;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AFCA2017046E5891F6AC34B5 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 5D93443B05B6C01B5DB75FEA /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3A879B83C604DC1E3D024B9F /* BilibiliClientIOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B12771BB8CD81F5B08117A78 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8493D7EA87FF73C61A14C42B /* Bilibiliclient.icon in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		08A2341484FDFFC43A780C8D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E3EDD1B2A8F9946AB1170B40 /* BilibiliClientiOSApp.swift in Sources */,
+				00789899A4BB5FC854F4B154 /* BuildInfo.generated.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		2B415EE8386EED3C23CE167B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		4CCDAC247CE0D5F6C94316A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = Bilibiliclient;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 158;
+				DEVELOPMENT_TEAM = WTANQ3L4S3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Xcode/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.9.8;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mora.BilibiliClient;
+				PRODUCT_NAME = BilibiliClient;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B095DD13364FF72164D6DBDA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = Bilibiliclient;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 158;
+				DEVELOPMENT_TEAM = WTANQ3L4S3;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Xcode/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.9.8;
+				PRODUCT_BUNDLE_IDENTIFIER = com.mora.BilibiliClient;
+				PRODUCT_NAME = BilibiliClient;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		CEB621F8023ED098996AAA84 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		06D43F4A7A89AB437F21B3BA /* Build configuration list for PBXNativeTarget "BilibiliClientIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4CCDAC247CE0D5F6C94316A0 /* Debug */,
+				B095DD13364FF72164D6DBDA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5F6AB88F8019008792CC0467 /* Build configuration list for PBXProject "BilibiliClient" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2B415EE8386EED3C23CE167B /* Debug */,
+				CEB621F8023ED098996AAA84 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		AFCA2017046E5891F6AC34B5 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		20B8A82986D4E3CF0E270571 /* BilibiliClientCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BilibiliClientCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 8F72BB522E123F2CAED85B15 /* Project object */;
+}
