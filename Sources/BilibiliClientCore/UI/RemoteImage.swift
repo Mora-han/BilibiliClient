@@ -7,17 +7,20 @@ import SwiftUI
 /// 后台解码、两级缓存（内存 + 磁盘）、同 URL 并发合并、离开视野自动取消。
 /// 传进来的地址会按 `variant` 拼上图床尺寸后缀，服务端直接下发显示尺寸的图。
 ///
-/// 真正走网络下载的图，解码完成后淡入（0.25s，easeOut），不会「啪」地闪现在卡片上；
-/// 命中内存 / 磁盘缓存的图直接显示 —— 滚动回看时不再为已缓存的封面白等一帧。
+/// 图片解码完成后淡入（0.25s，easeOut），不会「啪」地闪现在卡片上。
+/// 判据是「本会话里这张图第一次被展示」，而不是「这次请求有没有走网络」——
+/// 列表一到数据就会 `BiliImages.prefetch` 预取封面，等视图真正渲染时常已命中缓存，
+/// 按网络判据这些首屏图会被跳过渐显；滚动回看同一张图时直接显示，不重复动画。
 struct RemoteImage: View {
     let url: URL?
     /// 采用途决定请求尺寸（头像 / 封面 / 大图 / 保持比例）
     var variant: Formatters.ImageVariant = .card
 
     var body: some View {
-        LazyImage(url: Formatters.sized(url, variant)) { state in
+        let requestURL = Formatters.sized(url, variant)
+        LazyImage(url: requestURL) { state in
             if let image = state.image {
-                FadeInImage(image: image, animated: Self.loadedFromNetwork(state))
+                FadeInImage(image: image, key: requestURL)
                     // 淡入过程中露出与占位一致的底色，避免闪一下卡片背景
                     .background { placeholder }
             } else {
@@ -30,30 +33,43 @@ struct RemoteImage: View {
         Rectangle()
             .fill(.quaternary.opacity(0.55))
     }
+}
 
-    /// 这次请求是不是实打实走网络拿的。
-    ///
-    /// `cacheType` 为 nil 表示没命中内存 / 磁盘缓存（含 HTTP 缓存），也就是网络加载 ——
-    /// 只有这种情况才值得淡入；缓存命中的图直接显示，滚动回看不会白等一帧动画。
-    private static func loadedFromNetwork(_ state: LazyImageState) -> Bool {
-        guard case .success(let response)? = state.result else { return false }
-        return response.cacheType == nil
+/// 本会话内已展示过的图片键（按请求地址，含尺寸后缀）。
+///
+/// 只记「展示过」这一件事：预取 / 缓存命中与否都与它无关。
+/// 值得多占这点内存——它就是「首次展示才淡入、回看直接显示」的全部判据。
+/// 读写只发生在视图 init / onAppear，也就是主线程上。
+private enum ShownImages {
+    static var keys: Set<String> = []
+
+    /// 图片首次出现时登记并返回 true（值得淡入）；之后再问返回 false。
+    static func claimFirstShow(_ key: String?) -> Bool {
+        guard let key else { return false }
+        return keys.insert(key).inserted
     }
 }
 
-/// 图片解码完成后淡入。
+/// 图片解码完成后淡入：首帧是否可见在 init 里就定好，避免缓存命中的图
+/// 先按不可见挂上去、`onAppear` 才补救而闪一帧占位灰。
 private struct FadeInImage: View {
     let image: Image
-    /// 只有网络加载的图才做淡入；缓存命中时首帧就直接显示
-    let animated: Bool
+    /// 请求地址（含尺寸后缀）；nil 表示没有可展示的远程图
+    let key: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 本会话首次展示 → 起始不可见，等 `onAppear` 淡入
+    @State private var firstShow: Bool
     @State private var visible: Bool
 
-    init(image: Image, animated: Bool) {
+    init(image: Image, key: URL?) {
         self.image = image
-        self.animated = animated
-        _visible = State(initialValue: !animated)
+        self.key = key?.absoluteString
+        // 只查不登记：登记放到 onAppear，保证「挂上屏幕」才计入首次展示，
+        // 也保证同一次挂载里多次 init 得到同一个结论。
+        let alreadyShown = key.map { ShownImages.keys.contains($0.absoluteString) } ?? true
+        _firstShow = State(initialValue: !alreadyShown)
+        _visible = State(initialValue: alreadyShown)
     }
 
     var body: some View {
@@ -62,7 +78,12 @@ private struct FadeInImage: View {
             .aspectRatio(contentMode: .fill)
             .opacity(visible ? 1 : 0)
             .onAppear {
-                guard animated, !reduceMotion else {
+                guard firstShow else {
+                    visible = true
+                    return
+                }
+                _ = ShownImages.claimFirstShow(key)
+                guard !reduceMotion else {
                     visible = true
                     return
                 }

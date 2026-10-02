@@ -22,8 +22,12 @@ struct DynamicDetailView: View {
     var body: some View {
         Group {
             if isLoading {
-                ProgressView("加载中…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ScrollView {
+                    DynamicDetailSkeleton()
+                        .frame(maxWidth: 860)
+                        .frame(maxWidth: .infinity)
+                        .padding(24)
+                }
             } else if let errorMessage {
                 LoadErrorView(message: errorMessage) {
                     await load()

@@ -46,9 +46,7 @@ struct DynamicFeedView: View {
             }
         }
         .overlay {
-            if isLoading && items.isEmpty {
-                ProgressView("加载中…")
-            } else if let errorMessage, items.isEmpty {
+            if !isLoading, let errorMessage, items.isEmpty {
                 LoadErrorView(message: errorMessage) {
                     await load()
                 }
@@ -116,7 +114,10 @@ struct DynamicFeedView: View {
     private var feedContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if displayMode == .list2, horizontalSizeClass != .compact {
+                if isLoading && items.isEmpty {
+                    // 首屏先铺与真实卡片同构的空白占位，接口返回后原地替换
+                    DynamicFeedSkeleton(mode: displayMode)
+                } else if displayMode == .list2, horizontalSizeClass != .compact {
                     // 两列列表：动态卡片双列排布，与其他页面保持一致。
                     // iPhone 紧凑宽度下同样降级成单列（原因见 `VideoFeedLayout`）。
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),

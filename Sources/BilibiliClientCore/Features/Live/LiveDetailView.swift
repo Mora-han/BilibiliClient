@@ -50,8 +50,7 @@ struct LiveDetailView: View {
         Group {
             if isLoading {
                 ScrollView {
-                    ProgressView("加载中…")
-                        .frame(maxWidth: .infinity, minHeight: 320)
+                    MediaDetailSkeleton()
                         .frame(maxWidth: 980)
                         .frame(maxWidth: .infinity)
                         .padding(24)

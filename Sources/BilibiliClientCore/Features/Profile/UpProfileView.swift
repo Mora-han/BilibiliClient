@@ -65,8 +65,7 @@ struct UpProfileView: View {
         if let card {
             header(card)
         } else if isLoadingInfo {
-            ProgressView()
-                .frame(maxWidth: .infinity, minHeight: 120)
+            ProfileHeaderSkeleton()
         } else if let infoError {
             LoadErrorView(message: infoError) {
                 await loadInfo()

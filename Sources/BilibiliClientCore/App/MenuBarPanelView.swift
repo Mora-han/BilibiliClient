@@ -103,8 +103,10 @@ public struct MenuBarPanelView: View {
     @ViewBuilder
     private var list: some View {
         if isLoading && items.isEmpty {
-            ProgressView("加载动态中…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 面板只有 380pt 宽：铺与真实行同构的小骨架，替换整块转圈
+            ScrollView(.vertical, showsIndicators: false) {
+                MenuBarRowSkeleton()
+            }
         } else if let errorMessage, items.isEmpty {
             VStack(spacing: 10) {
                 Text(errorMessage)
