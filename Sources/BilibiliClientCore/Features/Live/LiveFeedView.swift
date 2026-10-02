@@ -3,6 +3,9 @@ import SwiftUI
 /// 直播页：热门/推荐直播的卡片流，布局与首页视频卡片一致
 /// （可切换卡片 / 列表模式），点击进入直播间。
 struct LiveFeedView: View {
+    /// 所在标签是否可见（见 `\.isTabVisible`）：隐藏页不声明工具栏条目，
+    /// 否则 keep-alive 下会合并进当前窗口（多出刷新 / 编辑按钮）。
+    @Environment(\.isTabVisible) private var isTabVisible
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var rooms: [LiveRoomCard] = []
     @State private var page = 0
@@ -67,13 +70,15 @@ struct LiveFeedView: View {
         .autoLoadMore { await loadMore() }
         .feedRefreshable { await load() }
         .toolbar {
-            ToolbarItem {
-                Button {
-                    Task { await load() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+            if isTabVisible {
+                ToolbarItem {
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新")
                 }
-                .help("刷新")
             }
         }
         .overlay {

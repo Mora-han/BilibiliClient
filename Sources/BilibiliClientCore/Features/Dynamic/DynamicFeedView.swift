@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct DynamicFeedView: View {
+    /// 所在标签是否可见（见 `\.isTabVisible`）：隐藏页不声明工具栏条目，
+    /// 否则 keep-alive 下会合并进当前窗口（多出刷新 / 编辑按钮）。
+    @Environment(\.isTabVisible) private var isTabVisible
     @EnvironmentObject private var session: SessionStore
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @AppStorage("upBarPosition") private var upBarPosition = UpBarPosition.top.rawValue
@@ -39,13 +42,15 @@ struct DynamicFeedView: View {
         }
         .navigationTitle("动态")
         .toolbar {
-            ToolbarItem {
-                Button {
-                    Task { await load() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+            if isTabVisible {
+                ToolbarItem {
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新")
                 }
-                .help("刷新")
             }
         }
         .overlay {

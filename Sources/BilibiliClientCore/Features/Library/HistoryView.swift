@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct HistoryView: View {
+    /// 所在标签是否可见（见 `\.isTabVisible`）：隐藏页不声明工具栏条目，
+    /// 否则 keep-alive 下会合并进当前窗口（多出刷新 / 编辑按钮）。
+    @Environment(\.isTabVisible) private var isTabVisible
     @EnvironmentObject private var session: SessionStore
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var items: [HistoryItem] = []
@@ -29,11 +32,13 @@ struct HistoryView: View {
         }
         .navigationTitle("历史记录")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(isEditing ? "完成" : "编辑") {
-                    withAnimation { isEditing.toggle() }
+            if isTabVisible {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(isEditing ? "完成" : "编辑") {
+                        withAnimation { isEditing.toggle() }
+                    }
+                    .disabled(usableItems.isEmpty)
                 }
-                .disabled(usableItems.isEmpty)
             }
         }
         .sheet(isPresented: $showLogin) { LoginView() }

@@ -180,8 +180,6 @@ public struct RootView: View {
                     .opacity(isSelected ? 1 : 0)
                     .allowsHitTesting(isSelected)
                     .accessibilityHidden(!isSelected)
-                    // 隐藏栈照样会把标题与工具栏项冒泡进窗口，逐栈压制
-                    .modifier(KeepAliveStackChromeHidden(active: !isSelected))
             }
         }
         .onChange(of: selection) { _, new in
@@ -229,35 +227,36 @@ public struct RootView: View {
     }
     #endif
 
+    #if os(macOS)
+    /// 侧边栏：AppKit source list（见 `SourceListSidebar`）+ 系统搜索框。
+    ///
+    /// 选中态由系统按 source list 材质绘制——访达 / App Store 那种中性半透明
+    /// 覆盖层（不是强调色高亮），图标固定用强调色着色，与 coolapk 一致；
+    /// 搜索框用 `.searchable(placement: .sidebar)`，观感与 App Store 一致。
     private var sidebar: some View {
-        List(selection: $selection) {
-            Section("浏览") {
-                ForEach([SidebarItem.home, .zones, .popular, .live, .dynamics]) { item in
-                    Label(item.rawValue, systemImage: item.icon)
-                        .tag(item)
-                }
+        VStack(spacing: 0) {
+            SourceListSidebar(sections: sidebarSections, selection: selection) { item in
+                selection = item
             }
-            Section("我的") {
-                ForEach([SidebarItem.favorites, .history, .watchLater]) { item in
-                    Label(item.rawValue, systemImage: item.icon)
-                        .tag(item)
-                }
-            }
-            Section {
-                Label(SidebarItem.settings.rawValue, systemImage: SidebarItem.settings.icon)
-                    .tag(SidebarItem.settings)
-            }
+            accountBar
         }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            GlassSearchField(text: $searchText) {
-                submitSearch()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-        }
-        .safeAreaInset(edge: .bottom) { accountBar }
+        .searchable(text: $searchText, placement: .sidebar, prompt: "搜索视频 / UP 主")
+        .onSubmit(of: .search) { submitSearch() }
     }
+
+    private var sidebarSections: [SourceListSidebar<SidebarItem>.Section] {
+        [
+            .init(id: "browse", title: "浏览", rows: [.home, .zones, .popular, .live, .dynamics].map(entry)),
+            .init(id: "mine", title: "我的", rows: [.favorites, .history, .watchLater].map(entry)),
+            // 设置不挂分组标题：与原 List 里不带 header 的 Section 保持一致
+            .init(id: "settings", title: "", rows: [entry(.settings)]),
+        ]
+    }
+
+    private func entry(_ item: SidebarItem) -> SourceListSidebar<SidebarItem>.Row {
+        .init(id: item.rawValue, value: item, title: item.rawValue, systemImage: item.icon)
+    }
+    #endif
 
     /// 侧边栏底部账户信息卡片：仅展示纯个人信息，点击可查看详情/退出登录。
     private var accountBar: some View {
@@ -512,18 +511,3 @@ private struct TabNavStack: View {
     }
 }
 
-#if os(macOS)
-/// keep-alive 的隐藏栈仍然在视图层级里，工具栏项（收藏/历史/稍后再看的「编辑」、
-/// 各页刷新按钮…）会照常冒泡进当前窗口 —— 实测过：侧边栏停在「推荐」，工具栏里
-/// 多出两个「编辑」。逐栈压制后，工具栏只跟随当前选中页（标题则靠把选中页排在
-/// ZStack 最前解决，见 `RootView.visiblePages`）。
-private struct KeepAliveStackChromeHidden: ViewModifier {
-    let active: Bool
-
-    func body(content: Content) -> some View {
-        // 用「可见性取值」而不是 if/else 分支：分支会让包装结构在选中态翻转时
-        // 变化，视图树的结构身份跟着变，常驻页有被整棵重建的风险。
-        content.toolbar(active ? .hidden : .visible, for: .windowToolbar)
-    }
-}
-#endif
