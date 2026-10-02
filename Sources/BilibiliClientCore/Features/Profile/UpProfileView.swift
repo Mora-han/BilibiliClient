@@ -78,8 +78,7 @@ struct UpProfileView: View {
     @ViewBuilder
     private var videoSection: some View {
         if isLoadingVideos {
-            ProgressView("加载投稿中…")
-                .frame(maxWidth: .infinity, minHeight: 120)
+            VideoFeedSkeleton(mode: displayMode)
         } else if let videoError, usableVideos.isEmpty {
             LoadErrorView(message: videoError) {
                 await loadVideos()

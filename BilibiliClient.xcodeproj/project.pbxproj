@@ -261,7 +261,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = Bilibiliclient;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 158;
+				CURRENT_PROJECT_VERSION = 159;
 				DEVELOPMENT_TEAM = WTANQ3L4S3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Xcode/Info.plist;
@@ -270,7 +270,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.8;
+				MARKETING_VERSION = 1.9.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.mora.BilibiliClient;
 				PRODUCT_NAME = BilibiliClient;
 				SDKROOT = iphoneos;
@@ -287,7 +287,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = Bilibiliclient;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 158;
+				CURRENT_PROJECT_VERSION = 159;
 				DEVELOPMENT_TEAM = WTANQ3L4S3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Xcode/Info.plist;
@@ -296,7 +296,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.8;
+				MARKETING_VERSION = 1.9.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.mora.BilibiliClient;
 				PRODUCT_NAME = BilibiliClient;
 				SDKROOT = iphoneos;

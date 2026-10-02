@@ -49,8 +49,7 @@ struct WatchLaterView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if isLoading && items.isEmpty {
-                    ProgressView("加载中…")
-                        .frame(maxWidth: .infinity, minHeight: 200)
+                    VideoFeedSkeleton(mode: displayMode)
                 } else if let errorMessage, items.isEmpty {
                     LoadErrorView(message: errorMessage) {
                         await load()

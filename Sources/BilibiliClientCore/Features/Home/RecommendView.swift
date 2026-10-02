@@ -16,41 +16,46 @@ struct RecommendView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                VideoFeedLayout(mode: displayMode) {
-                    ForEach(items) { item in
-                        NavigationLink(value: item.bvid) {
-                            VideoCardView(
-                                bvid: item.bvid,
-                                title: item.title,
-                                pic: item.pic,
-                                duration: item.duration,
-                                ownerName: item.owner?.name ?? "",
-                                viewCount: item.stat?.view ?? 0,
-                                badgeText: item.rcmdReason?.content
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button("加入稍后再看") {
-                                Task { try? await LibraryService().addToWatchLater(aid: item.id, bvid: item.bvid) }
+                if isLoading && items.isEmpty {
+                    // 首屏先用空白占位铺出卡片网格，接口返回后再原地替换成真实内容
+                    VideoFeedSkeleton(mode: displayMode)
+                } else {
+                    VideoFeedLayout(mode: displayMode) {
+                        ForEach(items) { item in
+                            NavigationLink(value: item.bvid) {
+                                VideoCardView(
+                                    bvid: item.bvid,
+                                    title: item.title,
+                                    pic: item.pic,
+                                    duration: item.duration,
+                                    ownerName: item.owner?.name ?? "",
+                                    viewCount: item.stat?.view ?? 0,
+                                    badgeText: item.rcmdReason?.content
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("加入稍后再看") {
+                                    Task { try? await LibraryService().addToWatchLater(aid: item.id, bvid: item.bvid) }
+                                }
                             }
                         }
-                    }
-                } rowContent: {
-                    ForEach(items) { item in
-                        NavigationLink(value: item.bvid) {
-                            MediaListRow(
-                                coverURL: item.pic,
-                                title: item.title,
-                                line2: item.owner?.name ?? "未知UP主",
-                                line3: "播放 \(Formatters.count(item.stat?.view ?? 0))",
-                                durationText: Formatters.duration(item.duration)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button("加入稍后再看") {
-                                Task { try? await LibraryService().addToWatchLater(aid: item.id, bvid: item.bvid) }
+                    } rowContent: {
+                        ForEach(items) { item in
+                            NavigationLink(value: item.bvid) {
+                                MediaListRow(
+                                    coverURL: item.pic,
+                                    title: item.title,
+                                    line2: item.owner?.name ?? "未知UP主",
+                                    line3: "播放 \(Formatters.count(item.stat?.view ?? 0))",
+                                    durationText: Formatters.duration(item.duration)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("加入稍后再看") {
+                                    Task { try? await LibraryService().addToWatchLater(aid: item.id, bvid: item.bvid) }
+                                }
                             }
                         }
                     }
@@ -80,9 +85,7 @@ struct RecommendView: View {
             }
         }
         .overlay {
-            if isLoading && items.isEmpty {
-                ProgressView("加载中…")
-            } else if let errorMessage, items.isEmpty {
+            if !isLoading, let errorMessage, items.isEmpty {
                 LoadErrorView(message: errorMessage) {
                     await load()
                 }

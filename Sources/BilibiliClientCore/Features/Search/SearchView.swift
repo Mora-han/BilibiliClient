@@ -105,8 +105,15 @@ struct SearchView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 240)
         } else if isLoading && results.isEmpty {
-            ProgressView("搜索中…")
-                .frame(maxWidth: .infinity, minHeight: 200)
+            // 先用与结果区同宽同列的空白占位，避免「搜索中」白屏
+            ScrollView {
+                VideoFeedSkeleton(mode: displayMode)
+                    .frame(maxWidth: 980)
+                    .frame(maxWidth: .infinity)
+                    .padding(20)
+            }
+            .scrollDisabled(true)
+            .scrollIndicators(.hidden)
         } else if let errorMessage, results.isEmpty {
             LoadErrorView(message: errorMessage) {
                 await search(reset: true)

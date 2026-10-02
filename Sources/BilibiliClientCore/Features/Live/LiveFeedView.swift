@@ -21,39 +21,43 @@ struct LiveFeedView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if !usableRooms.isEmpty {
-                    Text("共 \(Formatters.count(usableRooms.count)) 个直播")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                VideoFeedLayout(mode: displayMode) {
-                    ForEach(usableRooms) { room in
-                        NavigationLink(value: LiveRoute(room: room)) {
-                            LiveCardView(room: room)
-                        }
-                        .buttonStyle(.plain)
+                if isLoading && rooms.isEmpty {
+                    VideoFeedSkeleton(mode: displayMode)
+                } else {
+                    if !usableRooms.isEmpty {
+                        Text("共 \(Formatters.count(usableRooms.count)) 个直播")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                } rowContent: {
-                    ForEach(usableRooms) { room in
-                        NavigationLink(value: LiveRoute(room: room)) {
-                            MediaListRow(
-                                coverURL: room.cover,
-                                title: room.title ?? "未知直播",
-                                line2: room.uname ?? "未知主播",
-                                line3: watchingText(room) ?? "",
-                                durationText: nil
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
 
-                if !usableRooms.isEmpty {
-                    LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
-                        await loadMore()
-                    } onRetry: {
-                        await loadMore()
+                    VideoFeedLayout(mode: displayMode) {
+                        ForEach(usableRooms) { room in
+                            NavigationLink(value: LiveRoute(room: room)) {
+                                LiveCardView(room: room)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    } rowContent: {
+                        ForEach(usableRooms) { room in
+                            NavigationLink(value: LiveRoute(room: room)) {
+                                MediaListRow(
+                                    coverURL: room.cover,
+                                    title: room.title ?? "未知直播",
+                                    line2: room.uname ?? "未知主播",
+                                    line3: watchingText(room) ?? "",
+                                    durationText: nil
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    if !usableRooms.isEmpty {
+                        LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                            await loadMore()
+                        } onRetry: {
+                            await loadMore()
+                        }
                     }
                 }
             }
@@ -73,9 +77,7 @@ struct LiveFeedView: View {
             }
         }
         .overlay {
-            if isLoading && rooms.isEmpty {
-                ProgressView("加载中…")
-            } else if let errorMessage, rooms.isEmpty {
+            if !isLoading, let errorMessage, rooms.isEmpty {
                 LoadErrorView(message: errorMessage) {
                     await load()
                 }
