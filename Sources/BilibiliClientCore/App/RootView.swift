@@ -15,7 +15,8 @@ extension EnvironmentValues {
     /// 隐藏标签里的那个页面也会跟着响应 —— 表现为切回来发现视频/直播被重新拉起来了。
     /// 所以详情页的导航计数判断必须先过这道闸。
     ///
-    /// macOS 是单一导航栈、不存在这个问题，恒定 `true`。
+    /// macOS 的侧边栏同样是「一页一栈」（见 `RootView.detailStack`），页面切走时
+    /// 只藏不删，隐藏页里的播放器靠这个值在 `onChange` 里收尾/恢复。
     var isTabVisible: Bool {
         get { self[TabVisibilityKey.self] }
         set { self[TabVisibilityKey.self] = newValue }
@@ -50,6 +51,10 @@ public struct RootView: View {
     @State private var showAccountPanel = false
     @State private var searchText = ""
     @State private var submittedQuery = ""
+    #if os(macOS)
+    /// 已访问过的根页面（keep-alive 名单）：访问过就常驻，切走只藏不删。
+    @State private var visited: [SidebarItem] = [.home]
+    #endif
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     enum SidebarItem: String, CaseIterable, Identifiable {
@@ -159,13 +164,43 @@ public struct RootView: View {
         #endif
     }
 
-    /// 详情区：macOS 与 iOS 共用同一套页面与导航目的地。
+    #if os(macOS)
+    /// 详情区：macOS 侧边栏切换只改可见性、不销毁已访问的页面（keep-alive）。
+    ///
+    /// 旧实现是「单 NavigationStack + 按 selection 换根页」：selection 一变，
+    /// `rootPage(for:)` 返回的类型不同，整个子树被销毁，`@State`（已加载内容、
+    /// `hasLoaded`、滚动位置）全部清零 —— 切回来就是骨架屏 + 重新请求。
+    /// 现在每个访问过的根页各占一份独立导航栈（复用 iOS 已验证的 `TabNavStack`），
+    /// 未选中的只藏不删：没手动刷新前内容一直保留，连推入的详情页栈也留着。
     private var detailStack: some View {
-        NavigationStack(path: $router.path) {
-            RootView.rootPage(for: selection, query: submittedQuery)
-                .biliNavDestinations()
+        ZStack {
+            ForEach(visiblePages, id: \.id) { item in
+                let isSelected = selection == item
+                TabNavStack(item: item, query: submittedQuery, isSelected: isSelected)
+                    .opacity(isSelected ? 1 : 0)
+                    .allowsHitTesting(isSelected)
+                    .accessibilityHidden(!isSelected)
+                    // 隐藏栈照样会把标题与工具栏项冒泡进窗口，逐栈压制
+                    .modifier(KeepAliveStackChromeHidden(active: !isSelected))
+            }
+        }
+        .onChange(of: selection) { _, new in
+            guard let new, !visited.contains(new) else { return }
+            visited.append(new)
         }
     }
+
+    /// 常驻页清单：当前选中页永远排在**最前**（即便还没进过 `visited`）。
+    /// 实测窗口标题的偏好合并是「首个子视图胜出」——选中页必须在第一位，
+    /// 标题（含推入详情页后的标题）才跟着选中页走；隐藏栈排后面且已压制工具栏。
+    private var visiblePages: [SidebarItem] {
+        let current = selection ?? .home
+        var pages = visited
+        pages.removeAll { $0 == current }
+        pages.insert(current, at: 0)
+        return pages
+    }
+    #endif
 
     #if os(iOS)
     /// 每个标签页一份**独立**导航栈。
@@ -457,6 +492,13 @@ private struct TabNavStack: View {
         }
         // 详情页靠这个判断"我所在的标签还可见吗"，避免隐藏标签被全局 path 计数唤醒
         .environment(\.isTabVisible, isSelected)
+        // 切回本标签时把全局路径镜像成本栈自己的路径：`router.path` 在切走期间
+        // 可能已被别的标签改写，不镜像的话下一次程序化导航（菜单栏、搜索…）
+        // 会把上一个标签的旧栈垫在这一页底下。
+        .onChange(of: isSelected) { _, nowSelected in
+            guard nowSelected, path != router.path else { return }
+            router.path = path
+        }
         // 外部程序化导航（搜索、评论里点视频、菜单栏卡片…）落进**当前**标签的栈。
         .onChange(of: router.path) { _, incoming in
             guard isSelected, incoming != path else { return }
@@ -469,3 +511,19 @@ private struct TabNavStack: View {
         }
     }
 }
+
+#if os(macOS)
+/// keep-alive 的隐藏栈仍然在视图层级里，工具栏项（收藏/历史/稍后再看的「编辑」、
+/// 各页刷新按钮…）会照常冒泡进当前窗口 —— 实测过：侧边栏停在「推荐」，工具栏里
+/// 多出两个「编辑」。逐栈压制后，工具栏只跟随当前选中页（标题则靠把选中页排在
+/// ZStack 最前解决，见 `RootView.visiblePages`）。
+private struct KeepAliveStackChromeHidden: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        // 用「可见性取值」而不是 if/else 分支：分支会让包装结构在选中态翻转时
+        // 变化，视图树的结构身份跟着变，常驻页有被整棵重建的风险。
+        content.toolbar(active ? .hidden : .visible, for: .windowToolbar)
+    }
+}
+#endif

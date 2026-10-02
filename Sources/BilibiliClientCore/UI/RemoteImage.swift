@@ -15,6 +15,14 @@ struct RemoteImage: View {
     let url: URL?
     /// 采用途决定请求尺寸（头像 / 封面 / 大图 / 保持比例）
     var variant: Formatters.ImageVariant = .card
+    /// 本图所在标签页的可见性（见 `\.isTabVisible`）
+    @Environment(\.isTabVisible) private var isTabVisible
+    /// 标签重新可见时自增，配合 `.id` 强制重建图片视图。
+    ///
+    /// keep-alive 的隐藏页只藏不删：实测切回后数据还在、封面却一直是占位灰，
+    /// 说明懒加载视图在隐藏期间既没续上加载任务、重新可见时也不再收到出现事件。
+    /// 可见性一恢复就换 id 重建，缓存命中立刻回图；渐显登记早已完成，不会重播淡入。
+    @State private var revealGeneration = 0
 
     var body: some View {
         let requestURL = Formatters.sized(url, variant)
@@ -26,6 +34,11 @@ struct RemoteImage: View {
             } else {
                 placeholder
             }
+        }
+        .id(revealGeneration)
+        .onChange(of: isTabVisible) { _, visible in
+            guard visible else { return }
+            revealGeneration += 1
         }
     }
 

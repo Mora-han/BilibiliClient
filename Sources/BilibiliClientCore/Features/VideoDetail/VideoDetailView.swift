@@ -140,6 +140,20 @@ struct VideoDetailView: View {
             player.stop()
             danmaku.reset()
         }
+        .onChange(of: isTabVisible) { _, visible in
+            // keep-alive 之后，标签切走时本页只是被藏起来（不销毁），收不到
+            // `onDisappear` —— 必须在这里镜像它的收尾，否则切走后播放器还在出声。
+            // 反过来切回时用 `load()` 的早退分支恢复（它就是为"停掉后再进来"写的）。
+            guard !PlayerPresentationState.shared.isSystemFullscreen else { return }
+            if visible {
+                Task { await load() }
+            } else {
+                PlaybackMenuState.shared.unbind()
+                closePlaybackWindow()
+                player.stop()
+                danmaku.reset()
+            }
+        }
         .onChange(of: player.state) { _, state in
             if state == .ready { bindSystemPlayer() }
         }

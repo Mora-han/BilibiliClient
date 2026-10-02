@@ -18,6 +18,9 @@ struct DynamicFeedView: View {
     @State private var loadToken = 0
     @State private var errorMessage: String?
     @State private var hasLoaded = false
+    /// 上一次 `prepare()` 时的登录状态：用来区分「登录态变了要重拉」和
+    /// 「标签切回来 task 又跑了一遍」，后者绝不能重新请求。
+    @State private var preparedLoginState: Bool?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -54,9 +57,13 @@ struct DynamicFeedView: View {
         }
         // 登录状态变化要重新拉一次关注 UP 栏：首次进入未登录时它会直接跳过，
         // 而扫码登录走的是 sheet，不会让本页 disappear，裸 `.task` 不会重跑。
+        // 反方向同样要守住：已登录时旧守卫（`!hasLoaded || session.loggedIn`）恒真，
+        // 标签切回来 task 一重跑就把动态流重刷了一遍 —— 用登录状态比对挡掉，
+        // 没手动刷新就一直保留现有内容。
         .task(id: session.loggedIn) {
-            guard !hasLoaded || session.loggedIn else { return }
+            if hasLoaded, preparedLoginState == session.loggedIn { return }
             await prepare()
+            preparedLoginState = session.loggedIn
         }
     }
 

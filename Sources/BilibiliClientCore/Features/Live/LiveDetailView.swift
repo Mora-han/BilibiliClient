@@ -99,6 +99,16 @@ struct LiveDetailView: View {
             guard !PlayerPresentationState.shared.isSystemFullscreen else { return }
             closePlayback()
         }
+        .onChange(of: isTabVisible) { _, visible in
+            // 同 `VideoDetailView`：keep-alive 的标签切走只藏不删，收不到
+            // `onDisappear`，停流/恢复要在这里镜像一份。
+            guard !PlayerPresentationState.shared.isSystemFullscreen else { return }
+            if visible {
+                Task { await load() }
+            } else {
+                closePlayback()
+            }
+        }
         .onChange(of: danmaku.popularity) { _, popularity in
             // 心跳会带实时热度，刷新播放窗口左上角与状态行的在线人数
             if let popularity, popularity > 0 {

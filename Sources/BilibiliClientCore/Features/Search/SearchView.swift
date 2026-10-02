@@ -14,6 +14,8 @@ struct SearchView: View {
     @State private var loadMoreFailed = false
     @State private var errorMessage: String?
     @State private var order: SearchOrder = .totalrank
+    /// 上一次真正搜过的词：同词重入不重搜（见 `.task(id: query)` 的守卫）。
+    @State private var lastSearched: String?
 
     enum SearchOrder: String, CaseIterable, Identifiable {
         case totalrank = "综合排序"
@@ -48,6 +50,11 @@ struct SearchView: View {
         .navigationTitle("搜索")
         .task(id: query) {
             guard !query.isEmpty else { return }
+            // 页面重新出现（标签切回、被盖住再回来）时 task 会重跑：同一词已有
+            // 结果就不再重搜，没手动刷新前保留现有结果；失败后（结果为空）重进
+            // 照常再试一次，换词则由 id 变化触发、不受影响。
+            if lastSearched == query, !results.isEmpty { return }
+            lastSearched = query
             await search(reset: true)
         }
     }
