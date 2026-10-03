@@ -6,7 +6,8 @@ struct SearchView: View {
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var results: [SearchVideo] = []
     @State private var page = 0
-    @State private var numResults = 0
+    /// 结果总数：接口没给（App 端端点）时为 nil，界面就不显示假的「0 个视频」。
+    @State private var numResults: Int?
     @State private var hasMore = true
     @State private var isLoading = false
     @State private var isLoadingMore = false
@@ -64,9 +65,15 @@ struct SearchView: View {
             Text(query)
                 .font(.headline)
                 .lineLimit(1)
-            Text("找到 \(Formatters.count(numResults)) 个视频")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if let numResults {
+                Text("找到 \(Formatters.count(numResults)) 个视频")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("搜索结果")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
             Menu {
                 ForEach(SearchOrder.allCases) { item in
@@ -204,7 +211,7 @@ struct SearchView: View {
             guard !isLoading else { return }
             page = 0
             results = []
-            numResults = 0
+            numResults = nil
             hasMore = true
             loadMoreFailed = false
             errorMessage = nil
@@ -232,9 +239,11 @@ struct SearchView: View {
                 page = targetPage
                 addedCount = fresh.count
             }
-            numResults = data.numResults ?? results.count
-            // 本页没有新增内容时停止，避免无限重复请求
-            hasMore = addedCount > 0 && results.count < numResults && (data.numPages ?? 1) > targetPage
+            numResults = data.numResults
+            // 本页没有新增内容时停止，避免无限重复请求；总数未知就只看「有没有新增」
+            hasMore = addedCount > 0
+                && results.count < (numResults ?? Int.max)
+                && (data.numPages ?? 1) > targetPage
         } catch {
             if reset {
                 errorMessage = error.localizedDescription

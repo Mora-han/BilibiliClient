@@ -5,6 +5,16 @@ enum APIConstants {
     static let referer = "https://www.bilibili.com/"
     static let apiBase = URL(string: "https://api.bilibili.com")!
     static let passportBase = URL(string: "https://passport.bilibili.com")!
+
+    // MARK: App 端（app.bilibili.com）
+
+    /// 官方 App 的接口主机。网页端搜索被风控拦下时，App 端这条线通常还通。
+    static let appBase = URL(string: "https://app.bilibili.com")!
+    /// Android 端公开的 appkey / appsec（社区文档里长期使用的固定值）。
+    static let androidAppKey = "1d8b6e7d45233436"
+    static let androidAppSec = "560c52ccd288fed045859ed18bffd973"
+    static let appUserAgent = "Mozilla/5.0 BiliDroid/7.78.0 (bbcallen@gmail.com) os/android model/Phone mobi_app/android build/7780300 channel/bili innerVer/7780300 osVer/13"
+    static let appReferer = "https://app.bilibili.com/"
 }
 
 private struct BiliEnvelope<T: Decodable>: Decodable {
@@ -75,7 +85,8 @@ final class APIClient {
     func get<T: Decodable>(_ path: String,
                            base: URL = APIConstants.apiBase,
                            query: [String: String] = [:],
-                           wbi: Bool = false) async throws -> T {
+                           wbi: Bool = false,
+                           headers: [String: String] = [:]) async throws -> T {
         var finalQuery = query
         if wbi {
             finalQuery = try await WBISigner.shared.sign(query)
@@ -88,6 +99,10 @@ final class APIClient {
 
         var request = URLRequest(url: components.url!)
         request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        // App 端接口要带自己的 UA / Referer，所以允许调用方覆盖默认头
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
         if !effectiveCookieHeader.isEmpty {
             request.setValue(effectiveCookieHeader, forHTTPHeaderField: "Cookie")
         }

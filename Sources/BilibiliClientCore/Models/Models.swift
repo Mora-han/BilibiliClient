@@ -617,6 +617,13 @@ struct SearchData: Decodable {
         case voucher = "v_voucher"
     }
 
+    init(numResults: Int?, numPages: Int?, result: [SearchVideo], voucher: String? = nil) {
+        self.numResults = numResults
+        self.numPages = numPages
+        self.result = result
+        self.voucher = voucher
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         numResults = try container.decodeIfPresent(Int.self, forKey: .numResults)
@@ -624,6 +631,91 @@ struct SearchData: Decodable {
         voucher = try container.decodeIfPresent(String.self, forKey: .voucher)
         result = (try? container.decode([Lossy<SearchVideo>].self, forKey: .result))?
             .compactMap { $0.value } ?? []
+    }
+}
+
+/// 网页 `search/all/v2` 的响应：结果是**按类型分组**的，视频在 `result_type == "video"`
+/// 那一组里（组内条目与旧的 `search/type` 同构，所以直接复用 `SearchVideo`）。
+struct SearchAllData: Decodable {
+    let numResults: Int?
+    let numPages: Int?
+    let voucher: String?
+    let result: [Group]?
+
+    struct Group: Decodable {
+        let resultType: String?
+        let data: [SearchVideo]
+
+        enum CodingKeys: String, CodingKey {
+            case resultType
+            case data
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            resultType = try container.decodeIfPresent(String.self, forKey: .resultType)
+            // 单条脏数据不该把整页结果打没，和 `SearchData` 一样用 `Lossy` 兜住
+            data = (try? container.decode([Lossy<SearchVideo>].self, forKey: .data))?
+                .compactMap { $0.value } ?? []
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case numResults = "numResults"
+        case numPages = "numPages"
+        case voucher = "v_voucher"
+        case result
+    }
+
+    var videos: [SearchVideo] {
+        result?.first { $0.resultType == "video" }?.data ?? []
+    }
+}
+
+/// App 端 `x/v2/search` 的响应：条目是混排的（视频 / 用户 / 专栏…），
+/// 视频条目的 `goto` 是 `av`，且只给 aid（`param`），需要本地换成 bvid。
+struct AppSearchData: Decodable {
+    let page: Int?
+    /// `x/v2/search`：混排条目在 `item`；`x/v2/search/type`：在 `items`。
+    let item: [Item]?
+    let items: [Item]?
+
+    struct Item: Decodable {
+        let goto: String?
+        let param: String?
+        let title: String?
+        let cover: String?
+        let play: Int?
+        let danmaku: Int?
+        let duration: String?
+        let author: String?
+
+        /// 只保留视频条目并换算成统一的 `SearchVideo`。
+        var searchVideo: SearchVideo? {
+            guard goto == "av", let aid = Int(param ?? "") else { return nil }
+            return SearchVideo(
+                id: aid,
+                aid: aid,
+                bvid: BVid.from(aid: aid),
+                author: author,
+                title: title,
+                description: nil,
+                pic: cover,
+                play: play,
+                videoReview: danmaku,
+                favorites: nil,
+                pubdate: nil,
+                duration: duration,
+                typename: nil
+            )
+        }
+    }
+
+    var searchData: SearchData {
+        let videos = (item ?? items ?? []).compactMap(\.searchVideo)
+        // App 端分页靠 `pn` 一直往后翻、没有总数：`numResults` 留 nil（界面就不显示
+        // 数字，而是「搜索结果」），页数给个上限让无限滚动继续，直到某页没有新条目。
+        return SearchData(numResults: nil, numPages: 50, result: videos)
     }
 }
 
