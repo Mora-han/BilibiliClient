@@ -677,8 +677,31 @@ struct SearchAllData: Decodable {
 struct AppSearchData: Decodable {
     let page: Int?
     /// `x/v2/search`：混排条目在 `item`；`x/v2/search/type`：在 `items`。
-    let item: [Item]?
-    let items: [Item]?
+    ///
+    /// **这里必须容错**：实测 `data.items` 有时候是字典而不是数组，直接声明成
+    /// `[Item]?` 会抛 `typeMismatch`，把整次搜索判死（网页端点被风控时就没有
+    /// 任何退路了）。所以两个字段都按「是数组就用、不是就当没有」解析。
+    let item: [Item]
+    let items: [Item]
+
+    enum CodingKeys: String, CodingKey {
+        case page
+        case item
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        page = try container.decodeIfPresent(Int.self, forKey: .page)
+        item = Self.parseList(container, .item)
+        items = Self.parseList(container, .items)
+    }
+
+    private static func parseList(_ container: KeyedDecodingContainer<CodingKeys>,
+                                  _ key: CodingKeys) -> [Item] {
+        guard let wrapped = try? container.decode([Lossy<Item>].self, forKey: key) else { return [] }
+        return wrapped.compactMap { $0.value }
+    }
 
     struct Item: Decodable {
         let goto: String?
@@ -689,6 +712,38 @@ struct AppSearchData: Decodable {
         let danmaku: Int?
         let duration: String?
         let author: String?
+
+        enum CodingKeys: String, CodingKey {
+            case goto, param, title, cover, play, danmaku, duration, author
+        }
+
+        /// 逐字段容错：任何一项类型不符都只当它没有，不影响其它条目。
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            goto = try? container.decode(String.self, forKey: .goto)
+            param = Self.string(container, .param)
+            title = try? container.decode(String.self, forKey: .title)
+            cover = try? container.decode(String.self, forKey: .cover)
+            play = Self.int(container, .play)
+            danmaku = Self.int(container, .danmaku)
+            duration = Self.string(container, .duration)
+            author = try? container.decode(String.self, forKey: .author)
+        }
+
+        /// 有的字段数字/字符串两种形态都可能出现，统一成字符串。
+        private static func string(_ container: KeyedDecodingContainer<CodingKeys>,
+                                   _ key: CodingKeys) -> String? {
+            if let text = try? container.decode(String.self, forKey: key) { return text }
+            if let number = try? container.decode(Int.self, forKey: key) { return String(number) }
+            return nil
+        }
+
+        private static func int(_ container: KeyedDecodingContainer<CodingKeys>,
+                                _ key: CodingKeys) -> Int? {
+            if let number = try? container.decode(Int.self, forKey: key) { return number }
+            if let text = try? container.decode(String.self, forKey: key) { return Int(text) }
+            return nil
+        }
 
         /// 只保留视频条目并换算成统一的 `SearchVideo`。
         var searchVideo: SearchVideo? {
@@ -712,7 +767,8 @@ struct AppSearchData: Decodable {
     }
 
     var searchData: SearchData {
-        let videos = (item ?? items ?? []).compactMap(\.searchVideo)
+        let list = item.isEmpty ? items : item
+        let videos = list.compactMap(\.searchVideo)
         // App 端分页靠 `pn` 一直往后翻、没有总数：`numResults` 留 nil（界面就不显示
         // 数字，而是「搜索结果」），页数给个上限让无限滚动继续，直到某页没有新条目。
         return SearchData(numResults: nil, numPages: 50, result: videos)
