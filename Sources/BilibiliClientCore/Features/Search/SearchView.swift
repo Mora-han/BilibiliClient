@@ -202,9 +202,12 @@ struct SearchView: View {
             .feedRefreshable {
                 await search(reset: true)
             }
-            // 搜索结果页把预取距离收紧一些：默认 2000 会在一次搜索里连着翻好几页，
-            // 搜索接口对短时间内的连续请求比较敏感（容易吃到风控），少翻两页更稳。
-            .autoLoadMore(threshold: 900) {
+            // 与首页信息流完全一致（默认 threshold 2000）：滚动到离底部还有约两屏时
+            // 就预取下一页，内容始终领着滚动走，基本看不到底部「加载中」。
+            // 请求风暴的根因是 LoadMoreFooter 的 onAppear 自循环和「停在顶部就预取」，
+            // 已由 autoLoadMore 的三道闸门（滚动过才触发 / 单飞 / 每次贴底最多 5 页）
+            // 拦住，不再靠缩小阈值来防。
+            .autoLoadMore {
                 await search(reset: false)
             }
         }
