@@ -766,6 +766,11 @@ struct AppSearchData: Decodable {
         }
     }
 
+    /// 原始条目条数：用来区分「接口没给条目」和「给了条目但结构变了」。
+    var rawItemCount: Int {
+        (item.isEmpty ? items : item).count
+    }
+
     var searchData: SearchData {
         let list = item.isEmpty ? items : item
         let videos = list.compactMap(\.searchVideo)

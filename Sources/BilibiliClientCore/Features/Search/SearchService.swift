@@ -32,6 +32,8 @@ struct SearchService {
 
     func videos(keyword: String, page: Int = 1, order: String = "totalrank") async throws -> SearchData {
         await APIClient.shared.ensureFingerprint()
+        var empty: SearchData?
+        var sawPositiveTotal = false
         var lastError: Error?
         var attempted = false
         for endpoint in chain() {
@@ -40,20 +42,31 @@ struct SearchService {
             }
             attempted = true
             do {
-                return try await run(endpoint, keyword: keyword, page: page, sort: order)
+                let data = try await run(endpoint, keyword: keyword, page: page, sort: order)
+                if !data.result.isEmpty { return data }
+                // **空结果不等于没有结果**：B 站连乱码关键词都会回一堆「相关」结果，
+                // 真正的空几乎只出现在被风控的时候。所以这里先记下来、继续试下一条
+                // 端点——「第一次能搜、第二次就没有找到相关视频」就是这么来的。
+                if (data.numResults ?? 0) > 0 { sawPositiveTotal = true }
+                if empty == nil { empty = data }
+                Self.failedAt[endpoint] = Date()
             } catch {
                 lastError = error
             }
         }
-        // 全都在冷却期：硬试一条最可能通的，绝不出现「怎么点都是失败」
+        // 所有端点都试过了：只有「每条都明确说总数就是 0」才敢当真的没有结果
+        if let empty, !sawPositiveTotal {
+            return empty
+        }
         if !attempted, let endpoint = Self.lastGood ?? Endpoint.allCases.first {
+            // 全都在冷却期：硬试一条最可能通的，绝不出现「怎么点都是失败」
             do {
                 return try await run(endpoint, keyword: keyword, page: page, sort: order)
             } catch {
                 lastError = error
             }
         }
-        throw lastError ?? APIError.biz(code: -412, message: "搜索暂时不可用，请稍后再试")
+        throw lastError ?? APIError.biz(code: -412, message: "搜索被限制，请稍后再试")
     }
 
     /// 尝试顺序：上次成功的排最前，其余按「字段最全 → 最兜底」。
@@ -86,8 +99,10 @@ struct SearchService {
             if data.result.isEmpty, data.voucher != nil {
                 throw APIError.biz(code: -412, message: "搜索请求被风控拦截")
             }
-            Self.lastGood = endpoint
-            Self.failedAt[endpoint] = nil
+            if !data.result.isEmpty {
+                Self.lastGood = endpoint
+                Self.failedAt[endpoint] = nil
+            }
             return data
         } catch {
             Self.failedAt[endpoint] = Date()
@@ -158,7 +173,13 @@ struct SearchService {
                 "Referer": APIConstants.appReferer,
             ]
         )
-        return data.searchData
+        let mapped = data.searchData
+        // 有原始条目却一个视频都没解析出来：说明返回结构变了（不是「没有结果」），
+        // 抛出去让外层换下一条端点，别把这种情况显示成「没有找到相关视频」
+        if mapped.result.isEmpty, data.rawItemCount > 0 {
+            throw APIError.decoding("App 搜索返回的条目里没有视频")
+        }
+        return mapped
     }
 
     /// App 签名：`md5(按 key 排序的查询串 + appsec)`；
