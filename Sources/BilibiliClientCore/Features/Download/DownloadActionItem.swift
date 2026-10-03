@@ -158,44 +158,53 @@ struct DownloadActionItem: View {
         }
     }
 
-    /// 常用可选项。引擎支持的选项远不止这几个，这里只放最常改的三项。
+    /// 常用可选项。引擎支持的选项远不止这几个，这里只放最常改的四项。
     private var optionsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // 原生分段控件：互斥选项的标准形状，键盘方向键与 VoiceOver 由系统接管，
+            // 选中态也不用再自己画描边（原先是自绘胶囊按钮）。
             DownloadOptionRow(title: "输出格式") {
-                DownloadChip(title: "MP4", selected: controller.options.container == .mp4) {
-                    controller.options.container = .mp4
+                Picker("输出格式", selection: $controller.options.container) {
+                    Text("MP4").tag(DownloadOptions.Container.mp4)
+                    Text("原始流").tag(DownloadOptions.Container.rawStreams)
                 }
-                DownloadChip(title: "原始流", selected: controller.options.container == .rawStreams) {
-                    controller.options.container = .rawStreams
-                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
             }
 
             DownloadOptionRow(title: "并发数") {
-                ForEach([1, 4, 8, 16], id: \.self) { value in
-                    DownloadChip(title: "\(value)", selected: controller.options.concurrency == value) {
-                        controller.options.concurrency = value
+                Picker("并发数", selection: $controller.options.concurrency) {
+                    ForEach([1, 4, 8, 16], id: \.self) { value in
+                        Text("\(value)").tag(value)
                     }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
             }
 
             DownloadOptionRow(title: "限速") {
-                DownloadChip(title: "不限", selected: controller.options.speedLimit == nil) {
-                    controller.options.speedLimit = nil
-                }
-                ForEach([1, 5, 10], id: \.self) { megabytes in
-                    let bytes = Int64(megabytes) << 20
-                    DownloadChip(title: "\(megabytes)M", selected: controller.options.speedLimit == bytes) {
-                        controller.options.speedLimit = bytes
+                Picker("限速", selection: $controller.options.speedLimit) {
+                    Text("不限").tag(Int64?.none)
+                    ForEach([1, 5, 10], id: \.self) { megabytes in
+                        Text("\(megabytes)M").tag(Int64?.some(Int64(megabytes) << 20))
                     }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
             }
 
             DownloadOptionRow(title: "编码") {
-                ForEach(DownloadOptions.VideoCodecPreference.allCases, id: \.self) { codec in
-                    DownloadChip(title: codec.displayName, selected: controller.options.videoCodec == codec) {
-                        controller.options.videoCodec = codec
+                Picker("编码", selection: $controller.options.videoCodec) {
+                    ForEach(DownloadOptions.VideoCodecPreference.allCases, id: \.self) { codec in
+                        Text(codec.displayName).tag(codec)
                     }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
             }
         }
         .padding(.horizontal, 10)
@@ -374,54 +383,24 @@ private struct DownloadOptionRow<Content: View>: View {
     }
 }
 
-/// 可选中的小胶囊。
-private struct DownloadChip: View {
-    let title: String
-    let selected: Bool
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption2)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(selected
-                              ? Color.accentColor.opacity(0.22)
-                              : Color.primary.opacity(hovering ? 0.12 : 0.06))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(selected ? Color.accentColor.opacity(0.6) : Color.clear, lineWidth: 1)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-    }
-}
-
-/// 下载进度条。总量未知时退化为不确定态的滑动条。
+/// 下载进度条：原生 `ProgressView`。
+///
+/// 总量未知（`fraction == nil`，见 `DownloadProgress.fraction`）时走**不确定态**——
+/// 这正是原先注释声称「退化为不确定态的滑动条」却没做的事：自绘版本在 fraction 为
+/// nil 时只画一条静止的空轨道，用户看不出到底在不在下。系统不确定态是真会动的，
+/// 还白拿 VoiceOver 的进度播报与深浅外观自适应。
 private struct DownloadProgressBar: View {
     let fraction: Double?
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.primary.opacity(0.1))
-                if let fraction {
-                    Capsule()
-                        .fill(Color.accentColor)
-                        .frame(width: max(2, geometry.size.width * min(max(fraction, 0), 1)))
-                }
-            }
+        if let fraction {
+            ProgressView(value: min(max(fraction, 0), 1))
+                .progressViewStyle(.linear)
+                .tint(.accentColor)
+                .animation(.easeOut(duration: 0.2), value: fraction)
+        } else {
+            ProgressView()
+                .progressViewStyle(.linear)
         }
-        .frame(height: 6)
-        .animation(.easeOut(duration: 0.2), value: fraction)
     }
 }

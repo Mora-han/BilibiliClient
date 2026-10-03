@@ -47,8 +47,6 @@ struct VideoDetailView: View {
     @State private var showFavoritePicker = false
     @State private var shareMessage: String?
     @State private var showCoinMenu = false
-    @State private var showShareMenu = false
-    @State private var showQualityMenu = false
     @State private var showDanmakuSettings = false
     @State private var isFollowing = false
     @State private var relationLoaded = false
@@ -666,8 +664,21 @@ struct VideoDetailView: View {
                 Spacer(minLength: 0)
 
                 if !player.qualities.isEmpty {
-                    Button {
-                        showQualityMenu = true
+                    // 原生 Menu：与画面内控制栏的画质入口（PlayerControlBar.qualityMenu）
+                    // 同一套实现，同页不再并存「原生菜单 + 自绘卡」两种样式。
+                    // 顺带白拿键盘导航 / VoiceOver，且 iPhone 上不会被拉成整屏 sheet。
+                    Menu {
+                        ForEach(player.qualities) { quality in
+                            Button {
+                                Task { await player.selectQuality(quality) }
+                            } label: {
+                                if quality.id == player.currentQualityId {
+                                    Label(quality.name, systemImage: "checkmark")
+                                } else {
+                                    Text(quality.name)
+                                }
+                            }
+                        }
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "gear")
@@ -677,11 +688,9 @@ struct VideoDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showQualityMenu, arrowEdge: .bottom) {
-                        qualityActionCard
-                            .presentationCompactAdaptation(.popover)
-                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("清晰度")
                 }
             }
         }
@@ -841,9 +850,12 @@ struct VideoDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .popover(isPresented: $showCoinMenu, arrowEdge: .bottom) {
-                coinActionCard
-                    .presentationCompactAdaptation(.popover)
+            // 两个互斥选项，正是系统动作单的形状：iPhone 底部弹出、macOS 侧弹，
+            // 键盘与 VoiceOver 都由系统接管（原先自绘一张 190pt 宽的卡）。
+            .confirmationDialog("投币", isPresented: $showCoinMenu, titleVisibility: .hidden) {
+                Button("投 1 枚硬币") { Task { await coin(multiply: 1) } }
+                Button("投 2 枚硬币") { Task { await coin(multiply: 2) } }
+                Button("取消", role: .cancel) {}
             }
             .hoverScale(scale: 1.06)
 
@@ -861,8 +873,24 @@ struct VideoDetailView: View {
             .buttonStyle(.plain)
             .hoverScale(scale: 1.06)
 
-            Button {
-                showShareMenu = true
+            // 原生 Menu 承载三个动作（系统分享 / 复制链接 / 浏览器打开）。
+            // ShareLink 放在 Menu 里由系统渲染成一条菜单项，点击仍唤起完整分享面板。
+            Menu {
+                if let shareURL {
+                    ShareLink(item: shareURL) {
+                        Label("分享…", systemImage: "square.and.arrow.up")
+                    }
+                }
+                Button {
+                    Task { await copyLink() }
+                } label: {
+                    Label("复制链接", systemImage: "doc.on.doc")
+                }
+                Button {
+                    openInBrowser()
+                } label: {
+                    Label("在浏览器打开", systemImage: "safari")
+                }
             } label: {
                 VStack(spacing: 3) {
                     Image(systemName: "arrowshape.turn.up.right")
@@ -872,11 +900,8 @@ struct VideoDetailView: View {
                 .foregroundStyle(.primary)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .popover(isPresented: $showShareMenu, arrowEdge: .bottom) {
-                shareActionCard
-                    .presentationCompactAdaptation(.popover)
-            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
             .hoverScale(scale: 1.06)
 
             Button { Task { await addToWatchLater() } } label: {
@@ -898,74 +923,6 @@ struct VideoDetailView: View {
         // 原先的热区只有 ~36pt 且相邻仅隔 14pt，很容易点到隔壁
         .frame(minHeight: 44)
         .padding(.vertical, 4)
-    }
-
-    // MARK: - 画质 / 投币 / 分享 悬浮小卡片
-
-    /// 点击清晰度按钮弹出的液态玻璃小卡片（与投币、分享同一套弹层样式）。
-    private var qualityActionCard: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(player.qualities.enumerated()), id: \.element.id) { index, quality in
-                if index > 0 {
-                    Divider().padding(.horizontal, 10)
-                }
-                MenuActionRow(icon: quality.id == player.currentQualityId ? "checkmark.circle.fill" : "circle",
-                              title: quality.name) {
-                    showQualityMenu = false
-                    Task { await player.selectQuality(quality) }
-                }
-            }
-        }
-        .padding(6)
-        .frame(width: 190)
-    }
-
-
-    /// 点击投币按钮弹出的液态玻璃小卡片（与左下角账户卡片同一套弹层样式）。
-    private var coinActionCard: some View {
-        VStack(spacing: 0) {
-            MenuActionRow(icon: "dollarsign.circle", title: "投 1 枚硬币") {
-                showCoinMenu = false
-                Task { await coin(multiply: 1) }
-            }
-            Divider().padding(.horizontal, 10)
-            MenuActionRow(icon: "dollarsign.circle.fill", title: "投 2 枚硬币") {
-                showCoinMenu = false
-                Task { await coin(multiply: 2) }
-            }
-        }
-        .padding(6)
-        .frame(width: 190)
-    }
-
-    /// 点击分享按钮弹出的液态玻璃小卡片。
-    private var shareActionCard: some View {
-        VStack(spacing: 0) {
-            // iPhone 用户的预期是系统分享面板（微信/AirDrop/…），而不是只有复制链接。
-            // `ShareLink` 在 macOS 上同样表现为系统分享，两端都合适。
-            if let url = shareURL {
-                ShareLink(item: url) {
-                    Label("分享…", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Divider().padding(.horizontal, 10)
-            }
-            MenuActionRow(icon: "doc.on.doc", title: "复制链接") {
-                showShareMenu = false
-                Task { await copyLink() }
-            }
-            Divider().padding(.horizontal, 10)
-            MenuActionRow(icon: "safari", title: "在浏览器打开") {
-                showShareMenu = false
-                openInBrowser()
-            }
-        }
-        .padding(6)
-        .frame(width: 190)
     }
 
     private func toggleLike() async {
