@@ -638,6 +638,7 @@ struct VideoDetailView: View {
                 }
                 .fixedSize()
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .help("播放倍速")
                 #endif
 
@@ -684,6 +685,8 @@ struct VideoDetailView: View {
                         .foregroundStyle(.secondary)
                     }
                     .menuStyle(.borderlessButton)
+                    // 同投币：这条栏里的按钮一律「图标在上、文字在下」，不留 Menu 箭头
+                    .menuIndicator(.hidden)
                     .fixedSize()
                     .help("清晰度")
                 }
@@ -856,6 +859,9 @@ struct VideoDetailView: View {
                 .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
+            // 去掉 Menu 自带的箭头指示器：投币要和其它动作按钮一样是「图标在上、数字在下」，
+            // 那个小箭头是这条栏里唯一一个多余的视觉元素。
+            .menuIndicator(.hidden)
             .fixedSize()
             .disabled(coined)
             .hoverScale(scale: 1.06)
@@ -888,6 +894,9 @@ struct VideoDetailView: View {
                     .foregroundStyle(.primary)
                     .contentShape(Rectangle())
                 }
+                // ShareLink 默认是带底色/边框的按钮样式，在这条「图标+文字」的栏里
+                // 会多出一层遮罩；改成 .plain 与点赞/投币/收藏/稍后再看完全一致。
+                .buttonStyle(.plain)
                 .hoverScale(scale: 1.06)
                 .help("分享这个视频")
             }
