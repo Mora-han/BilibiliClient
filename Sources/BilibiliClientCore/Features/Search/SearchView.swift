@@ -17,6 +17,8 @@ struct SearchView: View {
     @State private var order: SearchOrder = .totalrank
     /// 上一次真正搜过的词：同词重入不重搜（见 `.task(id: query)` 的守卫）。
     @State private var lastSearched: String?
+    /// 被限流时的自动重试时间：界面倒计时到点后自己补一次搜索。
+    @State private var autoRetryAt: Date?
 
     enum SearchOrder: String, CaseIterable, Identifiable {
         case totalrank = "综合排序"
@@ -129,8 +131,20 @@ struct SearchView: View {
             .scrollDisabled(true)
             .scrollIndicators(.hidden)
         } else if let errorMessage, results.isEmpty {
-            LoadErrorView(message: errorMessage) {
-                await search(reset: true)
+            VStack(spacing: 14) {
+                LoadErrorView(message: errorMessage) {
+                    await search(reset: true)
+                }
+                if let at = autoRetryAt, at.timeIntervalSinceNow > 0 {
+                    Text("已暂停自动重试，\(Int(at.timeIntervalSinceNow.rounded())) 秒后继续")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
+                guard let at = autoRetryAt, now >= at else { return }
+                autoRetryAt = nil
+                Task { await search(reset: true) }
             }
         } else if results.isEmpty {
             VStack(spacing: 10) {
@@ -241,12 +255,14 @@ struct SearchView: View {
                 page = targetPage
                 addedCount = fresh.count
             }
+            autoRetryAt = nil
             numResults = data.numResults
             // 本页没有新增内容时停止，避免无限重复请求；总数未知就只看「有没有新增」
             hasMore = addedCount > 0
                 && results.count < (numResults ?? Int.max)
                 && (data.numPages ?? 1) > targetPage
         } catch {
+            autoRetryAt = SearchService.rateLimitRetryAt
             if reset {
                 errorMessage = error.localizedDescription
             } else {

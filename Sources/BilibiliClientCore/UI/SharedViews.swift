@@ -190,13 +190,16 @@ struct LoadMoreFooter: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                // 透明占位：保持 onAppear 兜底触发，视觉上无任何提示
+                // 透明占位，只撑高度。
+                //
+                // 这里曾经挂了 `.onAppear { onLoad() }`「兜底触发」——但加载中/加载完
+                // 会让这个占位反复销毁重建，onAppear 于是自己循环：一次搜索能连翻几十页、
+                // 推荐流每 400ms 打一个请求，正是把 B 站搜索撞进限流窗口的元凶。
+                // 现在翻页只走 `autoLoadMore`（有「滚动过 + 单飞 + 配额」三道闸门），
+                // 或用户手动点底部按钮。
                 Color.clear
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
-                    .onAppear {
-                        Task { await onLoad() }
-                    }
             }
         } else {
             Text("没有更多内容了")
@@ -209,17 +212,66 @@ struct LoadMoreFooter: View {
 }
 
 extension View {
-    /// 滚动接近底部时自动加载下一页：剩余可滚动距离不足 threshold（默认约两屏半）
-    /// 即触发，并在加载完成后由内容高度变化自动接续下一页，
-    /// 让内容始终领先滚动位置，实现快速下拉也“拉不到底”的连续加载体验。
+    /// 滚动接近底部时自动加载下一页：剩余可滚动距离不足 threshold 即触发。
+    ///
+    /// 三个闸门缺一不可（曾经的实现只有 `remaining < threshold`，实测一次搜索能
+    /// 连翻 50 页、推荐流每 400ms 打一个请求——请求风暴正是把 B 站搜索限流撞开的
+    /// 直接原因）：
+    ///
+    /// 1. **必须滚动过**（offset > 0）：停在顶部时 `remaining` 天然偏小，不设这道
+    ///    闸门就会在首屏加载完后不停预取；
+    /// 2. **单飞**：一次只允许一个加载在途，几何变化连发也不会排队堆请求；
+    /// 3. **配额**：每次「贴近底部」最多自动补 5 页，剩余距离回到阈值以上才重置——
+    ///    即便某个滚动容器报的 contentSize 不可靠，也翻不出去。
+    ///
+    /// 用户主动滚动 / 点「加载更多」按钮不受配额影响。
     func autoLoadMore(threshold: CGFloat = 2000, load: @escaping () async -> Void) -> some View {
-        onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height
-        } action: { _, remaining in
-            if remaining < threshold {
-                Task { await load() }
+        modifier(AutoLoadMoreModifier(threshold: threshold, load: load))
+    }
+}
+
+private struct AutoLoadMoreModifier: ViewModifier {
+    let threshold: CGFloat
+    let load: () async -> Void
+
+    @State private var inFlight = false
+    @State private var autoCount = 0
+
+    private struct Signal: Equatable {
+        let remaining: CGFloat
+        let offset: CGFloat
+        let content: CGFloat
+        let container: CGFloat
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: Signal.self) { geometry in
+                Signal(
+                    remaining: geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height,
+                    offset: geometry.contentOffset.y,
+                    content: geometry.contentSize.height,
+                    container: geometry.containerSize.height
+                )
+            } action: { _, signal in
+                if signal.remaining >= threshold {
+                    // 离开底部区域：重置这一轮的预取配额
+                    autoCount = 0
+                }
+                // 「贴近底部」= 用户滚动过，或内容整个塞得下视口（最后几条不足一屏时
+                // 也能自然补页）。停在顶部且内容比视口长时绝不触发——那正是风暴入口。
+                let nearBottom = signal.offset > 0 || signal.content <= signal.container + 1
+                guard signal.remaining < threshold,
+                      nearBottom,
+                      !inFlight,
+                      autoCount < 5 else { return }
+                inFlight = true
+                autoCount += 1
+                Task {
+                    await load()
+                    inFlight = false
+                }
             }
-        }
     }
 }
 

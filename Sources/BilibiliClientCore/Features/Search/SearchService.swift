@@ -30,10 +30,39 @@ struct SearchService {
     private static var failedAt: [Endpoint: Date] = [:]
     private static let cooldown: TimeInterval = 120
 
+    /// 412 是 **IP 级**限流，四条端点共享同一个窗口：撞上就整体退避——
+    /// 窗口内再发请求只会白白再挨一刀、把封禁越拖越长（实测一次窗口约数分钟）。
+    private static var rateLimitedUntil: Date?
+    private static var rateLimitStreak = 0
+
+    /// 界面用：退避窗口未到点时返回到期时间（nil = 没有限流，可正常搜）。
+    static var rateLimitRetryAt: Date? {
+        guard let until = rateLimitedUntil, Date() < until else { return nil }
+        return until
+    }
+
+    private static func enterRateLimit() {
+        rateLimitStreak = min(rateLimitStreak + 1, 4)
+        let seconds: TimeInterval = [60, 120, 240, 480, 600][rateLimitStreak]
+        let until = Date().addingTimeInterval(seconds)
+        if let existing = rateLimitedUntil, existing > until { return }
+        rateLimitedUntil = until
+    }
+
+    private static func clearRateLimit() {
+        rateLimitStreak = 0
+        rateLimitedUntil = nil
+    }
+
     func videos(keyword: String, page: Int = 1, order: String = "totalrank") async throws -> SearchData {
         await APIClient.shared.ensureFingerprint()
+        // 退避窗口内不发任何请求：秒失败 + 明确文案，等窗口结束自动重试
+        if Self.rateLimitRetryAt != nil {
+            throw APIError.biz(code: -412, message: "搜索请求过于频繁，已暂停自动重试")
+        }
         var empty: SearchData?
         var sawPositiveTotal = false
+        var saw412 = false
         var lastError: Error?
         var attempted = false
         for endpoint in chain() {
@@ -43,7 +72,10 @@ struct SearchService {
             attempted = true
             do {
                 let data = try await run(endpoint, keyword: keyword, page: page, sort: order)
-                if !data.result.isEmpty { return data }
+                if !data.result.isEmpty {
+                    Self.clearRateLimit()
+                    return data
+                }
                 // **空结果不等于没有结果**：B 站连乱码关键词都会回一堆「相关」结果，
                 // 真正的空几乎只出现在被风控的时候。所以这里先记下来、继续试下一条
                 // 端点——「第一次能搜、第二次就没有找到相关视频」就是这么来的。
@@ -51,6 +83,7 @@ struct SearchService {
                 if empty == nil { empty = data }
                 Self.failedAt[endpoint] = Date()
             } catch {
+                if case APIError.http(412) = error { saw412 = true }
                 lastError = error
             }
         }
@@ -63,9 +96,12 @@ struct SearchService {
             do {
                 return try await run(endpoint, keyword: keyword, page: page, sort: order)
             } catch {
+                if case APIError.http(412) = error { saw412 = true }
                 lastError = error
             }
         }
+        // 整次搜索都没拿到结果、且期间撞过 412 → 进入退避窗口
+        if saw412 { Self.enterRateLimit() }
         throw lastError ?? APIError.biz(code: -412, message: "搜索被限制，请稍后再试")
     }
 
