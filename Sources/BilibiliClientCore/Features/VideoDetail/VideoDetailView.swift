@@ -8,8 +8,10 @@ struct VideoDetailView: View {
 
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var router: AppRouter
-    /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化，见 `\.isTabVisible`
-    @Environment(\.isTabVisible) private var isTabVisible
+    /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化、切走停播、切回恢复。
+    /// 用每栈一份的 `TabVisibility`（EnvironmentObject）而不是自定义环境值——
+    /// 实测环境值变化不会触发 push 页的 onChange，这个通道则一直可靠。
+    @EnvironmentObject private var tabVisibility: TabVisibility
     /// 宽度类：用来区分 iPad（regular）与 iPhone / 窄 iPad（compact）。
     /// 只在 iOS 的两栏布局里读；macOS 不参与，行为不变。
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -71,6 +73,8 @@ struct VideoDetailView: View {
     @State private var likeChargedPulse = false
     /// 本页首次出现时导航栈的深度（记录后，栈变深=被新页面覆盖，变回=回到本页）
     @State private var navBaseCount = 0
+    /// `tabVisibility.$isVisible` 的基线：订阅瞬间会回放当前值，第一次只立基线。
+    @State private var visibilityBaseline: Bool?
 
     var body: some View {
         Group {
@@ -101,7 +105,9 @@ struct VideoDetailView: View {
             }
         }
         .navigationTitle(detail?.view.title ?? "视频详情")
-        .task { await load() }
+        .task {
+            await load()
+        }
         .onAppear {
             navBaseCount = router.path.count
             bindPlaybackMenu()
@@ -116,7 +122,7 @@ struct VideoDetailView: View {
             // 隐藏标签里这一页的 `navBaseCount` 与全局计数是两回事：别的标签把深度动回
             // 这个数时会误判成「回到本页」，于是被停止的播放器又被 `load()` 拉起来，
             // 出现两个标签同时出声。不可见时一律不响应。
-            guard isTabVisible else { return }
+            guard tabVisibility.isVisible else { return }
             if newCount > navBaseCount {
                 // 被推入的新页面覆盖（如 UP 主页、评论中的 UP 等）：收起播放窗口并停止播放
                 closePlaybackWindow()
@@ -140,11 +146,21 @@ struct VideoDetailView: View {
             player.stop()
             danmaku.reset()
         }
-        .onChange(of: isTabVisible) { _, visible in
+        .onReceive(tabVisibility.$isVisible) { visible in
+            // @Published 订阅瞬间会回放当前值：第一次只立基线、不当事件处理；
+            // 之后值变了才算「标签切走/切回」。
+            guard let baseline = visibilityBaseline else {
+                visibilityBaseline = visible
+                return
+            }
+            guard baseline != visible else { return }
+            visibilityBaseline = visible
             // keep-alive 之后，标签切走时本页只是被藏起来（不销毁），收不到
             // `onDisappear` —— 必须在这里镜像它的收尾，否则切走后播放器还在出声。
             // 反过来切回时用 `load()` 的早退分支恢复（它就是为"停掉后再进来"写的）。
-            guard !PlayerPresentationState.shared.isSystemFullscreen else { return }
+            guard !PlayerPresentationState.shared.isSystemFullscreen else {
+                return
+            }
             if visible {
                 Task { await load() }
             } else {

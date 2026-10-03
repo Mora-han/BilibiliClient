@@ -244,5 +244,10 @@ struct SearchView: View {
         }
         isLoading = false
         isLoadingMore = false
+        // 打字期间上一轮还在跑时，新词的那次调用会被上面的 isLoading 守卫跳过：
+        // 等这轮结束对比一下当前词，不是同一个就补搜最新词，保证「最新输入必达」。
+        if reset, query.trimmingCharacters(in: .whitespacesAndNewlines) != trimmed {
+            await search(reset: true)
+        }
     }
 }

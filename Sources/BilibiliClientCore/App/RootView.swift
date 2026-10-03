@@ -23,6 +23,16 @@ extension EnvironmentValues {
     }
 }
 
+/// 每个导航栈一份的可见性信号：详情页用它判断「我所在的标签还可见吗」。
+///
+/// 为什么不用自定义 Environment 值：实测 `.environment(\.isTabVisible, ...)` 的值变化
+/// 不会触发 push 出来的详情页的 `onChange`（恢复播放的钩子因此从不执行），
+/// 而 EnvironmentObject 驱动的 onChange 在本项目里一直可靠（`router.path` 就是这么工作的）。
+/// 每栈一份实例，`TabNavStack` 负责同步 `isSelected` 并注入栈内容。
+final class TabVisibility: ObservableObject {
+    @Published var isVisible = true
+}
+
 public struct UpRoute: Hashable {
     let mid: Int
 }
@@ -54,6 +64,11 @@ public struct RootView: View {
     #if os(macOS)
     /// 已访问过的根页面（keep-alive 名单）：访问过就常驻，切走只藏不删。
     @State private var visited: [SidebarItem] = [.home]
+    /// 边打边搜的防抖任务：停顿 350ms 才真正提交搜索。
+    @State private var searchSubmitTask: Task<Void, Never>?
+    /// 搜索推荐词（App Store 搜索框那种边打边出）。
+    @State private var searchSuggestions: [String] = []
+    @State private var suggestTask: Task<Void, Never>?
     #endif
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -242,6 +257,45 @@ public struct RootView: View {
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "搜索视频 / UP 主")
         .onSubmit(of: .search) { submitSearch() }
+        // macOS 26 + 自定义 AppKit 侧栏的组合下，`.searchable` 的回车提交收不到
+        // 回调（coolapk 在同机同系统踩过同一个坑，见它的 0.17.0 CHANGELOG），
+        // 所以改成输入驱动：停止输入 350ms 后自动提交，回车回调保留为兜底。
+        .onChange(of: searchText) { _, value in
+            searchSubmitTask?.cancel()
+            suggestTask?.cancel()
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                submittedQuery = ""
+                searchSuggestions = []
+                // 清空关键词就退出搜索页，避免停在一个空结果页上
+                if selection == .search { selection = .home }
+                return
+            }
+            searchSubmitTask = Task {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled else { return }
+                submitSearch()
+            }
+            // 推荐词跟输入同步刷新：停顿 250ms 拉一次，慢一拍不打扰输入
+            suggestTask = Task {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                let words = await SearchSuggestService().suggest(term: trimmed)
+                guard !Task.isCancelled else { return }
+                searchSuggestions = words
+            }
+        }
+        // 输入框激活时在下方浮出推荐词列表，点一条即以该词搜索（系统统一渲染，
+        // 和 App Store 的搜索框同款交互）
+        .searchSuggestions {
+            ForEach(searchSuggestions, id: \.self) { word in
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                    Text(word)
+                }
+                .searchCompletion(word)
+            }
+        }
     }
 
     private var sidebarSections: [SourceListSidebar<SidebarItem>.Section] {
@@ -360,10 +414,14 @@ struct SidebarRoute: Hashable {
 
 extension View {
     /// 全部导航目的地。两端、以及 iOS 的每个标签栈都挂同一套路由。
-    func biliNavDestinations() -> some View {
+    ///
+    /// `vis`（本栈的可见性信号）必须**显式传参**再逐目的地 `environmentObject` 注入：
+    /// 实测把注入写在链外或链尾，push 出来的详情页都拿不到（缺 EnvironmentObject 直接崩溃；
+    /// 自定义环境值则静默失效、onChange 永不触发）。
+    func biliNavDestinations(vis: TabVisibility) -> some View {
         self
             .navigationDestination(for: String.self) { bvid in
-                VideoDetailView(bvid: bvid)
+                VideoDetailView(bvid: bvid).environmentObject(vis)
             }
             .navigationDestination(for: UpRoute.self) { route in
                 UpProfileView(mid: route.mid)
@@ -378,7 +436,7 @@ extension View {
                 DynamicDetailView(id: route.id)
             }
             .navigationDestination(for: LiveRoute.self) { route in
-                LiveDetailView(route: route)
+                LiveDetailView(route: route).environmentObject(vis)
             }
             .navigationDestination(for: SidebarRoute.self) { route in
                 RootView.rootPage(for: route.item, query: "")
@@ -483,18 +541,48 @@ private struct TabNavStack: View {
     let isSelected: Bool
     @EnvironmentObject private var router: AppRouter
     @State private var path = NavigationPath()
+    @StateObject private var tabVisibility = TabVisibility()
 
     var body: some View {
-        NavigationStack(path: $path) {
+        return NavigationStack(path: $path) {
             RootView.rootPage(for: item, query: query)
-                .biliNavDestinations()
+                .biliNavDestinations(vis: tabVisibility)
+                // 旧的自定义环境值保留：老代码引用处仍在（详情页已改用 TabVisibility）
+                .environment(\.isTabVisible, isSelected)
         }
         // 详情页靠这个判断"我所在的标签还可见吗"，避免隐藏标签被全局 path 计数唤醒
         .environment(\.isTabVisible, isSelected)
+        .onAppear {
+            tabVisibility.isVisible = isSelected
+        }
+        // 新建即选中（首次访问某页）时 onChange(of: isSelected) 不会触发，router.path
+        // 会停在上一个栈的路径上：这里补一次镜像，保证它始终等于**可见栈**的路径——
+        // 切回时的 path 计数恢复（`newCount == navBaseCount`）全靠这个不变量。
+        // （用 .task 而不是 .onAppear：实测后者的镜像没跑到。）
+        .task {
+            if isSelected, path != router.path {
+                router.path = path
+            }
+        }
+        .onChange(of: isSelected) { _, nowSelected in
+            tabVisibility.isVisible = nowSelected
+        }
         // 切回本标签时把全局路径镜像成本栈自己的路径：`router.path` 在切走期间
         // 可能已被别的标签改写，不镜像的话下一次程序化导航（菜单栏、搜索…）
         // 会把上一个标签的旧栈垫在这一页底下。
         .onChange(of: isSelected) { _, nowSelected in
+            if nowSelected, path.count > 0 {
+                // 实测：切走时 push 出来的详情页会被移出层级（onDisappear 触发），
+                // 但栈的 path 状态仍是 1；切回后 NavigationStack 却不再按 path 重建
+                // 详情页——渲染停在根页，恢复逻辑（.task / path 计数）全部哑掉。
+                // 这里「清空 → 下一帧回填」强制它按 path 重建详情页：根页视图状态
+                // 不受影响，重建的详情页会跑 .task → load() 恢复播放。
+                let saved = path
+                path = NavigationPath()
+                DispatchQueue.main.async {
+                    path = saved
+                }
+            }
             guard nowSelected, path != router.path else { return }
             router.path = path
         }

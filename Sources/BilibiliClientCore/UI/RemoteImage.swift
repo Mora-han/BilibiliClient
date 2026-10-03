@@ -23,6 +23,8 @@ struct RemoteImage: View {
     /// 说明懒加载视图在隐藏期间既没续上加载任务、重新可见时也不再收到出现事件。
     /// 可见性一恢复就换 id 重建，缓存命中立刻回图；渐显登记早已完成，不会重播淡入。
     @State private var revealGeneration = 0
+    /// `isTabVisible` 的基线：`.task(id:)` 首次运行只立基线，之后变化才重建图片。
+    @State private var visibilityBaseline: Bool?
 
     var body: some View {
         let requestURL = Formatters.sized(url, variant)
@@ -36,9 +38,17 @@ struct RemoteImage: View {
             }
         }
         .id(revealGeneration)
-        .onChange(of: isTabVisible) { _, visible in
-            guard visible else { return }
-            revealGeneration += 1
+        // 用 .task(id:) 而不是 .onChange：实测 onChange(of: 环境值) 在本机不会触发。
+        .task(id: isTabVisible) {
+            guard let baseline = visibilityBaseline else {
+                visibilityBaseline = isTabVisible
+                return
+            }
+            guard baseline != isTabVisible else { return }
+            visibilityBaseline = isTabVisible
+            if isTabVisible {
+                revealGeneration += 1
+            }
         }
     }
 

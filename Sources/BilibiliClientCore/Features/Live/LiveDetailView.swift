@@ -29,12 +29,16 @@ struct LiveDetailView: View {
     let route: LiveRoute
 
     @EnvironmentObject private var router: AppRouter
-    /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化，见 `\.isTabVisible`
-    @Environment(\.isTabVisible) private var isTabVisible
+    /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化、切走停播、切回恢复。
+    /// 用每栈一份的 `TabVisibility`（EnvironmentObject）而不是自定义环境值——
+    /// 实测环境值变化不会触发 push 页的 onChange，这个通道则一直可靠。
+    @EnvironmentObject private var tabVisibility: TabVisibility
     @StateObject private var model = LivePlayerModel()
     @StateObject private var danmaku: LiveDanmakuEngine
     /// 本页首次出现时导航栈的深度（记录后，栈变深=被新页面覆盖，变回=回到本页）
     @State private var navBaseCount = 0
+    /// `tabVisibility.$isVisible` 的基线：订阅瞬间会回放当前值，第一次只立基线。
+    @State private var visibilityBaseline: Bool?
     @State private var detail: LiveRoomDetail?
     @State private var anchorName: String?
     @State private var anchorFace: String?
@@ -81,7 +85,7 @@ struct LiveDetailView: View {
         }
         .onChange(of: router.path.count) { _, newCount in
             // 同 `VideoDetailView`：隐藏标签里的这一页不能跟着全局计数醒来重新拉流
-            guard isTabVisible else { return }
+            guard tabVisibility.isVisible else { return }
             if newCount > navBaseCount {
                 // 被推入的新页面覆盖（如 UP 主页）：关闭直播窗口并停止播放
                 closePlayback()
@@ -99,7 +103,14 @@ struct LiveDetailView: View {
             guard !PlayerPresentationState.shared.isSystemFullscreen else { return }
             closePlayback()
         }
-        .onChange(of: isTabVisible) { _, visible in
+        .onReceive(tabVisibility.$isVisible) { visible in
+            // @Published 订阅瞬间会回放当前值：第一次只立基线、不当事件处理。
+            guard let baseline = visibilityBaseline else {
+                visibilityBaseline = visible
+                return
+            }
+            guard baseline != visible else { return }
+            visibilityBaseline = visible
             // 同 `VideoDetailView`：keep-alive 的标签切走只藏不删，收不到
             // `onDisappear`，停流/恢复要在这里镜像一份。
             guard !PlayerPresentationState.shared.isSystemFullscreen else { return }
