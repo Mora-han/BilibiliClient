@@ -33,11 +33,6 @@ struct DownloadPlan: Sendable {
         let width: Int?
         let height: Int?
         let frameRate: String?
-
-        /// 去掉查询串后的简短地址，用于日志。
-        var hostDescription: String {
-            urls.first?.host() ?? "unknown"
-        }
     }
 }
 

@@ -325,10 +325,6 @@ enum SponsorPreferences {
         }
     }
 
-    /// 默认分类集合，供设置页初始化用。
-    static var defaultCategories: [String] {
-        SponsorCategory.allCases.filter(\.isEnabledByDefault).map(\.rawValue)
-    }
 }
 
 extension Notification.Name {

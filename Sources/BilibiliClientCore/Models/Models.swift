@@ -25,7 +25,6 @@ enum APIError: LocalizedError {
 // MARK: - 导航栏 / 用户信息
 
 struct NavData: Decodable {
-    let isLogin: Bool
     let mid: Int?
     let uname: String?
     let face: String?
@@ -238,7 +237,6 @@ struct DynamicItem: Decodable, Identifiable {
         let commentIdStr: String?
         /// 评论类型（视频=1，带图动态=11，文字/转发动态=17）
         let commentType: Int?
-        let ridStr: String?
     }
 
     struct Modules: Decodable {
@@ -354,7 +352,6 @@ struct DynamicItem: Decodable, Identifiable {
 
         struct StatValue: Decodable {
             let count: Int?
-            let forbidden: Bool?
             let status: Bool?
         }
     }
@@ -552,7 +549,6 @@ struct HistoryItem: Decodable, Identifiable {
     let progress: Int?
     let duration: Int?
     let badge: String?
-    let showTitle: String?
     let tagName: String?
     let history: Detail?
 
@@ -875,7 +871,6 @@ struct PopularVideo: Decodable, Identifiable, Hashable {
     let pubdate: Int?
     let owner: Owner?
     let stat: Stat?
-    let tname: String?
 
     var id: Int { aid ?? 0 }
 }
@@ -1050,7 +1045,6 @@ struct LiveRoomDetail: Decodable, Hashable {
     let liveStatus: Int?
     let cover: String?
     let userCover: String?
-    let keyframe: String?
     let areaName: String?
     let parentAreaName: String?
     let description: String?
@@ -1061,7 +1055,6 @@ struct LiveRoomDetail: Decodable, Hashable {
 /// 直播间主播名片（/live_user/v1/Master/info）
 struct LiveAnchorData: Decodable {
     let info: Info?
-    let followerNum: Int?
 
     struct Info: Decodable {
         let uid: Int?
@@ -1084,8 +1077,7 @@ struct LivePlayInfoData: Decodable {
 
         struct PlayURL: Decodable {
             let stream: [Stream]?
-            let gQnDesc: [QnDesc]?
-
+    
             struct QnDesc: Decodable {
                 let qn: Int?
                 let desc: String?

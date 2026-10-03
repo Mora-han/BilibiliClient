@@ -52,8 +52,6 @@ struct LiveFeedView: View {
                     if !usableRooms.isEmpty {
                         LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
                             await loadMore()
-                        } onRetry: {
-                            await loadMore()
                         }
                     }
                 }
@@ -121,9 +119,7 @@ struct LiveFeedView: View {
         loadMoreFailed = false
         do {
             let fresh = try await LiveService().recommend(page: page + 1)
-            let seen = Set(rooms.map(\.roomid))
-            let newRooms = fresh.filter { !seen.contains($0.roomid) }
-            rooms.append(contentsOf: newRooms)
+            let newRooms = rooms.appendUnique(fresh)
             page += 1
             // 推荐接口没有明确的“到底”标记：本页不足一页即视为没有更多
             hasMore = fresh.count >= 20

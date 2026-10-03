@@ -29,6 +29,12 @@ struct LiveDetailView: View {
     let route: LiveRoute
 
     @EnvironmentObject private var router: AppRouter
+    /// 宽/高类：紧凑宽度收窄左右留白、iPhone 横屏（高度紧凑）改随内容滚动 ——
+    /// 与 `VideoDetailView.stackedContent` 同一套判据（v1.9.7 修视频页时漏了直播页）。
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    /// iPhone 横屏：可用高度只剩 ~330pt，画面钉顶会占掉一大半，下方弹幕区被压出可视区。
+    private var isCompactHeight: Bool { verticalSizeClass == .compact }
     /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化、切走停播、切回恢复。
     /// 用每栈一份的 `TabVisibility`（EnvironmentObject）而不是自定义环境值——
     /// 实测环境值变化不会触发 push 页的 onChange，这个通道则一直可靠。
@@ -43,6 +49,8 @@ struct LiveDetailView: View {
     @State private var anchorName: String?
     @State private var anchorFace: String?
     @State private var isLoading = true
+    /// 详情请求在途标志（`isLoading` 初值是 true，不能拿来当单飞守卫），见 `VideoDetailView` 同名处。
+    @State private var isDetailLoadInFlight = false
     @State private var errorMessage: String?
 
     init(route: LiveRoute) {
@@ -55,23 +63,16 @@ struct LiveDetailView: View {
             if isLoading {
                 ScrollView {
                     MediaDetailSkeleton()
-                        .frame(maxWidth: 980)
-                        .frame(maxWidth: .infinity)
+                        .contentWidth()
                         .padding(24)
                 }
             } else if let errorMessage {
                 ScrollView {
-                    ContentUnavailableView {
-                        Label("加载失败", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(errorMessage)
-                    } actions: {
-                        Button("重试") {
-                            Task { await load() }
-                        }
+                    // 统一走共享的加载失败占位（图标/文案/重试按钮与其余页面一致）
+                    LoadErrorView(message: errorMessage) {
+                        await load()
                     }
-                    .frame(maxWidth: 980)
-                    .frame(maxWidth: .infinity)
+                    .contentWidth()
                     .padding(24)
                 }
             } else if let detail {
@@ -139,6 +140,8 @@ struct LiveDetailView: View {
             await danmaku.connect()
             return
         }
+        guard !isDetailLoadInFlight else { return }
+        isDetailLoadInFlight = true
         isLoading = true
         errorMessage = nil
         do {
@@ -161,11 +164,13 @@ struct LiveDetailView: View {
             async let playerTask: Void = model.load(roomId: data.roomId)
             async let danmakuTask: Void = danmaku.connect()
             _ = await (playerTask, danmakuTask)
+            isDetailLoadInFlight = false
             return
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+        isDetailLoadInFlight = false
     }
 
     /// 页面销毁/被覆盖时统一收尾：停流、断开弹幕。
@@ -183,47 +188,71 @@ struct LiveDetailView: View {
     // MARK: - 内容
 
     private func content(_ detail: LiveRoomDetail) -> some View {
-        VStack(spacing: 0) {
-            // 直播固定在页面顶部：滚动时保持原位完整可见，下方内容独立滑动
-            playerSection
-                .frame(maxWidth: 980)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
+        // 紧凑宽度下 24pt 的左右留白对 390pt 的屏来说太多，画面会明显窄一圈
+        let horizontalPadding: CGFloat = horizontalSizeClass == .compact ? 16 : 24
+        return Group {
+            if isCompactHeight {
+                // iPhone 横屏：画面随内容一起滚（与视频页同一形态），否则下方弹幕区被挤出屏幕
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        playerSection
+                        liveInfoSection(detail)
 
-            Color.clear
-                .frame(height: 18)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    infoRow(detail)
-
-                    Text(detail.title ?? "未知直播")
-                        .font(.title2.bold())
-                        .textSelection(.enabled)
-
-                    statusRow(detail)
-
-                    Divider()
-
-                    Text("简介").font(.headline)
-                    Text(detail.description?.isEmpty == false ? detail.description! : "主播还没有填写直播间简介")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineSpacing(4)
-                        .textSelection(.enabled)
-
-                    Divider()
-
-                    danmakuSection
-
-                    Spacer(minLength: 40)
+                        Spacer(minLength: 40)
+                    }
+                    .contentWidth(alignment: .leading)
+                    .padding(.bottom, 24)
                 }
-                .frame(maxWidth: 980)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
+            } else {
+                VStack(spacing: 0) {
+                    // 直播固定在页面顶部：滚动时保持原位完整可见，下方内容独立滑动
+                    playerSection
+                        .contentWidth()
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.top, 24)
+
+                    Color.clear
+                        .frame(height: 18)
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            liveInfoSection(detail)
+
+                            Spacer(minLength: 40)
+                        }
+                        .contentWidth()
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.bottom, 24)
+                    }
+                }
             }
+        }
+    }
+
+    /// 播放器下方的信息区（标题 / 分区 / 简介 / 弹幕聊天）。
+    /// 横屏随内容滚动的形态与固定画面的形态共用这一份，保证两种布局内容一致。
+    private func liveInfoSection(_ detail: LiveRoomDetail) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            infoRow(detail)
+
+            Text(detail.title ?? "未知直播")
+                .font(.title2.bold())
+                .textSelection(.enabled)
+
+            statusRow(detail)
+
+            Divider()
+
+            Text("简介").font(.headline)
+            Text(detail.description?.isEmpty == false ? detail.description! : "主播还没有填写直播间简介")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineSpacing(4)
+                .textSelection(.enabled)
+
+            Divider()
+
+            danmakuSection
         }
     }
 
@@ -234,39 +263,19 @@ struct LiveDetailView: View {
             switch model.state {
             case .idle, .loading:
                 Rectangle().fill(.black)
-                VStack(spacing: 10) {
-                    ProgressView()
-                    Text("正在连接直播间…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                PlayerPlaceholderView(content: .loading("正在连接直播间…"))
             case .offline:
                 Rectangle().fill(.black)
-                VStack(spacing: 10) {
-                    Image(systemName: "moon.zzz")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("主播还未开播").font(.headline)
-                    Text("可以先去看看别的直播间")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                PlayerPlaceholderView(content: .offline(icon: "moon.zzz",
+                                                        title: "主播还未开播",
+                                                        subtitle: "可以先去看看别的直播间"))
             case .failed:
                 Rectangle().fill(.black)
-                VStack(spacing: 10) {
-                    Image(systemName: "wifi.exclamationmark")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("直播加载失败").font(.headline)
-                    Text(model.errorMessage ?? "未知错误")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button("重试") {
-                        Task { await model.retry(roomId: detail?.roomId ?? route.roomId) }
-                    }
-                }
-                .padding()
+                PlayerPlaceholderView(content: .failed(icon: "wifi.exclamationmark",
+                                                       title: "直播加载失败",
+                                                       detail: model.errorMessage ?? "未知错误") {
+                    await model.retry(roomId: detail?.roomId ?? route.roomId)
+                })
             case .ready:
                 if let avPlayer = model.player {
                     // 画面就是页面里的普通视图，播放/全屏控件由 AVKit 提供

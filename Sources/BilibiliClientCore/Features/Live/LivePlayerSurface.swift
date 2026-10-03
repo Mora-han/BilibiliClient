@@ -4,6 +4,10 @@ import SwiftUI
 /// 直播播放组件：系统 AVPlayerView（画面 + 原生全屏）+ 自绘液态玻璃控制栏 + 在线人数徽标。
 /// 全屏（含全屏动画）由 AVKit 负责；控制栏是直播变体：没有时间轴（换成"直播"徽标），
 /// 也没有弹幕开关与画质入口，只保留播放/倍速/画中画/全屏。
+///
+/// 连接中 / 未开播 / 加载失败三种占位**不在这里画**：宿主 `LiveDetailView.playerSection`
+/// 只在 `state == .ready && player != nil` 时才创建本组件，那三种状态由宿主那一侧的
+/// switch 负责（那里有同文案的占位与重试入口）。原先这里也抄了一份，实际永远走不到。
 struct LivePlayerSurface: View {
     @ObservedObject var model: LivePlayerModel
 
@@ -29,35 +33,6 @@ struct LivePlayerSurface: View {
                                  onSponsorDismiss: {})
                     .id(player)
                 #endif
-            } else if model.state == .loading {
-                VStack(spacing: 10) {
-                    ProgressView()
-                    Text("正在连接直播间…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else if model.state == .offline {
-                VStack(spacing: 10) {
-                    Image(systemName: "moon.zzz")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("主播还未开播").font(.headline)
-                }
-            } else if model.state == .failed {
-                VStack(spacing: 10) {
-                    Image(systemName: "wifi.exclamationmark")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("直播加载失败").font(.headline)
-                    Text(model.errorMessage ?? "未知错误")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button("重试") {
-                        Task { await model.retryCurrent() }
-                    }
-                }
-                .padding()
             }
         }
         .overlay(alignment: .topLeading) {

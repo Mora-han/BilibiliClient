@@ -68,11 +68,6 @@ struct SponsorSkipEngine {
         }
     }
 
-    /// 这段是否已被用户回退。
-    func isIgnored(_ segment: SponsorSegment) -> Bool {
-        ignored.contains(segment.id)
-    }
-
     /// 一次节拍。
     ///
     /// - Parameters:

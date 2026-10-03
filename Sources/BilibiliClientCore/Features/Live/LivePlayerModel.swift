@@ -27,8 +27,6 @@ final class LivePlayerModel: ObservableObject {
     private var timeControlObservation: NSKeyValueObservation?
     private var statusObservation: NSKeyValueObservation?
 
-    var isLive: Bool { state == .ready || state == .loading }
-
     /// 加载直播间并开播。幂等：同一房间已就绪时不重复建流。
     func load(roomId: Int) async {
         let key = "\(roomId)"
@@ -41,13 +39,6 @@ final class LivePlayerModel: ObservableObject {
     func retry(roomId: Int) async {
         loadedKey = nil
         await load(roomId: roomId)
-    }
-
-    /// 重试当前房间（画面中断后由播放窗口内的重试按钮调用）。
-    func retryCurrent() async {
-        guard roomId > 0 else { return }
-        loadedKey = nil
-        await resetAndLoad()
     }
 
     func togglePlay() {

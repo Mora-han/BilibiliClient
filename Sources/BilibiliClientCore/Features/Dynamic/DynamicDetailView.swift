@@ -7,12 +7,16 @@ struct DynamicDetailView: View {
 
     @State private var item: DynamicItem?
     @State private var isLoading = true
+    /// 详情请求在途标志（`isLoading` 初值是 true，不能拿来当单飞守卫），见 `VideoDetailView` 同名处。
+    @State private var isDetailLoadInFlight = false
     @State private var errorMessage: String?
 
     @State private var comments: [CommentItem] = []
     @State private var commentPage = 1
     @State private var isLoadingComments = false
     @State private var hasMoreComments = true
+    /// 上一次评论请求是否失败（失败时给一行可点重试，不再静默吞掉）。
+    @State private var commentError: String?
 
     @State private var preview: PreviewTarget?
 
@@ -177,8 +181,22 @@ struct DynamicDetailView: View {
             if isLoadingComments && comments.isEmpty {
                 ProgressView()
                     .frame(maxWidth: .infinity, minHeight: 80)
+            } else if let commentError, comments.isEmpty {
+                // 与视频页一致：错误文案 + 可点重试（原先 catch 里直接 hasMoreComments=false，静默失败）
+                VStack(spacing: 6) {
+                    Text(commentError)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Button("点击重试") {
+                        Task { await loadFirstComments() }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 60)
             } else if comments.isEmpty {
-                Text("还没有评论")
+                Text("暂无评论")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 60)
@@ -235,6 +253,8 @@ struct DynamicDetailView: View {
     // MARK: - 加载
 
     private func load() async {
+        guard !isDetailLoadInFlight else { return }
+        isDetailLoadInFlight = true
         isLoading = true
         errorMessage = nil
         do {
@@ -251,6 +271,7 @@ struct DynamicDetailView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+        isDetailLoadInFlight = false
     }
 
     private func loadFirstComments() async {
@@ -260,6 +281,7 @@ struct DynamicDetailView: View {
         }
         isLoadingComments = true
         defer { isLoadingComments = false }
+        commentError = nil
         do {
             if let target = commentTarget {
                 let data = try await commentService.comments(type: target.type, oid: target.oid, page: 1)
@@ -268,7 +290,7 @@ struct DynamicDetailView: View {
                 commentPage = 2
             }
         } catch {
-            hasMoreComments = false
+            commentError = error.localizedDescription
         }
     }
 
@@ -281,13 +303,14 @@ struct DynamicDetailView: View {
                                                          oid: target.oid,
                                                          page: commentPage,
                                                          pageSize: 20)
-            let seen = Set(comments.map(\.id))
-            let fresh = data.replies.filter { !seen.contains($0.id) }
-            comments.append(contentsOf: fresh)
+            let fresh = comments.appendUnique(data.replies)
             commentPage += 1
             hasMoreComments = fresh.count >= 20
         } catch {
-            hasMoreComments = false
+            // 首屏失败给重试入口；翻页失败保留 hasMoreComments，用户还能再点一次
+            if comments.isEmpty {
+                commentError = error.localizedDescription
+            }
         }
     }
 }

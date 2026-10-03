@@ -59,9 +59,6 @@ struct DownloadOptions: Sendable {
     /// 单次请求的空闲超时（秒）。
     var requestTimeout: TimeInterval = 30
 
-    /// 主地址失败时是否轮换到 playurl 返回的备用 CDN 地址。
-    var useBackupURLs = true
-
     /// 全局限速（字节/秒）。nil = 不限速。
     var speedLimit: Int64?
 

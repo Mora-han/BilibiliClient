@@ -73,14 +73,9 @@ public final class PlaybackMenuState: ObservableObject {
         hasPlayer = false
         isFullscreen = false
     }
-    #else
-    /// iOS：没有 AVPlayerView，也就没有「AVKit 全屏入口」这一说。
-    /// 全屏由 AVPlayerViewController 自带控件负责，这里只保留状态位。
-    func attachPlayerView() { hasPlayer = true }
-    func detachPlayerView() {
-        hasPlayer = false
-        isFullscreen = false
-    }
+    // iOS 不需要这对方法：没有 AVPlayerView，也就没有「AVKit 全屏入口」这一说。
+    // 全屏由 AVPlayerViewController 自带控件与 `PlayerPresentationState` 负责，
+    // `hasPlayer` 在 iOS 上恒为 false（顶部「播放」菜单本身也只存在于 macOS）。
     #endif
 
     // MARK: - 菜单动作
@@ -92,6 +87,7 @@ public final class PlaybackMenuState: ObservableObject {
     /// 动画、弹幕跟随完全一致）；系统不再提供该入口时退回窗口全屏。
     public func performToggleFullscreen() {
         #if os(macOS)
+        // iOS 分支为空是有意的：见上方 attachPlayerView 处的说明。
         guard let view = playerView else { return }
         guard view.toggleNativeFullscreen() else {
             view.window?.toggleFullScreen(nil)

@@ -142,8 +142,7 @@ struct CommentCardView: View {
             let data = try await CommentService().videoCommentReplies(aid: aid,
                                                                       root: comment.rpid,
                                                                       page: replyPage + 1)
-            let seen = Set(replies.map(\.id))
-            replies.append(contentsOf: data.replies.filter { !seen.contains($0.id) })
+            replies.appendUnique(data.replies)
             replyPage += 1
             hasMoreReplies = !data.replies.isEmpty
         } catch {

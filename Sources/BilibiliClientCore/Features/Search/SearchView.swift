@@ -3,6 +3,9 @@ import SwiftUI
 struct SearchView: View {
     let query: String
 
+    /// 所在标签是否可见（见 `\.isTabVisible`）：隐藏页不声明工具栏条目，
+    /// 否则 keep-alive 下会合并进当前窗口（多出刷新按钮）。
+    @Environment(\.isTabVisible) private var isTabVisible
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var results: [SearchVideo] = []
     @State private var page = 0
@@ -48,7 +51,25 @@ struct SearchView: View {
                 header
                 Divider()
             }
+            // 挂在结果区（而不是最外层 VStack）：iOS 的刷新控件按「锚点中心落在哪个
+            // UIScrollView」定位，锚点对准结果区中心才稳；同时骨架 / 出错 / 空结果
+            // 三个分支也都能拉了 —— 原先只有「有结果」分支里能拉。
             resultArea
+                .feedRefreshable {
+                    await search(reset: true)
+                }
+        }
+        .toolbar {
+            if isTabVisible {
+                ToolbarItem {
+                    Button {
+                        Task { await search(reset: true) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新")
+                }
+            }
         }
         .navigationTitle("搜索")
         .task(id: query) {
@@ -111,21 +132,15 @@ struct SearchView: View {
     @ViewBuilder
     private var resultArea: some View {
         if query.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text("在左上角搜索框输入关键词")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 240)
+            // 多包一层 VStack 只为固定最小高度，EmptyStateView 自己就能撑开
+            EmptyStateView(title: "在左上角搜索框输入关键词",
+                           systemImage: "magnifyingglass")
+                .frame(maxWidth: .infinity, minHeight: 240)
         } else if isLoading && results.isEmpty {
             // 先用与结果区同宽同列的空白占位，避免「搜索中」白屏
             ScrollView {
                 VideoFeedSkeleton(mode: displayMode)
-                    .frame(maxWidth: 980)
-                    .frame(maxWidth: .infinity)
+                    .contentWidth()
                     .padding(20)
             }
             .scrollDisabled(true)
@@ -147,15 +162,9 @@ struct SearchView: View {
                 Task { await search(reset: true) }
             }
         } else if results.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                Text("没有找到相关视频")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 200)
+            EmptyStateView(title: "没有找到相关视频",
+                           systemImage: "magnifyingglass")
+                .frame(maxWidth: .infinity, minHeight: 200)
         } else {
             ScrollView {
                 VStack(spacing: 0) {
@@ -190,17 +199,11 @@ struct SearchView: View {
                     if !results.isEmpty {
                         LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
                             await search(reset: false)
-                        } onRetry: {
-                            await search(reset: false)
                         }
                     }
                 }
-                .frame(maxWidth: 980)
-                .frame(maxWidth: .infinity)
+                .contentWidth()
                 .padding(20)
-            }
-            .feedRefreshable {
-                await search(reset: true)
             }
             // 与首页信息流完全一致（默认 threshold 2000）：滚动到离底部还有约两屏时
             // 就预取下一页，内容始终领着滚动走，基本看不到底部「加载中」。
@@ -239,7 +242,6 @@ struct SearchView: View {
             guard !isLoadingMore, hasMore, !results.isEmpty else { return }
             isLoadingMore = true
             loadMoreFailed = false
-        loadMoreFailed = false
         }
 
         do {
@@ -252,9 +254,7 @@ struct SearchView: View {
                 page = 1
                 addedCount = results.count
             } else {
-                let seen = Set(results.map(\.id))
-                let fresh = data.result.filter { !seen.contains($0.id) }
-                results.append(contentsOf: fresh)
+                let fresh = results.appendUnique(data.result)
                 page = targetPage
                 addedCount = fresh.count
             }

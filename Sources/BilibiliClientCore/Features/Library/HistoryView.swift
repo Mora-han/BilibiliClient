@@ -39,10 +39,25 @@ struct HistoryView: View {
                     }
                     .disabled(usableItems.isEmpty)
                 }
+                ToolbarItem {
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新")
+                }
             }
         }
         .sheet(isPresented: $showLogin) { LoginView() }
-        .task { await loadIfNeeded() }
+        // 扫码登录走 sheet、不让本页 disappear，裸 `.task` 不会重跑：
+        // 用登录状态作 id，登录成功后自动补一次拉取（与稍后再看/动态页一致）。
+        .task(id: session.loggedIn) {
+            // 登出时清掉「已尝试过」标记：换号再登录要重新拉一次，
+            // 否则 `loadIfNeeded` 的 `!hasLoaded` 守卫会把请求挡死、列表停在上一个账号的数据上。
+            guard session.loggedIn else { hasLoaded = false; return }
+            await loadIfNeeded()
+        }
     }
 
     private var loginPrompt: some View {
@@ -62,9 +77,7 @@ struct HistoryView: View {
                         await load()
                     }
                 } else if usableItems.isEmpty {
-                    Text("暂无观看历史")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    EmptyStateView(title: "暂无观看历史", systemImage: "clock.arrow.circlepath")
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
                     VideoFeedLayout(mode: displayMode) {
@@ -111,13 +124,10 @@ struct HistoryView: View {
 
                     LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
                         await loadMore()
-                    } onRetry: {
-                        await loadMore()
                     }
                 }
             }
-            .frame(maxWidth: 980)
-            .frame(maxWidth: .infinity)
+            .contentWidth()
             .padding(20)
         }
         .feedRefreshable { await load() }
@@ -145,7 +155,9 @@ struct HistoryView: View {
     }
 
     private func load() async {
+        // 单飞 + 「已尝试过」即置位（与首页/直播页同一套语义）
         guard !isLoading else { return }
+        hasLoaded = true
         isLoading = true
         errorMessage = nil
         do {
@@ -154,7 +166,6 @@ struct HistoryView: View {
             BiliImages.prefetch(data.list.map(\.cover), variant: .card)
             cursor = data.cursor
             hasMore = !data.list.isEmpty
-            hasLoaded = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -180,9 +191,7 @@ struct HistoryView: View {
                 business: cursor.business ?? "",
                 viewAt: cursor.viewAt ?? 0
             )
-            let seen = Set(items.map(\.id))
-            let fresh = data.list.filter { !seen.contains($0.id) }
-            items.append(contentsOf: fresh)
+            let fresh = items.appendUnique(data.list)
             self.cursor = data.cursor
             hasMore = !fresh.isEmpty
         } catch {

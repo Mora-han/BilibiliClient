@@ -60,10 +60,6 @@ enum VideoDisplayMode: String, CaseIterable, Identifiable {
         case .list2: return "两列列表"
         }
     }
-
-    static var current: VideoDisplayMode {
-        VideoDisplayMode(rawValue: UserDefaults.standard.string(forKey: "videoDisplayMode") ?? "") ?? .card
-    }
 }
 
 /// 按全局显示模式统一布局：卡片网格 / 单列列表 / 两列列表。
@@ -150,6 +146,33 @@ struct EditableFeedItem<Content: View>: View {
     }
 }
 
+/// 内容区统一宽度：上限 980pt、可用宽度内占满（居中），窄屏顶到边。
+///
+/// 这两行 frame 在 16 个页面里各写了一遍（`.frame(maxWidth: 980)` 紧跟
+/// `.frame(maxWidth: .infinity)`），收口成一个修饰符；顺序不能反——先限宽
+/// 再占满，否则限宽会被 `.infinity` 覆盖、内容区永远只有 980 而不居中。
+extension View {
+    func contentWidth(alignment: Alignment = .center) -> some View {
+        frame(maxWidth: 980)
+            .frame(maxWidth: .infinity, alignment: alignment)
+    }
+}
+
+/// 翻页「去重追加」：把新一页里与已有项重复的过滤掉再追加，返回真正新增的那批。
+///
+/// 这段 `Set(map(\.id))` + `filter` + `append` 的组合在 12 个列表页里各抄了一份
+/// （推荐/热门/直播/动态/搜索/收藏/历史/稍后再看/UP 主页/菜单栏面板/两处评论列表），
+/// 收口成一个方法，调用点只需一行，也顺带保证「有新增才算还有下一页」的判据一致。
+extension Array where Element: Identifiable {
+    @discardableResult
+    mutating func appendUnique<S: Sequence>(_ newElements: S) -> [Element] where S.Element == Element {
+        let seen = Set(map(\.id))
+        let fresh = newElements.filter { !seen.contains($0.id) }
+        append(contentsOf: fresh)
+        return fresh
+    }
+}
+
 /// 列表底部加载指示：只在真正请求时显示“加载中”，空闲时保持透明占位；
 /// 没有更多内容时显示“没有更多内容了”作为到达末尾的反馈；
 /// 翻页失败时显示可点的一行“加载失败，点按重试”。
@@ -161,8 +184,10 @@ struct LoadMoreFooter: View {
     var isBusy: Bool
     var hasMore: Bool
     var failed = false
-    var onLoad: () async -> Void
-    var onRetry: (() async -> Void)?
+    /// 「加载失败，点按重试」的回调。历史上这里曾有 `onLoad` 与 `onRetry` 两个闭包，
+    /// 但 `onLoad` 自 v1.9.11 起已无任何调用方（翻页只走 `autoLoadMore` 或手动点按钮），
+    /// 9 个调用点传的又是同一个闭包 —— 合并成一个 `action`。
+    var action: () async -> Void
 
     var body: some View {
         if hasMore {
@@ -177,8 +202,7 @@ struct LoadMoreFooter: View {
                 .padding(.vertical, 10)
             } else if failed {
                 Button {
-                    guard let onRetry else { return }
-                    Task { await onRetry() }
+                    Task { await action() }
                 } label: {
                     Label("加载失败，点按重试", systemImage: "arrow.clockwise")
                         .font(.caption)
@@ -290,6 +314,27 @@ struct LoginRequiredView: View {
         } actions: {
             Button("扫码登录") { showLogin = true }
                 .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+/// 统一的「空」占位视图。
+///
+/// 各列表页原先各写各的：裸 `Text("暂无…")` + `frame(minHeight:)`（高度还各不相同），
+/// 或自拼一份 `Image + Text`。这里收口成与 `LoadErrorView` / `LoginRequiredView`
+/// 同一套 `ContentUnavailableView` 观感——图标 + 标题 + 可选说明，两端一致。
+struct EmptyStateView: View {
+    let title: String
+    var systemImage = "tray"
+    var message: String?
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(title, systemImage: systemImage)
+        } description: {
+            if let message {
+                Text(message)
+            }
         }
     }
 }

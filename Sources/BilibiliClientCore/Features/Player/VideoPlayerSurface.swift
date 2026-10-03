@@ -67,6 +67,7 @@ struct VideoPlayerSurface: View {
         config.onSelectQuality = { quality in
             Task { await playerController.selectQuality(quality) }
         }
+        config.onSetSpeed = { playerController.setSpeed($0) }
         return config
     }
     #endif

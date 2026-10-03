@@ -59,6 +59,9 @@ struct VideoDetailView: View {
     @State private var showLogin = false
     @State private var detail: VideoDetailData?
     @State private var isLoading = true
+    /// 详情请求在途标志。`isLoading` 初值是 true（首屏骨架），不能拿来当单飞守卫；
+    /// 三个触发源（`.task` / 回到本页 / 标签切回）撞车时靠它只发一次。
+    @State private var isDetailLoadInFlight = false
     @State private var errorMessage: String?
     @State private var comments: [CommentItem] = []
     @State private var commentPage = 0
@@ -82,23 +85,16 @@ struct VideoDetailView: View {
             if isLoading {
                 ScrollView {
                     MediaDetailSkeleton()
-                        .frame(maxWidth: 980)
-                        .frame(maxWidth: .infinity)
+                        .contentWidth()
                         .padding(24)
                 }
             } else if let errorMessage {
                 ScrollView {
-                    ContentUnavailableView {
-                        Label("加载失败", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(errorMessage)
-                    } actions: {
-                        Button("重试") {
-                            Task { await load() }
-                        }
+                    // 统一走共享的加载失败占位（图标/文案/重试按钮与其余页面一致）
+                    LoadErrorView(message: errorMessage) {
+                        await load()
                     }
-                    .frame(maxWidth: 980)
-                    .frame(maxWidth: .infinity)
+                    .contentWidth()
                     .padding(24)
                 }
             } else if let view = detail?.view {
@@ -212,6 +208,8 @@ struct VideoDetailView: View {
             }
             return
         }
+        guard !isDetailLoadInFlight else { return }
+        isDetailLoadInFlight = true
         isLoading = true
         errorMessage = nil
         do {
@@ -242,11 +240,13 @@ struct VideoDetailView: View {
             _ = await (commentsTask, playerTask)
             await loadDanmaku(cid: activePageCid)
             await loadTags(aid: data.view.aid, bvid: data.view.bvid)
+            isDetailLoadInFlight = false
             return
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+        isDetailLoadInFlight = false
     }
 
     /// iPad 两栏布局的最小宽度。低于它就说明是「竖屏窄 iPad、分屏、Stage Manager 小窗」——
@@ -297,16 +297,14 @@ struct VideoDetailView: View {
 
                         Spacer(minLength: 40)
                     }
-                    .frame(maxWidth: 980)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentWidth(alignment: .leading)
                     .padding(.bottom, 24)
                 }
             } else {
                 VStack(spacing: 0) {
                     // 视频固定在页面顶部：滚动时保持原位完整可见，下方内容独立滑动
                     playerSection
-                        .frame(maxWidth: 980)
-                        .frame(maxWidth: .infinity)
+                        .contentWidth()
                         .padding(.horizontal, horizontalPadding)
                         .padding(.top, 24)
 
@@ -325,8 +323,7 @@ struct VideoDetailView: View {
 
                             Spacer(minLength: 40)
                         }
-                        .frame(maxWidth: 980)
-                        .frame(maxWidth: .infinity)
+                        .contentWidth()
                         .padding(.horizontal, horizontalPadding)
                         .padding(.bottom, 24)
                     }
@@ -532,28 +529,14 @@ struct VideoDetailView: View {
             switch player.state {
             case .idle, .loading:
                 Rectangle().fill(.black)
-                VStack(spacing: 10) {
-                    ProgressView()
-                    Text("正在加载播放地址…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                PlayerPlaceholderView(content: .loading("正在加载播放地址…"))
             case .failed:
                 Rectangle().fill(.black)
-                VStack(spacing: 10) {
-                    Image(systemName: "play.slash")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("播放失败").font(.headline)
-                    Text(player.errorMessage ?? "未知错误")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button("重试") {
-                        Task { await retryPlayer() }
-                    }
-                }
-                .padding()
+                PlayerPlaceholderView(content: .failed(icon: "play.slash",
+                                                       title: "播放失败",
+                                                       detail: player.errorMessage ?? "未知错误") {
+                    await retryPlayer()
+                })
             case .ready:
                 if isPlayingInline, let avPlayer = player.player {
                     // 默认形态：播放组件就是页面里的普通视图
@@ -636,6 +619,34 @@ struct VideoDetailView: View {
                         // 一个设置小卡片被拉成整屏很突兀；显式要求紧凑宽度下仍按 popover 呈现。
                         .presentationCompactAdaptation(.popover)
                 }
+
+                #if os(iOS)
+                // iOS 的画面用系统 AVPlayerViewController 控制栏，里面**没有**倍速入口
+                // （macOS 自绘控制栏有）。这里在页内这一行补一个，两端能力对齐。
+                Menu {
+                    ForEach(PlayerController.speedOptions, id: \.self) { option in
+                        Button {
+                            player.setSpeed(option)
+                        } label: {
+                            if abs(player.speed - option) < 0.01 {
+                                Label(PlayerController.speedText(option), systemImage: "checkmark")
+                            } else {
+                                Text(PlayerController.speedText(option))
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "gauge.with.needle")
+                        Text(PlayerController.speedText(player.speed))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .fixedSize()
+                .menuStyle(.borderlessButton)
+                .help("播放倍速")
+                #endif
 
                 #if os(macOS)
                 Button {
@@ -1182,10 +1193,20 @@ struct VideoDetailView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
             } else if let commentError, comments.isEmpty {
-                Text(commentError)
-                    .font(.callout)
+                // 与动态页/回复列表一致：错误文案 + 可点重试（原先只有一行字，没有任何补救入口）
+                VStack(spacing: 6) {
+                    Text(commentError)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Button("点击重试") {
+                        Task { await loadComments(aid: view.aid) }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
             } else if comments.isEmpty {
                 Text("暂无评论")
                     .font(.callout)
@@ -1227,8 +1248,7 @@ struct VideoDetailView: View {
         isLoadingComments = true
         do {
             let data = try await CommentService().videoComments(aid: aid, page: commentPage + 1)
-            let seen = Set(comments.map(\.id))
-            comments.append(contentsOf: data.replies.filter { !seen.contains($0.id) })
+            comments.appendUnique(data.replies)
             commentPage += 1
             hasMoreComments = !data.replies.isEmpty
         } catch {
@@ -1248,10 +1268,15 @@ struct VideoDetailView: View {
     }
 
     /// 创建分离窗口并把同一个播放组件搬进去（窗口正好盖住页面里的画面位置）。
+    ///
+    /// 只有 macOS 会真的走到这里：「分离窗口」在 iOS 没有对应概念
+    /// （`PlayerWindowController.present` 是空实现，调用点也全在 `#if os(macOS)` 里），
+    /// 所以拿不到播放区位置时的兜底 frame 只按主窗口算，iOS 侧不需要第二份分支。
     private func presentPlaybackWindow() {
         bindSystemPlayer()
         var frame = playerArea.frame
         if frame.width < 40 || frame.height < 40 {
+            // 拿不到播放区位置（还没布局完 / 窗口刚建）就退回主窗口整块
             #if os(macOS)
             frame = AppDelegate.mainWindow()?.frame
                 ?? CGRect(x: 240, y: 240, width: 640, height: 360)
@@ -1286,7 +1311,6 @@ struct VideoDetailView: View {
         player.pauseForNavigation()
     }
 
-    /// 回到本页：接着暂停的位置继续，并把弹幕补回来。
     /// 回到本页：画面停在离开时的位置（**保持暂停**，不自动续播），把弹幕补回来。
     private func restoreAfterReturn() {
         // 页面被销毁重建时 `detail` 是空的，`load()` 会自己把弹幕拉回来；
@@ -1345,7 +1369,9 @@ struct VideoDetailView: View {
 
     private func retryPlayer() async {
         guard let view = detail?.view else { return }
-        await player.retry(aid: view.aid, bvid: view.bvid, cid: view.cid)
+        // 用 activePageCid 而不是 view.cid：用户切过分 P 后两者不同，
+        // 用 view.cid 会让「重试」跳回第一个分 P（与 load()/selectPart 不一致）。
+        await player.retry(aid: view.aid, bvid: view.bvid, cid: activePageCid)
     }
 
     private func loadTags(aid: Int, bvid: String) async {

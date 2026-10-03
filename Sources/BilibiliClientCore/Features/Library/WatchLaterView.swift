@@ -8,7 +8,6 @@ struct WatchLaterView: View {
     @EnvironmentObject private var session: SessionStore
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var items: [ToViewItem] = []
-    @State private var totalCount = 0
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var hasLoaded = false
@@ -36,11 +35,25 @@ struct WatchLaterView: View {
                     }
                     .disabled(usableItems.isEmpty)
                 }
+                ToolbarItem {
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新")
+                }
             }
         }
         .sheet(isPresented: $showLogin) { LoginView() }
-        // 扫码登录后重新拉取（原因见 `FavoritesView` 同名处）
-        .task(id: session.loggedIn) { await loadIfNeeded() }
+        // 扫码登录走 sheet、不让本页 disappear，裸 `.task` 不会重跑：
+        // 用登录状态作 id，登录成功后自动补一次拉取（收藏/历史/动态页同款）。
+        .task(id: session.loggedIn) {
+            // 登出时清掉「已尝试过」标记：换号再登录要重新拉一次，
+            // 否则 `loadIfNeeded` 的 `!hasLoaded` 守卫会把请求挡死、列表停在上一个账号的数据上。
+            guard session.loggedIn else { hasLoaded = false; return }
+            await loadIfNeeded()
+        }
     }
 
     private var loginPrompt: some View {
@@ -60,9 +73,7 @@ struct WatchLaterView: View {
                         await load()
                     }
                 } else if usableItems.isEmpty {
-                    Text("稍后再看是空的")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    EmptyStateView(title: "稍后再看是空的", systemImage: "clock.badge.checkmark")
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
                     VideoFeedLayout(mode: displayMode) {
@@ -108,8 +119,7 @@ struct WatchLaterView: View {
                     }
                 }
             }
-            .frame(maxWidth: 980)
-            .frame(maxWidth: .infinity)
+            .contentWidth()
             .padding(20)
         }
         .feedRefreshable { await load() }
@@ -143,15 +153,15 @@ struct WatchLaterView: View {
     }
 
     private func load() async {
+        // 单飞 + 「已尝试过」即置位（与首页/直播页同一套语义）
         guard !isLoading else { return }
+        hasLoaded = true
         isLoading = true
         errorMessage = nil
         do {
             let data = try await LibraryService().watchLater()
             items = data.list
             BiliImages.prefetch(data.list.map(\.pic), variant: .card)
-            totalCount = data.count ?? items.count
-            hasLoaded = true
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -126,17 +126,3 @@ struct SponsorNoticeCard: View {
         }
     }
 }
-
-private extension Color {
-    /// `"#RRGGBB"` → Color；解析不出来返回 nil，由调用方兜底。
-    init?(hex: String) {
-        var value = hex
-        if value.hasPrefix("#") { value.removeFirst() }
-        guard value.count == 6, let rgb = UInt32(value, radix: 16) else { return nil }
-        self.init(.sRGB,
-                  red: Double((rgb >> 16) & 0xFF) / 255,
-                  green: Double((rgb >> 8) & 0xFF) / 255,
-                  blue: Double(rgb & 0xFF) / 255,
-                  opacity: 1)
-    }
-}

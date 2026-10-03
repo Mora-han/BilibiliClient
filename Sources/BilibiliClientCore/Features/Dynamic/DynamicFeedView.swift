@@ -150,8 +150,6 @@ struct DynamicFeedView: View {
                 if !items.isEmpty {
                     LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
                         await loadMore()
-                    } onRetry: {
-                        await loadMore()
                     }
                 }
             }
@@ -226,6 +224,8 @@ struct DynamicFeedView: View {
 
     private func load() async {
         guard !isLoading else { return }
+        // 「已尝试过」即置位（失败也算）：与其余信息流页同一套语义
+        hasLoaded = true
         isLoading = true
         errorMessage = nil
         loadToken += 1
@@ -238,7 +238,6 @@ struct DynamicFeedView: View {
             BiliImages.prefetchDynamic(data.items)
             offset = data.offset
             hasMore = data.hasMore ?? false
-            hasLoaded = true
         } catch {
             guard token == loadToken else { return }
             errorMessage = error.localizedDescription
@@ -259,9 +258,7 @@ struct DynamicFeedView: View {
                 isLoadingMore = false
                 return
             }
-            let seen = Set(items.map(\.id))
-            let fresh = data.items.filter { !seen.contains($0.id) }
-            items.append(contentsOf: fresh)
+            let fresh = items.appendUnique(data.items)
             self.offset = data.offset
             hasMore = (data.hasMore ?? false) && !fresh.isEmpty
         } catch {

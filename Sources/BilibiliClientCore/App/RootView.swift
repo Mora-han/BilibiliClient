@@ -416,6 +416,8 @@ public struct RootView: View {
         .popover(isPresented: $showAccountPanel, arrowEdge: .bottom) {
             AccountPanelView(showLogin: $showLogin)
                 .environmentObject(session)
+                // iPhone 上 popover 默认会被拉成整屏 sheet（与播放页各弹层同一处理）
+                .presentationCompactAdaptation(.popover)
         }
     }
 
@@ -620,8 +622,6 @@ private struct TabNavStack: View {
         return NavigationStack(path: $path) {
             RootView.rootPage(for: item, query: query)
                 .biliNavDestinations(vis: tabVisibility)
-                // 旧的自定义环境值保留：老代码引用处仍在（详情页已改用 TabVisibility）
-                .environment(\.isTabVisible, isSelected)
         }
         // 详情页靠这个判断"我所在的标签还可见吗"，避免隐藏标签被全局 path 计数唤醒
         .environment(\.isTabVisible, isSelected)
@@ -637,6 +637,8 @@ private struct TabNavStack: View {
                 router.path = path
             }
         }
+        // 两个对 `isSelected` 的响应合并成一处（原先挂了两个 onChange，读起来像遗漏）：
+        // ① 分区切走清栈；② 切回时重建详情页并镜像路径。
         .onChange(of: isSelected) { _, nowSelected in
             AppLog.app.debug("[TAB] \(item.rawValue) selected=\(nowSelected) path=\(path.count)")
             tabVisibility.isVisible = nowSelected
@@ -645,11 +647,9 @@ private struct TabNavStack: View {
             if !nowSelected, item == .zones, !path.isEmpty {
                 path = NavigationPath()
             }
-        }
-        // 切回本标签时把全局路径镜像成本栈自己的路径：`router.path` 在切走期间
-        // 可能已被别的标签改写，不镜像的话下一次程序化导航（菜单栏、搜索…）
-        // 会把上一个标签的旧栈垫在这一页底下。
-        .onChange(of: isSelected) { _, nowSelected in
+            // 切回本标签时把全局路径镜像成本栈自己的路径：`router.path` 在切走期间
+            // 可能已被别的标签改写，不镜像的话下一次程序化导航（搜索、评论里点视频、
+            // 菜单栏卡片…）会把上一个标签的旧栈垫在这一页底下。
             if nowSelected, path.count > 0 {
                 // 实测：切走时 push 出来的详情页会被移出层级（onDisappear 触发），
                 // 但栈的 path 状态仍是 1；切回后 NavigationStack 却不再按 path 重建

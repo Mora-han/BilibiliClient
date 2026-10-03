@@ -62,17 +62,17 @@ struct RecommendView: View {
                             }
                         }
                     }
+
+                    // 翻页脚与列表同处一个带 padding 的容器里（与热门/直播等页一致，
+                    // 原先它挂在 padding 之外，左右留白比别的页少一截）
+                    if !items.isEmpty {
+                        LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
+                            await loadMore()
+                        }
+                    }
                 }
             }
             .padding(20)
-
-            if !items.isEmpty {
-                LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
-                    await loadMore()
-                } onRetry: {
-                    await loadMore()
-                }
-            }
         }
         .navigationTitle("推荐")
         .autoLoadMore { await loadMore() }
@@ -130,9 +130,7 @@ struct RecommendView: View {
         loadMoreFailed = false
         do {
             let newItems = try await FeedService().recommend(page: page + 1)
-            let seen = Set(items.map(\.id))
-            let fresh = newItems.filter { !seen.contains($0.id) }
-            items.append(contentsOf: fresh)
+            let fresh = items.appendUnique(newItems)
             page += 1
             // 本页没有新增内容（接口翻页返回重复或空）时停止自动加载，避免无限转圈
             hasMore = !fresh.isEmpty

@@ -31,6 +31,9 @@ struct PlayerBarConfig {
     var onSkip: @MainActor (Double) -> Void = { _ in }
     var onToggleDanmaku: @MainActor () -> Void = {}
     var onSelectQuality: @MainActor (PlayerController.Quality) -> Void = { _ in }
+    /// 倍速变化回传宿主：把权威值同步进 `PlayerController`（iOS 页面工具行读它），
+    /// 否则控制栏显示 1.5×、页面行还停在 1×。
+    var onSetSpeed: @MainActor (Float) -> Void = { _ in }
 }
 
 // MARK: - 状态中枢
@@ -60,7 +63,6 @@ final class PlayerBarModel: ObservableObject {
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
     @Published private(set) var isPlaying = false
-    @Published private(set) var isBuffering = false
     @Published private(set) var isFullscreen = false
     @Published private(set) var speed: Float = 1
 
@@ -71,7 +73,6 @@ final class PlayerBarModel: ObservableObject {
     /// 弹幕设置弹层打开中：控制栏不自动收起
     @Published private(set) var isPanelOpen = false
 
-    static let speedOptions: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2]
     /// 鼠标不动多久后收起控制栏（播放中才收）
     private static let hideDelay: Duration = .seconds(2.5)
 
@@ -97,14 +98,6 @@ final class PlayerBarModel: ObservableObject {
         startTicking()
         refresh()
         pokeActivity()
-    }
-
-    func detach() {
-        player = nil
-        tickTimer?.invalidate()
-        tickTimer = nil
-        hideTask?.cancel()
-        hideTask = nil
     }
 
     /// 宿主每次 SwiftUI 更新时推入的配置
@@ -155,7 +148,6 @@ final class PlayerBarModel: ObservableObject {
             duration = (total.isFinite && total > 0) ? total : 0
         }
         isPlaying = player.timeControlStatus == .playing
-        isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
         if !isPlaying, !isScrubbing {
             // 暂停时控制栏常驻，避免找不到播放键
             isBarVisible = true
@@ -241,6 +233,9 @@ final class PlayerBarModel: ObservableObject {
 
     func setSpeed(_ newSpeed: Float) {
         speed = newSpeed
+        // 同步进 PlayerController 的权威值（iOS 页面工具行读它），
+        // 两端各自持一份会导致「控制栏显示 1.5×、页面行显示 1×」。
+        config.onSetSpeed(newSpeed)
         if let player {
             player.defaultRate = newSpeed
             if player.timeControlStatus == .playing {
@@ -444,7 +439,7 @@ struct PlayerControlBar: View {
     /// 独立的倍速调节按钮：点开倍速菜单，按钮上直接显示当前倍速
     private var speedButton: some View {
         Menu {
-            ForEach(PlayerBarModel.speedOptions, id: \.self) { option in
+            ForEach(PlayerController.speedOptions, id: \.self) { option in
                 Button {
                     model.setSpeed(option)
                 } label: {
@@ -473,7 +468,7 @@ struct PlayerControlBar: View {
     }
 
     private func speedText(_ value: Float) -> String {
-        String(format: "%g×", value)
+        PlayerController.speedText(value)
     }
 
     // MARK: 画质
@@ -573,20 +568,6 @@ private struct SponsorMarkerStrip: View {
     private func fraction(_ marker: SponsorMarker) -> Double {
         guard duration > 0 else { return 0 }
         return min(max((marker.end - marker.start) / duration, 0), 1)
-    }
-}
-
-private extension Color {
-    /// `"#RRGGBB"` → Color；解析不出来返回 nil，由调用方兜底。
-    init?(hex: String) {
-        var value = hex
-        if value.hasPrefix("#") { value.removeFirst() }
-        guard value.count == 6, let rgb = UInt32(value, radix: 16) else { return nil }
-        self.init(.sRGB,
-                  red: Double((rgb >> 16) & 0xFF) / 255,
-                  green: Double((rgb >> 8) & 0xFF) / 255,
-                  blue: Double(rgb & 0xFF) / 255,
-                  opacity: 1)
     }
 }
 

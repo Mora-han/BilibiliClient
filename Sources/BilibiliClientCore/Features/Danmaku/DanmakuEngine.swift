@@ -129,22 +129,6 @@ final class BilibiliDanmakuModel: DanmakuCellModel {
                                 color: item.color, scale: renderScale)
     }
 
-    /// 把这条弹幕栅格化成位图（后台预热用）
-    func renderImage() -> CGImage? {
-        let width = Int(ceil(size.width * renderScale))
-        let height = Int(ceil(size.height * renderScale))
-        guard width > 0, height > 0,
-              let context = CGContext(data: nil, width: width, height: height,
-                                      bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            return nil
-        }
-        context.scaleBy(x: renderScale, y: renderScale)
-        draw(in: context)
-        return context.makeImage()
-    }
-
     private static func color(from raw: UInt32) -> PlatformColor {
         .srgb(CGFloat((raw >> 16) & 0xFF) / 255,
               CGFloat((raw >> 8) & 0xFF) / 255,

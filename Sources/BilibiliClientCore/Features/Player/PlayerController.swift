@@ -21,6 +21,29 @@ final class PlayerController: ObservableObject {
     @Published var currentQualityId: Int?
     /// 视频在线人数展示文本（如 "9.4万+"），随播放加载拉取
     @Published var onlineText: String?
+    /// 当前播放倍速。
+    ///
+    /// macOS 的自绘控制栏里有倍速按钮（`PlayerBarModel.speed`），iOS 用系统控件、
+    /// AVPlayerViewController **没有**倍速入口 —— 这里存一份权威值，两端共用
+    /// `speedOptions`，切清晰度/换视频重建 AVPlayer 时一并套回去。
+    @Published private(set) var speed: Float = 1
+
+    /// 可选倍速档位与文案（macOS 控制栏与 iOS 页面工具行共用，避免两处各写一份）。
+    static let speedOptions: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+    static func speedText(_ value: Float) -> String {
+        String(format: "%g×", value)
+    }
+
+    /// 切换倍速：立即生效，并写进 `defaultRate` 让播放器自己的续播/恢复也用这个速度。
+    func setSpeed(_ newSpeed: Float) {
+        speed = newSpeed
+        guard let player else { return }
+        player.defaultRate = newSpeed
+        if player.timeControlStatus == .playing {
+            player.rate = newSpeed
+        }
+    }
 
     enum LoadState {
         case idle
@@ -274,6 +297,7 @@ final class PlayerController: ObservableObject {
             let asset = AVURLAsset(url: url, options: httpAssetOptions())
             player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
             player?.automaticallyWaitsToMinimizeStalling = true
+            player?.defaultRate = speed
             player?.play()
             startPlaybackMonitoring()
             state = .ready
@@ -310,6 +334,7 @@ final class PlayerController: ObservableObject {
             let url = try await proxy.start(video: videoMedia, audio: audioMedia)
             player = AVPlayer(url: url)
             player?.automaticallyWaitsToMinimizeStalling = true
+            player?.defaultRate = speed
             player?.play()
             startPlaybackMonitoring()
             startReportLoop()
@@ -604,6 +629,7 @@ final class PlayerController: ObservableObject {
             let streamURL = try await proxy.startProgressive(baseURL: url)
             player = AVPlayer(url: streamURL)
             player?.automaticallyWaitsToMinimizeStalling = true
+            player?.defaultRate = speed
             player?.play()
             startPlaybackMonitoring()
             return true

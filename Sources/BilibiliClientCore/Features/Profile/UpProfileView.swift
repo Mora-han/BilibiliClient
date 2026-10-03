@@ -5,6 +5,9 @@ struct UpProfileView: View {
     let mid: Int
 
     @EnvironmentObject private var session: SessionStore
+    /// 所在标签是否可见（见 `\.isTabVisible`）：隐藏页不声明工具栏条目，
+    /// 否则 keep-alive 下会合并进当前窗口（多出刷新按钮）。
+    @Environment(\.isTabVisible) private var isTabVisible
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var card: UpCardData.Card?
     @State private var order: UpOrder = .pubdate
@@ -15,6 +18,12 @@ struct UpProfileView: View {
     @State private var isLoadingInfo = true
     @State private var isLoadingVideos = true
     @State private var isLoadingMore = false
+    /// `load()`（info + videos 两连发）是否在途：单飞用它判断，
+    /// **不能**借用 `isLoadingInfo` —— 它的初值是 true（用来首屏出骨架），
+    /// v1.9.12 曾拿它当守卫，结果 `.task` 首次调用就被挡死，页面永远停在骨架屏。
+    @State private var isLoadInFlight = false
+    /// 「已尝试过」：进过页就置位（失败也不再自动重拉），下拉刷新与手动重试不受影响。
+    @State private var hasLoaded = false
     /// 上一次翻页是否失败（失败时底部显示可点重试行）
     @State private var loadMoreFailed = false
     @State private var infoError: String?
@@ -47,9 +56,20 @@ struct UpProfileView: View {
                 headerArea
                 videoSection
             }
-            .frame(maxWidth: 980)
-            .frame(maxWidth: .infinity)
+            .contentWidth()
             .padding(24)
+        }
+        .toolbar {
+            if isTabVisible {
+                ToolbarItem {
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新")
+                }
+            }
         }
         .navigationTitle(card?.name ?? "UP主页")
         .autoLoadMore { await loadMore() }
@@ -57,7 +77,11 @@ struct UpProfileView: View {
         .sheet(isPresented: $showLogin) {
             LoginView()
         }
-        .task { await load() }
+        .task {
+            // 「已尝试过」即不再自动重拉：切走再回来不重新请求（下拉刷新仍可用）
+            guard !hasLoaded else { return }
+            await load()
+        }
     }
 
     @ViewBuilder
@@ -76,17 +100,15 @@ struct UpProfileView: View {
 
     @ViewBuilder
     private var videoSection: some View {
-        if isLoadingVideos {
+        if isLoadingVideos && usableVideos.isEmpty {
             VideoFeedSkeleton(mode: displayMode)
         } else if let videoError, usableVideos.isEmpty {
             LoadErrorView(message: videoError) {
                 await loadVideos()
             }
         } else if usableVideos.isEmpty {
-            Text("还没有投稿视频")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 120)
+            EmptyStateView(title: "还没有投稿视频", systemImage: "video")
+                .frame(maxWidth: .infinity, minHeight: 160)
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -151,8 +173,6 @@ struct UpProfileView: View {
 
                 if !usableVideos.isEmpty {
                     LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
-                        await loadMore()
-                    } onRetry: {
                         await loadMore()
                     }
                 }
@@ -242,9 +262,12 @@ struct UpProfileView: View {
 
     private func load() async {
         // 单飞：刷新手势与 .task 撞车时只跑一轮
-        guard !isLoadingInfo, !isLoadingMore else { return }
+        guard !isLoadInFlight else { return }
+        isLoadInFlight = true
+        hasLoaded = true
         await loadInfo()
         await loadVideos()
+        isLoadInFlight = false
     }
 
     private func loadInfo() async {
@@ -269,6 +292,7 @@ struct UpProfileView: View {
         do {
             let data = try await UpService().videos(mid: mid, page: 1, order: order.apiValue)
             videos = data.archives
+            BiliImages.prefetch(data.archives.compactMap(\.pic), variant: .card)
             page = 1
             hasMore = !videos.isEmpty
         } catch {
@@ -283,9 +307,7 @@ struct UpProfileView: View {
         loadMoreFailed = false
         do {
             let data = try await UpService().videos(mid: mid, page: page + 1, order: order.apiValue)
-            let seen = Set(videos.map(\.id))
-            let fresh = data.archives.filter { !seen.contains($0.id) }
-            videos.append(contentsOf: fresh)
+            let fresh = videos.appendUnique(data.archives)
             page += 1
             hasMore = !fresh.isEmpty
         } catch {

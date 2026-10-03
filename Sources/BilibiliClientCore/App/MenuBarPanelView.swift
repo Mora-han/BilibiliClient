@@ -108,21 +108,14 @@ public struct MenuBarPanelView: View {
                 MenuBarRowSkeleton()
             }
         } else if let errorMessage, items.isEmpty {
-            VStack(spacing: 10) {
-                Text(errorMessage)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button("重试") {
-                    Task { await load(force: true) }
-                }
+            // 统一走共享的加载失败占位（原先面板里手写了一份，图标/重试样式与别处不同）
+            LoadErrorView(message: errorMessage) {
+                await load(force: true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding()
         } else if items.isEmpty {
-            Text(session.loggedIn ? "暂无动态" : "登录后查看关注动态")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            EmptyStateView(title: session.loggedIn ? "暂无动态" : "登录后查看关注动态",
+                           systemImage: "sparkles")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
@@ -139,8 +132,6 @@ public struct MenuBarPanelView: View {
 
                     if !items.isEmpty {
                         LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
-                            await loadMore()
-                        } onRetry: {
                             await loadMore()
                         }
                     }
@@ -159,6 +150,8 @@ public struct MenuBarPanelView: View {
             offset = nil
             hasMore = true
         }
+        // 「已尝试过」即置位（失败也算）：与其余信息流页同一套语义
+        hasLoaded = true
         isLoading = true
         errorMessage = nil
         do {
@@ -166,7 +159,8 @@ public struct MenuBarPanelView: View {
             items = data.items
             offset = data.offset
             hasMore = data.hasMore ?? false
-            hasLoaded = true
+            // 与主界面动态页同一处理：头像与配图先预热，面板打开即出图
+            BiliImages.prefetchDynamic(data.items)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -179,9 +173,7 @@ public struct MenuBarPanelView: View {
         loadMoreFailed = false
         do {
             let data = try await DynamicService().feed(offset: offset)
-            let seen = Set(items.map(\.id))
-            let fresh = data.items.filter { !seen.contains($0.id) }
-            items.append(contentsOf: fresh)
+            let fresh = items.appendUnique(data.items)
             self.offset = data.offset
             hasMore = (data.hasMore ?? false) && !fresh.isEmpty
         } catch {

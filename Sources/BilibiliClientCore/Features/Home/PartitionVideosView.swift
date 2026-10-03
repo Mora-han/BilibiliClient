@@ -4,6 +4,9 @@ import SwiftUI
 struct PartitionVideosView: View {
     let zone: BiliZone
 
+    /// 所在标签是否可见（见 `\.isTabVisible`）：隐藏页不声明工具栏条目，
+    /// 否则 keep-alive 下会合并进当前窗口（多出刷新按钮）。
+    @Environment(\.isTabVisible) private var isTabVisible
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var videos: [PopularVideo] = []
     @State private var isLoading = false
@@ -17,16 +20,16 @@ struct PartitionVideosView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if isLoading {
+                // 与其余列表页同一套判据：只有「正在加载/出错且手上没内容」才换掉列表，
+                // 否则下拉刷新会把已有内容整页吃掉、刷新失败还会覆盖成错误页。
+                if isLoading && videos.isEmpty {
                     VideoFeedSkeleton(mode: displayMode)
-                } else if let errorMessage {
+                } else if let errorMessage, videos.isEmpty {
                     LoadErrorView(message: errorMessage) {
                         await load()
                     }
                 } else if usableVideos.isEmpty {
-                    Text("该分区暂无排行数据")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    EmptyStateView(title: "该分区暂无排行数据", systemImage: "chart.bar")
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
                     VideoFeedLayout(mode: displayMode) {
@@ -63,6 +66,18 @@ struct PartitionVideosView: View {
                 }
             }
             .padding(20)
+        }
+        .toolbar {
+            if isTabVisible {
+                ToolbarItem {
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新")
+                }
+            }
         }
         .navigationTitle("\(zone.name) 排行榜")
         .feedRefreshable { await load() }

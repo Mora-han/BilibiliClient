@@ -2,6 +2,9 @@ import SwiftUI
 
 /// 热门页：按排行顺序的卡片流，封面右上角标记序号
 struct PopularView: View {
+    /// 所在标签是否可见（见 `\.isTabVisible`）：隐藏页不声明工具栏条目，
+    /// 否则 keep-alive 下会合并进当前窗口（多出刷新按钮）。
+    @Environment(\.isTabVisible) private var isTabVisible
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var videos: [PopularVideo] = []
     @State private var page = 0
@@ -58,8 +61,6 @@ struct PopularView: View {
                     if !usableVideos.isEmpty {
                         LoadMoreFooter(isBusy: isLoadingMore, hasMore: hasMore, failed: loadMoreFailed) {
                             await loadMore()
-                        } onRetry: {
-                            await loadMore()
                         }
                     }
                 }
@@ -69,6 +70,18 @@ struct PopularView: View {
         .navigationTitle("热门")
         .autoLoadMore { await loadMore() }
         .feedRefreshable { await load() }
+        .toolbar {
+            if isTabVisible {
+                ToolbarItem {
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新")
+                }
+            }
+        }
         .overlay {
             if !isLoading, let errorMessage, videos.isEmpty {
                 LoadErrorView(message: errorMessage) {
@@ -106,9 +119,7 @@ struct PopularView: View {
         loadMoreFailed = false
         do {
             let data = try await HomeService().popular(page: page + 1, pageSize: 20)
-            let seen = Set(videos.map(\.id))
-            let fresh = data.list.filter { !seen.contains($0.id) }
-            videos.append(contentsOf: fresh)
+            let fresh = videos.appendUnique(data.list)
             page += 1
             hasMore = !(data.noMore ?? false) && !fresh.isEmpty
         } catch {

@@ -152,9 +152,4 @@ final class DownloadController: ObservableObject {
         }
         #endif
     }
-
-    /// 产物所在目录，用于「打开下载目录」。
-    var resultDirectory: URL? {
-        result?.fileURL.deletingLastPathComponent()
-    }
 }
