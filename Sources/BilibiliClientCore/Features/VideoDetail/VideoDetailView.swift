@@ -45,8 +45,6 @@ struct VideoDetailView: View {
     @State private var watchLaterAdded = false
     @State private var favoriteFolders: [FavFolder] = []
     @State private var showFavoritePicker = false
-    @State private var shareMessage: String?
-    @State private var showCoinMenu = false
     @State private var showDanmakuSettings = false
     @State private var isFollowing = false
     @State private var relationLoaded = false
@@ -182,9 +180,6 @@ struct VideoDetailView: View {
                 showFavoritePicker = false
             }
         }
-        .alert("提示", isPresented: Binding(get: { shareMessage != nil }, set: { if !$0 { shareMessage = nil } })) {
-            Button("好", role: .cancel) {}
-        } message: { Text(shareMessage ?? "") }
         .alert("操作失败", isPresented: Binding(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -836,9 +831,20 @@ struct VideoDetailView: View {
                 }
             }
 
-            Button {
-                guard !coined else { return }
-                showCoinMenu = true
+            // 与画质入口同一套：原生 Menu，只在按钮旁弹出一张小菜单。
+            // confirmationDialog 在 iPhone 上是整屏底部弹出的，与「按钮旁小卡片」不符。
+            // 已投币时整个菜单禁用（等价于原先 Button 里的 guard）。
+            Menu {
+                Button {
+                    Task { await coin(multiply: 1) }
+                } label: {
+                    Label("投 1 枚硬币", systemImage: "dollarsign.circle")
+                }
+                Button {
+                    Task { await coin(multiply: 2) }
+                } label: {
+                    Label("投 2 枚硬币", systemImage: "dollarsign.circle.fill")
+                }
             } label: {
                 VStack(spacing: 3) {
                     Image(systemName: coined ? "dollarsign.circle.fill" : "dollarsign.circle")
@@ -849,14 +855,9 @@ struct VideoDetailView: View {
                 // 手机上把整块 44pt 的行高都纳入点击范围，避免点空白处没反应
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            // 两个互斥选项，正是系统动作单的形状：iPhone 底部弹出、macOS 侧弹，
-            // 键盘与 VoiceOver 都由系统接管（原先自绘一张 190pt 宽的卡）。
-            .confirmationDialog("投币", isPresented: $showCoinMenu, titleVisibility: .hidden) {
-                Button("投 1 枚硬币") { Task { await coin(multiply: 1) } }
-                Button("投 2 枚硬币") { Task { await coin(multiply: 2) } }
-                Button("取消", role: .cancel) {}
-            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(coined)
             .hoverScale(scale: 1.06)
 
             Button {
@@ -873,36 +874,23 @@ struct VideoDetailView: View {
             .buttonStyle(.plain)
             .hoverScale(scale: 1.06)
 
-            // 原生 Menu 承载三个动作（系统分享 / 复制链接 / 浏览器打开）。
-            // ShareLink 放在 Menu 里由系统渲染成一条菜单项，点击仍唤起完整分享面板。
-            Menu {
-                if let shareURL {
-                    ShareLink(item: shareURL) {
-                        Label("分享…", systemImage: "square.and.arrow.up")
+            // 按钮本体就是 ShareLink：点一下直接在按钮旁弹出系统分享面板。
+            //
+            // 不能把 ShareLink 包进 Menu——菜单关闭后分享面板失去锚点，
+            // 会改从窗口顶部弹出（上一版的 bug）。
+            if let shareURL {
+                ShareLink(item: shareURL) {
+                    VStack(spacing: 3) {
+                        Image(systemName: "arrowshape.turn.up.right")
+                        Text("分享")
+                            .font(.caption2)
                     }
+                    .foregroundStyle(.primary)
+                    .contentShape(Rectangle())
                 }
-                Button {
-                    Task { await copyLink() }
-                } label: {
-                    Label("复制链接", systemImage: "doc.on.doc")
-                }
-                Button {
-                    openInBrowser()
-                } label: {
-                    Label("在浏览器打开", systemImage: "safari")
-                }
-            } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: "arrowshape.turn.up.right")
-                    Text("分享")
-                        .font(.caption2)
-                }
-                .foregroundStyle(.primary)
-                .contentShape(Rectangle())
+                .hoverScale(scale: 1.06)
+                .help("分享这个视频")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .hoverScale(scale: 1.06)
 
             Button { Task { await addToWatchLater() } } label: {
                 VStack(spacing: 3) {
@@ -1092,25 +1080,13 @@ struct VideoDetailView: View {
         return true
     }
 
-    private func copyLink() async {
-        guard let bvid = detail?.view.bvid else { return }
-        let link = detail?.view.shortLinkV2 ?? "https://www.bilibili.com/video/\(bvid)"
-        AppPlatform.copyToPasteboard(link)
-        shareMessage = "已将视频链接复制到剪贴板"
-    }
-
     private func follow(mid: Int) async {
         guard requireLogin() else { return }
         do { try await RelationService().modify(fid: mid, follow: true); isFollowing = true }
         catch { actionError = error.localizedDescription }
     }
 
-    private func openInBrowser() {
-        guard let url = shareURL else { return }
-        AppPlatform.openExternally(url)
-    }
-
-    /// 本视频的网页地址（分享与「在浏览器打开」共用）。
+    /// 本视频的网页地址（分享用）。
     private var shareURL: URL? {
         guard let bvid = detail?.view.bvid else { return nil }
         return URL(string: "https://www.bilibili.com/video/\(bvid)")

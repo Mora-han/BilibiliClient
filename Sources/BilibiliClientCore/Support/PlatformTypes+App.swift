@@ -63,16 +63,6 @@ public enum AppPlatform {
         #endif
     }
 
-    /// 复制文本到系统剪贴板。
-    public static func copyToPasteboard(_ string: String) {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(string, forType: .string)
-        #else
-        UIPasteboard.general.string = string
-        #endif
-    }
-
     /// 悬停时把鼠标光标换成手型。iOS 没有光标概念（iPad 接触控板时也不换），直接无操作。
     public static func setPointingHandCursor(_ hovering: Bool) {
         #if os(macOS)

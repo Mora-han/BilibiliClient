@@ -105,7 +105,11 @@ struct DownloadActionItem: View {
             }
         }
         .padding(6)
-        .frame(width: 330)
+        // 宽度只封顶、不锁死：popover 会先按可用空间提议宽度，锁死 330 会让卡片
+        // 在窄空间里（iPhone 上按钮靠右、或窗口较窄）撑破提议值，系统按提议宽度
+        // 裁剪 —— 表现就是「卡片左右两侧的内容被切掉」。用 maxWidth 之后卡片会
+        // 主动收缩到提议宽度内，空间够时仍回到 330。
+        .frame(maxWidth: 330)
     }
 
     private var title: String {
