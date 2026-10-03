@@ -70,6 +70,10 @@ public struct RootView: View {
     @State private var suggestTask: Task<Void, Never>?
     /// 搜索框的回车监视器：`.searchable` 的 onSubmit 在本机收不到，见安装处的说明。
     @State private var searchKeyMonitor: NSEventMonitor?
+    /// 打开系统设置场景的官方动作（与菜单项「设置…」同一目标）。
+    /// ⌘, 的菜单 keyEquivalent 在本机不分发（键事件能到 App、但菜单动作不触发，
+    /// 实测过），由键盘监视器直接调用它兜底，行为与点菜单完全一致。
+    @Environment(\.openSettings) private var openSettings
     #endif
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -190,28 +194,33 @@ public struct RootView: View {
     /// 未选中的只藏不删：没手动刷新前内容一直保留，连推入的详情页栈也留着。
     private var detailStack: some View {
         ZStack {
-            ForEach(visiblePages, id: \.id) { item in
+            ForEach(keepAlivePages, id: \.id) { item in
                 let isSelected = selection == item
                 TabNavStack(item: item, query: submittedQuery, isSelected: isSelected)
                     .opacity(isSelected ? 1 : 0)
                     .allowsHitTesting(isSelected)
+                    // 选中页用 zIndex 盖到最上面（=「正常覆盖在当前页面之上」）。
+                    // 以前靠把选中页**插到数组最前**来实现覆盖+标题，但 ForEach 重排
+                    // 会让 NavigationStack 在多个栈同时带推送路径时丢渲染：选中态、
+                    // 标题都变了，画面和鼠标命中的还是旧页面（实测分区卡点击被推进
+                    // 了隐藏的历史栈）。zIndex 只改叠放层级、不移动视图身份，稳定。
+                    .zIndex(isSelected ? 1 : 0)
                     .accessibilityHidden(!isSelected)
             }
         }
         .onChange(of: selection) { _, new in
+            AppLog.app.debug("[SIDE] selection -> \(new?.rawValue ?? "nil") pages=\(keepAlivePages.map(\.rawValue))")
             guard let new, !visited.contains(new) else { return }
             visited.append(new)
         }
     }
 
-    /// 常驻页清单：当前选中页永远排在**最前**（即便还没进过 `visited`）。
-    /// 实测窗口标题的偏好合并是「首个子视图胜出」——选中页必须在第一位，
-    /// 标题（含推入详情页后的标题）才跟着选中页走；隐藏栈排后面且已压制工具栏。
-    private var visiblePages: [SidebarItem] {
+    /// 常驻页清单：**固定顺序**（访问顺序，仅追加不重排），绝不动已存在的身份。
+    /// 覆盖关系交给 `zIndex`（选中者置顶），窗口标题跟着实际渲染的顶层栈走。
+    private var keepAlivePages: [SidebarItem] {
         let current = selection ?? .home
         var pages = visited
-        pages.removeAll { $0 == current }
-        pages.insert(current, at: 0)
+        if !pages.contains(current) { pages.append(current) }
         return pages
     }
     #endif
@@ -252,6 +261,7 @@ public struct RootView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             SourceListSidebar(sections: sidebarSections, selection: selection) { item in
+                AppLog.app.debug("[SIDE] onSelect -> \(item.rawValue) cur=\(selection?.rawValue ?? "-")")
                 selection = item
             }
             accountBar
@@ -325,6 +335,10 @@ public struct RootView: View {
     private func installSearchKeyMonitor() {
         guard searchKeyMonitor == nil else { return }
         searchKeyMonitor = NSEventMonitor(context: .local, matching: .keyDown) { event in
+            if event.modifierFlags.contains(.command), event.characters == "," {
+                openSettings()
+                return nil
+            }
             let isReturn = event.keyCode == 36 || event.keyCode == 76
             guard isReturn, let editor = Self.searchFieldEditor() else { return event }
             // 输入法还在拼字：交给输入法去上屏
@@ -357,8 +371,8 @@ public struct RootView: View {
         [
             .init(id: "browse", title: "浏览", rows: [.home, .zones, .popular, .live, .dynamics].map(entry)),
             .init(id: "mine", title: "我的", rows: [.favorites, .history, .watchLater].map(entry)),
-            // 设置不挂分组标题：与原 List 里不带 header 的 Section 保持一致
-            .init(id: "settings", title: "", rows: [entry(.settings)]),
+            // 设置已移出侧边栏：macOS 用原生独立设置窗口（菜单「设置…」⌘, 唤起）；
+            // iOS 仍在底部 Tab / 我的页面里。
         ]
     }
 
@@ -624,7 +638,13 @@ private struct TabNavStack: View {
             }
         }
         .onChange(of: isSelected) { _, nowSelected in
+            AppLog.app.debug("[TAB] \(item.rawValue) selected=\(nowSelected) path=\(path.count)")
             tabVisibility.isVisible = nowSelected
+            // 分区页：从其他页面切走时清掉栈，下次回来落在分区首页
+            //（产品要求：不保留之前看过的具体分区页）。
+            if !nowSelected, item == .zones, !path.isEmpty {
+                path = NavigationPath()
+            }
         }
         // 切回本标签时把全局路径镜像成本栈自己的路径：`router.path` 在切走期间
         // 可能已被别的标签改写，不镜像的话下一次程序化导航（菜单栏、搜索…）
@@ -647,11 +667,13 @@ private struct TabNavStack: View {
         }
         // 外部程序化导航（搜索、评论里点视频、菜单栏卡片…）落进**当前**标签的栈。
         .onChange(of: router.path) { _, incoming in
+            AppLog.app.debug("[RPATH] \(item) sel=\(isSelected) router -> \(incoming.count) local=\(path.count)")
             guard isSelected, incoming != path else { return }
             path = incoming
         }
         // 本栈变化时回写，让 `router.path` 始终等于当前可见标签的路径。
         .onChange(of: path) { _, outgoing in
+            AppLog.app.debug("[PATH] \(item) -> \(outgoing.count) sel=\(isSelected) router=\(router.path.count)")
             guard isSelected, outgoing != router.path else { return }
             router.path = outgoing
         }

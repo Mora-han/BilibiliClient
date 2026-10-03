@@ -201,6 +201,8 @@ struct SourceListSidebar<Value: Hashable>: NSViewRepresentable {
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
+            let row = (notification.object as? NSTableView)?.selectedRow ?? -99
+            AppLog.app.debug("[SIDE] tableDidChange row=\(row) syncing=\(isSyncingSelection)")
             guard !isSyncingSelection,
                   let tableView = notification.object as? NSTableView,
                   tableView.selectedRow >= 0,

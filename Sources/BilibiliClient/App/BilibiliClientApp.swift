@@ -36,6 +36,23 @@ struct BilibiliClientApp: App {
         .commands { PlaybackCommands() }
         .commands { UpdaterCommands() }
 
+        // 原生设置场景（官方做法）：独立设置窗口由系统创建与托管——
+        // 窗口形态、菜单栏「设置…」、⌘, 快捷键、窗口状态管理全部与
+        // Finder / Safari 一致，无需自己开 NSWindow。
+        Settings {
+            SystemSettingsRoot()
+        }
+        .commands {
+            // 显式声明应用菜单的「设置…」项（官方 SettingsLink 打开上面的场景），
+            // 保证菜单项与 ⌘, 一定存在、位置符合 macOS 惯例（关于之后、退出之前）。
+            CommandGroup(replacing: .appSettings) {
+                SettingsLink {
+                    Text("设置…")
+                }
+                .keyboardShortcut(",")
+            }
+        }
+
         // 菜单栏图标（关掉主窗口后的唯一入口）：系统 MenuBarExtra 接替手写的
         // NSStatusItem + NSPopover —— 开合、点击外部收起、阴影与材质都交给系统。
         MenuBarExtra {

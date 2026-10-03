@@ -27,12 +27,6 @@ struct LiveFeedView: View {
                 if isLoading && rooms.isEmpty {
                     VideoFeedSkeleton(mode: displayMode)
                 } else {
-                    if !usableRooms.isEmpty {
-                        Text("共 \(Formatters.count(usableRooms.count)) 个直播")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
                     VideoFeedLayout(mode: displayMode) {
                         ForEach(usableRooms) { room in
                             NavigationLink(value: LiveRoute(room: room)) {

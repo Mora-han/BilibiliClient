@@ -23,12 +23,6 @@ struct PopularView: View {
                 if isLoading && videos.isEmpty {
                     VideoFeedSkeleton(mode: displayMode)
                 } else {
-                    if !usableVideos.isEmpty {
-                        Text("共 \(Formatters.count(usableVideos.count)) 个热门视频")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
                     VideoFeedLayout(mode: displayMode) {
                         ForEach(usableVideos.indices, id: \.self) { index in
                             let video = usableVideos[index]

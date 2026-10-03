@@ -65,14 +65,6 @@ struct WatchLaterView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 160)
                 } else {
-                    HStack {
-                        Text("共 \(totalCount) 个视频")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.bottom, 2)
-
                     VideoFeedLayout(mode: displayMode) {
                         ForEach(usableItems) { item in
                             EditableFeedItem(isEditing: isEditing) {
