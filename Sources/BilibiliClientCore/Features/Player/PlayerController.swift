@@ -5,6 +5,15 @@ import Foundation
 final class PlayerController: ObservableObject {
     /// 应用内同时只允许一个视频播放器工作，避免导航切换时旧页面仍有声音。
     private static weak var activeController: PlayerController?
+
+    /// 全局唯一的视频播放器。
+    ///
+    /// 播放页会被导航栈销毁重建（进新页面再返回、切标签回来时重建渲染），播放器要是
+    /// 跟着页面里的 `@StateObject` 走，就会连播放位置一起丢掉——表现就是回来时黑屏、
+    /// 从头开始拉流。做成单例后，重建出来的新页面直接接上同一个 `AVPlayer`：
+    /// 位置原地保留，重新挂上就能接着放，也省掉一次重新起播的开销。
+    static let shared = PlayerController()
+
     @Published var player: AVPlayer?
     @Published var state: LoadState = .idle
     @Published var errorMessage: String?
@@ -41,6 +50,17 @@ final class PlayerController: ObservableObject {
     private var holdActive = false
     private var rateBeforeHold: Float = 1
     private var wasPlayingBeforeHold = false
+
+    // MARK: 导航期间的暂停 / 续播
+
+    /// 「进入新页面 / 切走标签」暂停前是否正在播放：回到本页时据此决定要不要续播，
+    /// 用户自己按下的暂停不抢着播。
+    private var wasPlayingBeforePause = false
+    /// 播放页的挂载代次：每次有播放页挂上来就 +1。离开播放页时记下当时的代次，
+    /// 窗口期内代次没变才真的停（切标签那种「销毁后马上重建」会把它取消掉）。
+    private var attachGeneration = 0
+    /// 离开播放页后的延迟停止任务。
+    private var pendingDetachStop: Task<Void, Never>?
 
     // MARK: 空降助手
 
@@ -85,6 +105,56 @@ final class PlayerController: ObservableObject {
     func pauseIfPlaying() {
         guard let player, player.timeControlStatus == .playing else { return }
         player.pause()
+    }
+
+    // MARK: - 导航期间的暂停 / 续播
+
+    /// 被新页面盖住、或切到别的标签：**暂停**而不是拆掉播放器。
+    ///
+    /// 进度、缓冲都还在，回来时接着放；这也正是「进入新界面自动暂停」的手感。
+    /// 暂停状态的 `AVPlayer` 不解码、不拉流，占用可以忽略。
+    func pauseForNavigation() {
+        guard let player else { return }
+        if player.timeControlStatus == .playing {
+            wasPlayingBeforePause = true
+            player.pause()
+        }
+    }
+
+    /// 回到本页：本来在播才继续，用户自己暂停的不抢着播。
+    func resumeAfterNavigation() {
+        guard wasPlayingBeforePause, let player else { return }
+        wasPlayingBeforePause = false
+        player.play()
+    }
+
+    /// 当前是否就是这一个视频、且已经加载过（页面被重建时用来避免重新起播）。
+    func isLoaded(bvid: String, cid: Int) -> Bool {
+        loadedKey == "\(bvid):\(cid)"
+    }
+
+    /// 播放页视图挂上来（首次进入 / 被重建）：取消「离开页面」的延迟停止。
+    func attachView() {
+        attachGeneration += 1
+        pendingDetachStop?.cancel()
+        pendingDetachStop = nil
+    }
+
+    /// 用户真的离开了播放页（弹出、退出）：延迟一小会儿停掉播放器——释放资源、
+    /// 上报观看进度。
+    ///
+    /// 留这个窗口是因为「离开」和「换个页面渲染同一集」在 SwiftUI 里挨得很近：
+    /// 窗口期内有新的播放页挂上来（`attachView`）就取消这次停止。
+    /// `shouldStop` 会在真正动手前再确认一次：期间又变成「被盖住 / 切走」就不停。
+    func scheduleStopAfterDeparture(shouldStop: @escaping @MainActor () -> Bool) {
+        let generation = attachGeneration
+        pendingDetachStop?.cancel()
+        pendingDetachStop = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled, let self, self.attachGeneration == generation else { return }
+            guard shouldStop() else { return }
+            self.stop()
+        }
     }
 
     /// 进入长按 2 倍速快进（与右方向键长按一致）
@@ -132,6 +202,8 @@ final class PlayerController: ObservableObject {
             Self.activeController = self
         }
         guard loadedKey != key else { return }
+        // 换了视频：上一部片子留下的「回来接着播」标记不再适用
+        wasPlayingBeforePause = false
         loadedKey = key
         self.aid = aid
         self.bvid = bvid
@@ -160,6 +232,9 @@ final class PlayerController: ObservableObject {
     func stop() {
         reportTask?.cancel()
         reportTask = nil
+        pendingDetachStop?.cancel()
+        pendingDetachStop = nil
+        wasPlayingBeforePause = false
         if let player, bvid != "" {
             let seconds = player.currentTime().seconds
             if seconds.isFinite, seconds > 0 {

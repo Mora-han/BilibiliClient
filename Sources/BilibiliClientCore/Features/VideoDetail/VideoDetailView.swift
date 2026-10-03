@@ -8,7 +8,7 @@ struct VideoDetailView: View {
 
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var router: AppRouter
-    /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化、切走停播、切回恢复。
+    /// 本页所在的标签页是否可见：隐藏标签不响应全局 path 变化、切走暂暂停、切回恢复。
     /// 用每栈一份的 `TabVisibility`（EnvironmentObject）而不是自定义环境值——
     /// 实测环境值变化不会触发 push 页的 onChange，这个通道则一直可靠。
     @EnvironmentObject private var tabVisibility: TabVisibility
@@ -20,7 +20,8 @@ struct VideoDetailView: View {
 
     /// iPhone 横屏（垂直方向紧凑）：此时可用高度不足以同时容纳 16:9 画面与信息区。
     private var isCompactHeight: Bool { verticalSizeClass == .compact }
-    @StateObject private var player = PlayerController()
+    /// 全局唯一的播放器：页面被导航栈销毁重建时，播放位置不跟着丢（见 `PlayerController.shared`）。
+    @StateObject private var player = PlayerController.shared
     @State private var danmaku = DanmakuEngine()
     /// 按需创建的播放窗口：默认不存在，画面就播在页面里
     @StateObject private var playbackWindow = PlayerWindowController()
@@ -111,6 +112,9 @@ struct VideoDetailView: View {
         .onAppear {
             navBaseCount = router.path.count
             bindPlaybackMenu()
+            player.attachView()
+            // 页面被重建（切标签回来）时，接着刚才暂停的位置继续放
+            player.resumeAfterNavigation()
         }
         .onChange(of: danmakuEnabled) { _, newValue in
             PlaybackMenuState.shared.setDanmakuEnabled(newValue)
@@ -120,17 +124,17 @@ struct VideoDetailView: View {
         }
         .onChange(of: router.path.count) { _, newCount in
             // 隐藏标签里这一页的 `navBaseCount` 与全局计数是两回事：别的标签把深度动回
-            // 这个数时会误判成「回到本页」，于是被停止的播放器又被 `load()` 拉起来，
+            // 这个数时会误判成「回到本页」，于是被暂停的播放器又被 `load()` 拉起来，
             // 出现两个标签同时出声。不可见时一律不响应。
             guard tabVisibility.isVisible else { return }
             if newCount > navBaseCount {
-                // 被推入的新页面覆盖（如 UP 主页、评论中的 UP 等）：收起播放窗口并停止播放
-                closePlaybackWindow()
-                player.stop()
-                danmaku.reset()
+                // 被推入的新页面盖住（UP 主页、评论里的 UP…）：像「自动暂停」一样停下，
+                // 进度留着，返回时接着放
+                pausePlayback()
             } else if newCount == navBaseCount {
-                // 回到本页：恢复播放器与弹幕
+                // 回到本页：接着刚才的位置放，并把弹幕补回来
                 Task { await load() }
+                resumePlayback()
             }
         }
         .onDisappear {
@@ -143,7 +147,16 @@ struct VideoDetailView: View {
             // 全屏中与否由 AVKit 的 delegate 回调给出（见 `IOSPlayerSurface`）；
             // macOS 没有这个形态，恒为 false，行为与改动前完全一致。
             guard !PlayerPresentationState.shared.isSystemFullscreen else { return }
-            player.stop()
+            // `onDisappear` 既可能是「被新页面盖住 / 切走标签」，也可能是「真的退出
+            // 播放页」：两种情况都先原地暂停——进度留着、不再出声，也省掉重新拉流。
+            player.pauseForNavigation()
+            // 真的退出播放页（既没被新页面盖着、也没切走标签）就顺手安排停掉播放器，
+            // 释放资源并上报观看进度；切标签会销毁并重建播放页，那种情况由
+            // `attachView` 的代次把它取消掉。
+            let base = navBaseCount
+            player.scheduleStopAfterDeparture { [tabVisibility, router] in
+                tabVisibility.isVisible && router.path.count <= base
+            }
             danmaku.reset()
         }
         .onReceive(tabVisibility.$isVisible) { visible in
@@ -157,17 +170,14 @@ struct VideoDetailView: View {
             visibilityBaseline = visible
             // keep-alive 之后，标签切走时本页只是被藏起来（不销毁），收不到
             // `onDisappear` —— 必须在这里镜像它的收尾，否则切走后播放器还在出声。
-            // 反过来切回时用 `load()` 的早退分支恢复（它就是为"停掉后再进来"写的）。
             guard !PlayerPresentationState.shared.isSystemFullscreen else {
                 return
             }
             if visible {
                 Task { await load() }
+                resumePlayback()
             } else {
-                PlaybackMenuState.shared.unbind()
-                closePlaybackWindow()
-                player.stop()
-                danmaku.reset()
+                pausePlayback()
             }
         }
         .onChange(of: player.state) { _, state in
@@ -195,8 +205,10 @@ struct VideoDetailView: View {
 
     private func load() async {
         if let data = detail {
-            // 返回后再进入：恢复已停止的播放器与弹幕
-            if player.player == nil {
+            // 返回后再进入：恢复播放器与弹幕。播放器是全局单例，里面装的**可能不是
+            // 这个视频**（连着点开另一个视频时会被换掉），所以按 bvid/cid 判断，
+            // 不是同一个才重新拉流；是同一个就直接沿用（暂停位置原地保留）。
+            if player.player == nil || !player.isLoaded(bvid: data.view.bvid, cid: activePageCid) {
                 await player.load(aid: data.view.aid, bvid: data.view.bvid, cid: activePageCid)
                 await loadDanmaku(cid: activePageCid)
             }
@@ -708,7 +720,9 @@ struct VideoDetailView: View {
         }
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded {
-            player.stop()
+            // 点 UP 主是「被新页面盖住」，不是离开播放页：暂停就好（进度留着），
+            // 从 UP 主页返回时会接着刚才的位置继续放。
+            player.pauseForNavigation()
             danmaku.reset()
         })
         if !session.loggedIn || !relationLoaded {
@@ -1261,6 +1275,26 @@ struct VideoDetailView: View {
     private func closePlaybackWindow() {
         playbackWindow.onCloseRequested = nil
         playbackWindow.close()
+    }
+
+    /// 被新页面盖住 / 切走标签：像「自动暂停」一样停下来。
+    ///
+    /// 只暂停、不拆播放器——进度和缓冲都留在原地，回来接着放，也省掉重新拉流。
+    /// 暂停的 `AVPlayer` 不解码、不下载，占用可以忽略。
+    private func pausePlayback() {
+        PlaybackMenuState.shared.unbind()
+        closePlaybackWindow()
+        danmaku.reset()
+        player.pauseForNavigation()
+    }
+
+    /// 回到本页：接着暂停的位置继续，并把弹幕补回来。
+    private func resumePlayback() {
+        player.resumeAfterNavigation()
+        // 页面被销毁重建时 `detail` 是空的，`load()` 会自己把弹幕拉回来；
+        // 页面仍然活着时 `load()` 走早退分支，弹幕得在这里补。
+        guard detail != nil else { return }
+        Task { await loadDanmaku(cid: activePageCid) }
     }
 
     /// 把页面上的三个开关挂到顶部“播放”菜单：菜单点与页面点完全等价。

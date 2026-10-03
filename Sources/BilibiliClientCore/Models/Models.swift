@@ -606,17 +606,22 @@ struct SearchData: Decodable {
     let numResults: Int?
     let numPages: Int?
     let result: [SearchVideo]
+    /// 风控凭证：搜索被拦截时接口只回这个字段（没有 result），
+    /// 见 `SearchService.videos` 的说明。
+    let voucher: String?
 
     enum CodingKeys: String, CodingKey {
         case numResults = "numResults"
         case numPages = "numPages"
         case result
+        case voucher = "v_voucher"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         numResults = try container.decodeIfPresent(Int.self, forKey: .numResults)
         numPages = try container.decodeIfPresent(Int.self, forKey: .numPages)
+        voucher = try container.decodeIfPresent(String.self, forKey: .voucher)
         result = (try? container.decode([Lossy<SearchVideo>].self, forKey: .result))?
             .compactMap { $0.value } ?? []
     }

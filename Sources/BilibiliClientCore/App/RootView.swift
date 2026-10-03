@@ -64,11 +64,12 @@ public struct RootView: View {
     #if os(macOS)
     /// 已访问过的根页面（keep-alive 名单）：访问过就常驻，切走只藏不删。
     @State private var visited: [SidebarItem] = [.home]
-    /// 边打边搜的防抖任务：停顿 350ms 才真正提交搜索。
-    @State private var searchSubmitTask: Task<Void, Never>?
     /// 搜索推荐词（App Store 搜索框那种边打边出）。
     @State private var searchSuggestions: [String] = []
+    /// 推荐词的防抖任务。
     @State private var suggestTask: Task<Void, Never>?
+    /// 搜索框的回车监视器：`.searchable` 的 onSubmit 在本机收不到，见安装处的说明。
+    @State private var searchKeyMonitor: NSEventMonitor?
     #endif
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -257,11 +258,10 @@ public struct RootView: View {
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "搜索视频 / UP 主")
         .onSubmit(of: .search) { submitSearch() }
-        // macOS 26 + 自定义 AppKit 侧栏的组合下，`.searchable` 的回车提交收不到
-        // 回调（coolapk 在同机同系统踩过同一个坑，见它的 0.17.0 CHANGELOG），
-        // 所以改成输入驱动：停止输入 350ms 后自动提交，回车回调保留为兜底。
-        .onChange(of: searchText) { _, value in
-            searchSubmitTask?.cancel()
+        // 输入只出推荐词、不出结果：打完词按回车（或点一条推荐词）才真正搜索。
+        // 回车在本机收不到 `onSubmit(of: .search)`，由 `installSearchKeyMonitor`
+        // 挂的键盘监视器兜住。
+        .onChange(of: searchText) { oldValue, value in
             suggestTask?.cancel()
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
@@ -271,10 +271,14 @@ public struct RootView: View {
                 if selection == .search { selection = .home }
                 return
             }
-            searchSubmitTask = Task {
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                guard !Task.isCancelled else { return }
+            // 点推荐词是一次性把整词填进来（系统补全），不是逐字输入：
+            // 长度跳变 ≥ 2 且新词正好是当前推荐词之一，就当成「选了这条推荐词」直接搜。
+            let previous = oldValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.count >= previous.count + 2,
+               trimmed.hasPrefix(previous),
+               searchSuggestions.contains(trimmed) {
                 submitSearch()
+                return
             }
             // 推荐词跟输入同步刷新：停顿 250ms 拉一次，慢一拍不打扰输入
             suggestTask = Task {
@@ -296,6 +300,33 @@ public struct RootView: View {
                 .searchCompletion(word)
             }
         }
+        .onAppear { installSearchKeyMonitor() }
+    }
+
+    /// 搜索框的回车提交。
+    ///
+    /// `.searchable(placement: .sidebar)` 配自定义 AppKit 侧栏时收不到
+    /// `onSubmit(of: .search)`（coolapk 在同机同系统踩过同一个坑，见它的 0.17.0
+    /// CHANGELOG），所以挂一个本地键盘监视器自己接：只有焦点确实落在搜索框上
+    /// （field editor 的宿主是 `NSSearchField`）且按下回车时才提交，其余按键原样放行。
+    private func installSearchKeyMonitor() {
+        guard searchKeyMonitor == nil else { return }
+        searchKeyMonitor = NSEventMonitor(context: .local, matching: .keyDown) { event in
+            let isReturn = event.keyCode == 36 || event.keyCode == 76
+            guard isReturn, Self.isSearchFieldFocused() else { return event }
+            submitSearch()
+            return nil
+        }
+    }
+
+    private static func isSearchFieldFocused() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        // 搜索框获得焦点时，first responder 是它背后的 field editor（NSTextView），
+        // delegate 指回 NSSearchField。
+        if let textView = responder as? NSTextView, textView.delegate is NSSearchField {
+            return true
+        }
+        return responder is NSSearchField
     }
 
     private var sidebarSections: [SourceListSidebar<SidebarItem>.Section] {
@@ -356,6 +387,10 @@ public struct RootView: View {
         guard !trimmed.isEmpty else { return }
         #if os(macOS)
         selection = .search
+        // 收起推荐词浮层：把焦点从搜索框交还出去（App Store 搜完也是收起建议列表）
+        DispatchQueue.main.async {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
         #else
         // iOS 的搜索不在标签栏里，直接推进导航栈（与点站内搜索结果同一条路径）。
         // 这里必须**替换**整条路径而不是 append：`router.path` 是全局的、会残留上一个
