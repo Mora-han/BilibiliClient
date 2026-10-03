@@ -258,6 +258,9 @@ public struct RootView: View {
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "搜索视频 / UP 主")
         .onSubmit(of: .search) { submitSearch() }
+        // 系统原生回车提交：有的系统版本在这个位置只发 `.text` 这一路，
+        // 接上它就能少依赖下面那个键盘监视器（两条都走到也只提交一次同样的词）。
+        .onSubmit(of: .text) { submitSearch() }
         // 输入只出推荐词、不出结果：打完词按回车（或点一条推荐词）才真正搜索。
         // 回车在本机收不到 `onSubmit(of: .search)`，由 `installSearchKeyMonitor`
         // 挂的键盘监视器兜住。
@@ -300,33 +303,54 @@ public struct RootView: View {
                 .searchCompletion(word)
             }
         }
-        .onAppear { installSearchKeyMonitor() }
+        .onAppear {
+            installSearchKeyMonitor()
+            // 设备指纹越早备好越好：搜索、评论这些接口的风控都看它
+            Task { await APIClient.shared.ensureFingerprint() }
+        }
     }
 
     /// 搜索框的回车提交。
     ///
-    /// `.searchable(placement: .sidebar)` 配自定义 AppKit 侧栏时收不到
+    /// `.searchable(placement: .sidebar)` 配自定义 AppKit 侧栏时，系统收不到
     /// `onSubmit(of: .search)`（coolapk 在同机同系统踩过同一个坑，见它的 0.17.0
-    /// CHANGELOG），所以挂一个本地键盘监视器自己接：只有焦点确实落在搜索框上
-    /// （field editor 的宿主是 `NSSearchField`）且按下回车时才提交，其余按键原样放行。
+    /// CHANGELOG），所以挂一个本地键盘监视器**旁听**回车：只在焦点确实落在搜索框
+    /// （field editor 的宿主是 `NSSearchField`）时才提交。
+    ///
+    /// 两个细节决定了它是否「像原生一样」：
+    /// - **输入法拼字期间（marked text）的回车不是提交**，而是「确认候选词/上屏」。
+    ///   这时候必须把事件原样交还输入法，否则中文输入法下敲英文单词直接回车，
+    ///   会跳过上屏、拿半截词去搜索；
+    /// - 只旁听、不吞事件（返回原事件），系统自己的处理照走，不干扰 AppKit。
     private func installSearchKeyMonitor() {
         guard searchKeyMonitor == nil else { return }
         searchKeyMonitor = NSEventMonitor(context: .local, matching: .keyDown) { event in
             let isReturn = event.keyCode == 36 || event.keyCode == 76
-            guard isReturn, Self.isSearchFieldFocused() else { return event }
+            guard isReturn, let editor = Self.searchFieldEditor() else { return event }
+            // 输入法还在拼字：交给输入法去上屏
+            guard !editor.hasMarkedText() else { return event }
             submitSearch()
-            return nil
+            return event
         }
     }
 
-    private static func isSearchFieldFocused() -> Bool {
-        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
-        // 搜索框获得焦点时，first responder 是它背后的 field editor（NSTextView），
-        // delegate 指回 NSSearchField。
-        if let textView = responder as? NSTextView, textView.delegate is NSSearchField {
-            return true
+    /// 搜索框背后的 field editor（`NSSearchField` 获得焦点时 first responder 就是它）。
+    private static func searchFieldEditor() -> NSTextView? {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return nil }
+        if let textView = responder as? NSTextView {
+            if textView.delegate is NSSearchField { return textView }
+            // 少数系统版本上 delegate 不是搜索框，沿视图链再认一次
+            var view: NSView? = textView.superview
+            while let current = view {
+                if current is NSSearchField { return textView }
+                view = current.superview
+            }
+            return nil
         }
-        return responder is NSSearchField
+        if let field = responder as? NSSearchField {
+            return field.currentEditor() as? NSTextView
+        }
+        return nil
     }
 
     private var sidebarSections: [SourceListSidebar<SidebarItem>.Section] {

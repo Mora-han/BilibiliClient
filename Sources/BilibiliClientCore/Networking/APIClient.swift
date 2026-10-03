@@ -31,40 +31,35 @@ final class APIClient {
     /// 结构化 Cookie，供播放器等场景使用。
     var cookies = BiliCookies()
 
-    /// buvid3/buvid4（搜索等接口风控要求），首次搜索时获取。
-    private var buvidHeader = ""
-    private var buvidFetched = false
+    /// 设备指纹（buvid3/buvid4 + web 端 b_nut/_uuid/b_lsid/buvid_fp + bili_ticket），
+    /// 搜索、评论等接口的风控要求。见 `DeviceFingerprint`：一次生成后持久化复用，
+    /// 冷启动不会变——指纹飘忽正是「刚启动能搜、过一会儿就 412」的根因。
+    private var fingerprintHeader = ""
+    /// 组装中的指纹任务：多个请求同时要时只算一次。
+    private var fingerprintTask: Task<String, Never>?
 
     private var effectiveCookieHeader: String {
-        if buvidHeader.isEmpty { return cookieHeader }
-        if cookieHeader.isEmpty { return buvidHeader }
-        return buvidHeader + "; " + cookieHeader
+        if fingerprintHeader.isEmpty { return cookieHeader }
+        if cookieHeader.isEmpty { return fingerprintHeader }
+        return fingerprintHeader + "; " + cookieHeader
     }
 
-    /// 从 finger/spi 获取 buvid3/buvid4 并加入 Cookie。
+    /// 准备好设备指纹并加入后续请求的 Cookie（幂等，重复调用只算一次）。
+    func ensureFingerprint() async {
+        if !fingerprintHeader.isEmpty { return }
+        if let task = fingerprintTask {
+            fingerprintHeader = await task.value
+            return
+        }
+        let task = Task { await DeviceFingerprint.cookieHeader() }
+        fingerprintTask = task
+        fingerprintHeader = await task.value
+        fingerprintTask = nil
+    }
+
+    /// 兼容旧名字：取设备指纹。
     func ensureBuvid() async {
-        guard !buvidFetched else { return }
-        buvidFetched = true
-        struct Spi: Decodable {
-            let b3: String?
-            let b4: String?
-        }
-        struct Envelope: Decodable {
-            let data: Spi?
-        }
-        do {
-            let request = URLRequest(url: URL(string: "https://api.bilibili.com/x/frontend/finger/spi")!)
-            let (data, _) = try await session.data(for: request)
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            let envelope = try decoder.decode(Envelope.self, from: data)
-            var parts: [String] = []
-            if let b3 = envelope.data?.b3, !b3.isEmpty { parts.append("buvid3=\(b3)") }
-            if let b4 = envelope.data?.b4, !b4.isEmpty { parts.append("buvid4=\(b4)") }
-            buvidHeader = parts.joined(separator: "; ")
-        } catch {
-            buvidFetched = false
-        }
+        await ensureFingerprint()
     }
 
     private let session: URLSession

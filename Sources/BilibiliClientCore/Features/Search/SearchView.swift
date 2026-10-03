@@ -188,7 +188,9 @@ struct SearchView: View {
             .feedRefreshable {
                 await search(reset: true)
             }
-            .autoLoadMore {
+            // 搜索结果页把预取距离收紧一些：默认 2000 会在一次搜索里连着翻好几页，
+            // 搜索接口对短时间内的连续请求比较敏感（容易吃到风控），少翻两页更稳。
+            .autoLoadMore(threshold: 900) {
                 await search(reset: false)
             }
         }
