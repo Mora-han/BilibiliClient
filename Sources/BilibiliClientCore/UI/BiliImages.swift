@@ -47,7 +47,9 @@ public enum BiliImages {
     static func prefetch(_ urls: [URL?]) {
         let list = urls.compactMap { $0 }
         guard !list.isEmpty else { return }
-        prefetcher.startPrefetching(with: list)
+        // 适度预加载：一次只暖首屏这一小段（约 4 行卡片）的图，
+        // 其余随滚动实时加载。之前整页 50 张一起预取，既吃带宽也占内存。
+        prefetcher.startPrefetching(with: Array(list.prefix(12)))
     }
 
     /// 列表加载完一页后调用：传原始地址（接口里的可选字符串）+ 用途即可

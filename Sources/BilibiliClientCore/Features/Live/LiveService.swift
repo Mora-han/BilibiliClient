@@ -4,8 +4,10 @@ import Foundation
 struct LiveService {
     private static let base = URL(string: "https://api.live.bilibili.com")!
 
-    /// 直播推荐流（热门直播，按页返回，data 直接是房间数组）
-    func recommend(page: Int, pageSize: Int = 50) async throws -> [LiveRoomCard] {
+    /// 直播推荐流（热门直播，按页返回，data 直接是房间数组）。
+    ///
+    /// 每页 20：之前一次 50 间房 + 50 张封面预取，既拖慢首屏又给风控送把柄。
+    func recommend(page: Int, pageSize: Int = 20) async throws -> [LiveRoomCard] {
         try await APIClient.shared.get("/room/v1/room/get_user_recommend",
                                        base: Self.base,
                                        query: [

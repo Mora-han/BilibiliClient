@@ -62,6 +62,80 @@ final class APIClient {
         await ensureFingerprint()
     }
 
+    // MARK: - 请求合并与限流退避（全局兜底）
+
+    /// 单飞：同一 URL（主机+路径+参数）的 GET 正在飞行时，后来的调用直接共享
+    /// 这一个请求——页面重试连点、.task 与刷新手势撞车这类「重复并发」从源头消失，
+    /// 不再产生成倍的请求风暴。
+    private let inflightLock = NSLock()
+    private var inflight: [String: Task<(Data, Int), Error>] = [:]
+
+    /// 412 风控是按「主机 + 路径」来的（实测同主机的直播推荐 412、
+    /// 房间信息却 200）：命中后该路径进入退避窗口，窗口内**快速失败**不再往枪口上撞
+    /// ——越撞封得越久（此前一次窗口要数分钟才恢复）。
+    private static let rateLock = NSLock()
+    private static var rateUntil: [String: Date] = [:]
+    private static var rateStreak: [String: Int] = [:]
+    private static let rateSteps: [TimeInterval] = [60, 120, 240, 480, 600]
+
+    private static func rateKey(_ request: URLRequest) -> String {
+        let url = request.url
+        return (url?.host ?? "?") + (url?.path ?? "/")
+    }
+
+    private static func rateGuard(_ request: URLRequest) throws {
+        let key = rateKey(request)
+        let until: Date? = rateLock.withLock { rateUntil[key] }
+        if let until, Date() < until {
+            throw APIError.biz(code: -412, message: "请求过于频繁，稍后自动恢复")
+        }
+    }
+
+    private static func rateHit(_ request: URLRequest) {
+        let key = rateKey(request)
+        rateLock.withLock {
+            let streak = min((rateStreak[key] ?? 0) + 1, rateSteps.count - 1)
+            rateStreak[key] = streak
+            let until = Date().addingTimeInterval(rateSteps[streak])
+            if let existing = rateUntil[key], existing > until { return }
+            rateUntil[key] = until
+        }
+    }
+
+    private static func rateClear(_ request: URLRequest) {
+        let key = rateKey(request)
+        rateLock.withLock {
+            rateUntil[key] = nil
+            rateStreak[key] = nil
+        }
+    }
+
+    /// 单飞 + 限流检查的公共取数：成功才清退避，412 记入退避窗口。
+    /// 不在这里记日志，由调用方按各自语义记录。
+    private func fetchShared(key: String, request: URLRequest) async throws -> (Data, Int) {
+        try Self.rateGuard(request)
+        let task: Task<(Data, Int), Error> = inflightLock.withLock {
+            if let existing = inflight[key] { return existing }
+            let session = self.session
+            let created = Task<(Data, Int), Error> {
+                let (data, response) = try await session.data(for: request)
+                guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+                return (data, http.statusCode)
+            }
+            inflight[key] = created
+            return created
+        }
+        defer { inflightLock.withLock { inflight[key] = nil } }
+
+        let result = try await task.value
+        if result.1 == 412 {
+            Self.rateHit(request)
+            throw APIError.http(412)
+        }
+        Self.rateClear(request)
+        return result
+    }
+
     private let session: URLSession
 
     private init() {
@@ -104,9 +178,8 @@ final class APIClient {
 
         let started = Date()
         do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-            guard (200..<300).contains(http.statusCode) else { throw APIError.http(http.statusCode) }
+            let (data, status) = try await fetchShared(key: components.url!.absoluteString, request: request)
+            guard (200..<300).contains(status) else { throw APIError.http(status) }
 
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -121,7 +194,7 @@ final class APIClient {
                 throw APIError.biz(code: envelope.code, message: envelope.message)
             }
             guard let payload = envelope.data else { throw APIError.invalidResponse }
-            Self.logRequest(path, started: started, status: http.statusCode)
+            Self.logRequest(path, started: started, status: status)
             return payload
         } catch {
             Self.logRequest(path, started: started, error: error)
@@ -144,10 +217,10 @@ final class APIClient {
         }
         let started = Date()
         do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-            guard (200..<300).contains(http.statusCode) else { throw APIError.http(http.statusCode) }
-            Self.logRequest(path, started: started, status: http.statusCode)
+            let (data, status) = try await fetchShared(key: components.url!.absoluteString, request: request)
+            guard (200..<300).contains(status) else { throw APIError.http(status) }
+            let http = HTTPURLResponse(url: components.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+            Self.logRequest(path, started: started, status: status)
             return (data, http)
         } catch {
             Self.logRequest(path, started: started, error: error)
@@ -297,4 +370,13 @@ final class APIClient {
         return (bytes, http)
     }
 
+}
+
+
+private extension NSLock {
+    func withLock<T>(_ body: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return body()
+    }
 }

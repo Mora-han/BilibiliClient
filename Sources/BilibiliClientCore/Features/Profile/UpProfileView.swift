@@ -241,6 +241,8 @@ struct UpProfileView: View {
     }
 
     private func load() async {
+        // 单飞：刷新手势与 .task 撞车时只跑一轮
+        guard !isLoadingInfo, !isLoadingMore else { return }
         await loadInfo()
         await loadVideos()
     }

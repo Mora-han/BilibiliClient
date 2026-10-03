@@ -89,6 +89,9 @@ struct PopularView: View {
     }
 
     private func load() async {
+        // 单飞 + 「已尝试过」即置位（见直播页注释）
+        guard !isLoading else { return }
+        hasLoaded = true
         isLoading = true
         errorMessage = nil
         do {
@@ -97,7 +100,6 @@ struct PopularView: View {
             BiliImages.prefetch(data.list.map(\.pic), variant: .card)
             page = 1
             hasMore = !(data.noMore ?? false)
-            hasLoaded = true
         } catch {
             errorMessage = error.localizedDescription
         }

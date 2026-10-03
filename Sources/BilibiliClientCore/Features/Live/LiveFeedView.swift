@@ -103,6 +103,11 @@ struct LiveFeedView: View {
     }
 
     private func load() async {
+        // 单飞：刷新按钮连点 / 重试与 .task 撞车时只发一个请求
+        guard !isLoading else { return }
+        // 「已尝试过」就算失败也置位：失败后重新出现不再自动重拉，
+        // 等用户点重试 / 下拉刷新（避免 keep-alive 反复进出页面撞风控）
+        hasLoaded = true
         isLoading = true
         errorMessage = nil
         do {
@@ -110,7 +115,6 @@ struct LiveFeedView: View {
             BiliImages.prefetch(rooms.map(\.cover), variant: .card)
             page = 1
             hasMore = true
-            hasLoaded = true
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -128,7 +132,7 @@ struct LiveFeedView: View {
             rooms.append(contentsOf: newRooms)
             page += 1
             // 推荐接口没有明确的“到底”标记：本页不足一页即视为没有更多
-            hasMore = fresh.count >= 50
+            hasMore = fresh.count >= 20
         } catch {
             loadMoreFailed = true
         }

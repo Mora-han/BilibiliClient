@@ -103,6 +103,9 @@ struct RecommendView: View {
     }
 
     private func load() async {
+        // 单飞 + 「已尝试过」即置位（失败后重新出现不再自动重拉，见直播页注释）
+        guard !isLoading else { return }
+        hasLoaded = true
         isLoading = true
         errorMessage = nil
         do {
@@ -110,7 +113,6 @@ struct RecommendView: View {
             items = newItems
             BiliImages.prefetch(newItems.map(\.pic), variant: .card)
             page = 1
-            hasLoaded = true
             hasMore = !newItems.isEmpty
         } catch {
             errorMessage = error.localizedDescription

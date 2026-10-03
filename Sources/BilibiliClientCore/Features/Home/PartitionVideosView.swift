@@ -6,7 +6,8 @@ struct PartitionVideosView: View {
 
     @AppStorage("videoDisplayMode") private var displayMode = VideoDisplayMode.card
     @State private var videos: [PopularVideo] = []
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var hasLoaded = false
     @State private var errorMessage: String?
 
     private var usableVideos: [PopularVideo] {
@@ -65,10 +66,16 @@ struct PartitionVideosView: View {
         }
         .navigationTitle("\(zone.name) 排行榜")
         .feedRefreshable { await load() }
-        .task { await load() }
+        .task {
+            guard !hasLoaded else { return }
+            await load()
+        }
     }
 
     private func load() async {
+        // 单飞 + 「已尝试过」即置位（见直播页注释）
+        guard !isLoading else { return }
+        hasLoaded = true
         isLoading = true
         errorMessage = nil
         do {
