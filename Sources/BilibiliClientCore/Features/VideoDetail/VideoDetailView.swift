@@ -638,7 +638,6 @@ struct VideoDetailView: View {
                 }
                 .fixedSize()
                 .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
                 .help("播放倍速")
                 #endif
 
@@ -685,8 +684,6 @@ struct VideoDetailView: View {
                         .foregroundStyle(.secondary)
                     }
                     .menuStyle(.borderlessButton)
-                    // 同投币：这条栏里的按钮一律「图标在上、文字在下」，不留 Menu 箭头
-                    .menuIndicator(.hidden)
                     .fixedSize()
                     .help("清晰度")
                 }
