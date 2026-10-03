@@ -831,35 +831,40 @@ struct VideoDetailView: View {
                 }
             }
 
-            // 与画质入口同一套：原生 Menu，只在按钮旁弹出一张小菜单。
-            // confirmationDialog 在 iPhone 上是整屏底部弹出的，与「按钮旁小卡片」不符。
-            // 已投币时整个菜单禁用（等价于原先 Button 里的 guard）。
-            Menu {
-                Button {
-                    Task { await coin(multiply: 1) }
-                } label: {
-                    Label("投 1 枚硬币", systemImage: "dollarsign.circle")
-                }
-                Button {
-                    Task { await coin(multiply: 2) }
-                } label: {
-                    Label("投 2 枚硬币", systemImage: "dollarsign.circle.fill")
-                }
-            } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: coined ? "dollarsign.circle.fill" : "dollarsign.circle")
-                    Text(Formatters.count(coinCount))
-                        .font(.caption2)
-                }
-                .foregroundStyle(coined ? Color.orange : Color.primary)
-                // 手机上把整块 44pt 的行高都纳入点击范围，避免点空白处没反应
-                .contentShape(Rectangle())
+            // 投币：图标在上、数字在下，与点赞/收藏完全同款。
+            //
+            // 不能直接把 VStack 写进 `Menu { } label: { }`——macOS 的 Menu 走
+            // NSButton 机制，会**丢弃 label 内部的排版**，改用「图片在前、标题在后」
+            // 的横向布局，于是变成图标和数字并排（箭头也是它自己加的）。
+            //
+            // 所以这里让 Menu 只当一层透明的点击区域：视觉完全由下面的 VStack 决定，
+            // 菜单内容与点击行为都交给原生 Menu，菜单仍在按钮旁弹出。
+            VStack(spacing: 3) {
+                Image(systemName: coined ? "dollarsign.circle.fill" : "dollarsign.circle")
+                Text(Formatters.count(coinCount))
+                    .font(.caption2)
             }
-            .menuStyle(.borderlessButton)
-            // 去掉 Menu 自带的箭头指示器：投币要和其它动作按钮一样是「图标在上、数字在下」，
-            // 那个小箭头是这条栏里唯一一个多余的视觉元素。
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .foregroundStyle(coined ? Color.orange : Color.primary)
+            // 手机上把整块 44pt 的行高都纳入点击范围，避免点空白处没反应
+            .contentShape(Rectangle())
+            .overlay {
+                Menu {
+                    Button {
+                        Task { await coin(multiply: 1) }
+                    } label: {
+                        Label("投 1 枚硬币", systemImage: "dollarsign.circle")
+                    }
+                    Button {
+                        Task { await coin(multiply: 2) }
+                    } label: {
+                        Label("投 2 枚硬币", systemImage: "dollarsign.circle.fill")
+                    }
+                } label: {
+                    Color.clear
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+            }
             .disabled(coined)
             .hoverScale(scale: 1.06)
 
