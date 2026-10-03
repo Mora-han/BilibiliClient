@@ -53,9 +53,6 @@ final class PlayerController: ObservableObject {
 
     // MARK: 导航期间的暂停 / 续播
 
-    /// 「进入新页面 / 切走标签」暂停前是否正在播放：回到本页时据此决定要不要续播，
-    /// 用户自己按下的暂停不抢着播。
-    private var wasPlayingBeforePause = false
     /// 播放页的挂载代次：每次有播放页挂上来就 +1。离开播放页时记下当时的代次，
     /// 窗口期内代次没变才真的停（切标签那种「销毁后马上重建」会把它取消掉）。
     private var attachGeneration = 0
@@ -107,25 +104,16 @@ final class PlayerController: ObservableObject {
         player.pause()
     }
 
-    // MARK: - 导航期间的暂停 / 续播
+    // MARK: - 导航期间的暂停
 
     /// 被新页面盖住、或切到别的标签：**暂停**而不是拆掉播放器。
     ///
-    /// 进度、缓冲都还在，回来时接着放；这也正是「进入新界面自动暂停」的手感。
-    /// 暂停状态的 `AVPlayer` 不解码、不拉流，占用可以忽略。
+    /// 进度、缓冲都还在，回到本页时仍是暂停状态——「进入新界面自动暂停」的手感，
+    /// 想继续看按一下播放即可，不会自动播起来。暂停状态的 `AVPlayer` 不解码、
+    /// 不拉流，占用可以忽略。
     func pauseForNavigation() {
-        guard let player else { return }
-        if player.timeControlStatus == .playing {
-            wasPlayingBeforePause = true
-            player.pause()
-        }
-    }
-
-    /// 回到本页：本来在播才继续，用户自己暂停的不抢着播。
-    func resumeAfterNavigation() {
-        guard wasPlayingBeforePause, let player else { return }
-        wasPlayingBeforePause = false
-        player.play()
+        guard let player, player.timeControlStatus == .playing else { return }
+        player.pause()
     }
 
     /// 当前是否就是这一个视频、且已经加载过（页面被重建时用来避免重新起播）。
@@ -202,8 +190,6 @@ final class PlayerController: ObservableObject {
             Self.activeController = self
         }
         guard loadedKey != key else { return }
-        // 换了视频：上一部片子留下的「回来接着播」标记不再适用
-        wasPlayingBeforePause = false
         loadedKey = key
         self.aid = aid
         self.bvid = bvid
@@ -234,7 +220,6 @@ final class PlayerController: ObservableObject {
         reportTask = nil
         pendingDetachStop?.cancel()
         pendingDetachStop = nil
-        wasPlayingBeforePause = false
         if let player, bvid != "" {
             let seconds = player.currentTime().seconds
             if seconds.isFinite, seconds > 0 {

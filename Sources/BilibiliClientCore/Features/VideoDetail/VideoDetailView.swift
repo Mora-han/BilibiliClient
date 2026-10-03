@@ -113,8 +113,6 @@ struct VideoDetailView: View {
             navBaseCount = router.path.count
             bindPlaybackMenu()
             player.attachView()
-            // 页面被重建（切标签回来）时，接着刚才暂停的位置继续放
-            player.resumeAfterNavigation()
         }
         .onChange(of: danmakuEnabled) { _, newValue in
             PlaybackMenuState.shared.setDanmakuEnabled(newValue)
@@ -129,12 +127,12 @@ struct VideoDetailView: View {
             guard tabVisibility.isVisible else { return }
             if newCount > navBaseCount {
                 // 被推入的新页面盖住（UP 主页、评论里的 UP…）：像「自动暂停」一样停下，
-                // 进度留着，返回时接着放
+                // 进度留着；返回时**仍是暂停状态**，不会自动播起来
                 pausePlayback()
             } else if newCount == navBaseCount {
-                // 回到本页：接着刚才的位置放，并把弹幕补回来
+                // 回到本页：画面停在刚才的位置，把弹幕补回来（播放由用户自己按）
                 Task { await load() }
-                resumePlayback()
+                restoreAfterReturn()
             }
         }
         .onDisappear {
@@ -175,7 +173,7 @@ struct VideoDetailView: View {
             }
             if visible {
                 Task { await load() }
-                resumePlayback()
+                restoreAfterReturn()
             } else {
                 pausePlayback()
             }
@@ -1289,8 +1287,8 @@ struct VideoDetailView: View {
     }
 
     /// 回到本页：接着暂停的位置继续，并把弹幕补回来。
-    private func resumePlayback() {
-        player.resumeAfterNavigation()
+    /// 回到本页：画面停在离开时的位置（**保持暂停**，不自动续播），把弹幕补回来。
+    private func restoreAfterReturn() {
         // 页面被销毁重建时 `detail` 是空的，`load()` 会自己把弹幕拉回来；
         // 页面仍然活着时 `load()` 走早退分支，弹幕得在这里补。
         guard detail != nil else { return }
