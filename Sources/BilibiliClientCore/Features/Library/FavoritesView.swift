@@ -38,13 +38,15 @@ struct FavoritesView: View {
         #endif
         .toolbar {
             if isTabVisible {
+                #if os(macOS)
+                // iOS 顶栏右上角只有头像（`RootTopBar`），「编辑」按钮产品要求去掉：
+                // iOS 上移除收藏走长按菜单（见下面 rowContent 的 contextMenu）。
                 ToolbarItem(placement: .primaryAction) {
                     Button(isEditing ? "完成" : "编辑") {
                         withAnimation { isEditing.toggle() }
                     }
                     .disabled(usableMedias.isEmpty)
                 }
-                #if os(macOS)
                 // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
                 ToolbarItem {
                     Button {

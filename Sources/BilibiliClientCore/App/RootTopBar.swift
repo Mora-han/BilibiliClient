@@ -23,15 +23,29 @@ struct RootTopBar: ViewModifier {
         content
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    // 不包 Button：实测 Button 自带的横向内边距（左右各约 1pt）会让这层
-                    // 玻璃变成 220×214 的椭圆；换成直接点按后玻璃正好 214×214（正圆）。
-                    // 语义靠 accessibility 补齐（VoiceOver 读作按钮、双击触发同一动作）。
-                    avatar
-                        .onTapGesture { showAccount = true }
-                        .accessibilityLabel("账户")
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityAction { showAccount = true }
+                    // 顶栏条目默认自带一层**共享玻璃**：那层玻璃按顶栏槽位（实测 71×71pt）算，
+                    // 跟内容大小无关——34pt 头像裹在 71pt 玻璃里，头像只占 48%，
+                    // 这就是「头像偏小、没占满玻璃、跟 App Store 不一样」的根因。
+                    //
+                    // 两步修掉（都用 iOS 26 原生 API）：
+                    // 1. `sharedBackgroundVisibility(.hidden)`：关掉系统那层共享玻璃。
+                    //    实测：20pt 探针关掉后，无论多松的阈值都量不到任何玻璃——
+                    //    说明这层确实被摘干净了（没关时是一颗 71pt 的圆）。
+                    // 2. 玻璃自己画：`glassEffect(.regular.interactive(), in: .circle)`。
+                    //    **必须挂在 Button 的 label 上**：挂 Button 上会按顶栏槽位定形，
+                    //    又变回 67pt 的大玻璃。`.interactive()` 给系统原生的按下弹性反馈。
+                    //
+                    // 实测（3x 像素）：40pt 头像 + 2pt 内边距 → 玻璃 44pt，
+                    // 头像占约 90%；旧版 34pt 头像裹 71pt 玻璃，只占 48%。
+                    Button { showAccount = true } label: {
+                        avatar(40)
+                            .padding(2)
+                            .glassEffect(.regular.interactive(), in: .circle)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("账户")
                 }
+                .sharedBackgroundVisibility(.hidden)
             }
             .sheet(isPresented: $showAccount) {
                 AccountCardSheet()
@@ -54,24 +68,24 @@ struct RootTopBar: ViewModifier {
     }
 
     #if os(iOS)
-    /// 头像本体。外层钉成 **34×34 正方 + 圆形命中区**是刻意的：
-    /// 顶栏那层液态玻璃的形状按**内容外接框**算，内容横宽竖窄 → 玻璃就是椭圆
-    /// （改前实测 230×212px，w/h 1.085，这就是「有点椭圆」的来源）。
-    /// 内容见方后玻璃宽高相等，实测 214×214px、w/h = **1.000**，与 App Store
-    /// 右上角头像一致。
-    private var avatar: some View {
+    /// 头像本体（`diameter` = 内容框边长，玻璃按这个框画）。
+    ///
+    /// 头像**铺满整个内容框**（不再留 2pt 内缩）：玻璃只比内容大一点点，
+    /// 头像/玻璃 ≈ 0.9，与 App Store 右上角那颗一致——之前 34pt 内容裹 71pt 玻璃，
+    /// 头像只占 48%，看着就是「小小一颗缩在大玻璃里」。
+    private func avatar(_ diameter: CGFloat) -> some View {
         Group {
             if session.loggedIn, let user = session.user {
                 RemoteImage(url: Formatters.https(user.face), variant: .avatar)
-                    .frame(width: 30, height: 30)
+                    .frame(width: diameter, height: diameter)
                     .clipShape(Circle())
             } else {
                 Image(systemName: "person.crop.circle")
-                    .font(.system(size: 25))
+                    .font(.system(size: diameter - 6))
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 34, height: 34)
+        .frame(width: diameter, height: diameter)
         .clipShape(Circle())
         .contentShape(Circle())
     }
