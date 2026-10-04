@@ -167,6 +167,11 @@ PY
 # @AppStorage 一一对应——键对上，改完切回 App 就生效。
 if [ -d "iOSResources/Settings.bundle" ]; then
   cp -R "iOSResources/Settings.bundle" "$APP_DIR/"
+  # 权限与扩展属性归一：源文件若是 600 / 带 xattr，会被原样打进包，
+  # 设置面板读不到内容就是这么来的（表现：面板存在但整页空白）。
+  find "$APP_DIR/Settings.bundle" -type d -exec chmod 755 {} +
+  find "$APP_DIR/Settings.bundle" -type f -exec chmod 644 {} +
+  xattr -cr "$APP_DIR/Settings.bundle" 2>/dev/null || true
   echo "Embedded: Settings.bundle"
 fi
 

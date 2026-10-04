@@ -5,20 +5,19 @@ import UIKit
 
 /// iOS 根页面的统一顶栏动作：**右上角只有头像**。
 ///
-/// - 搜索不在这里：它由标签栏里的 `.search` 角色放大镜承担（App Store 同款——
-///   图标长在「首页/分区/动态/我的」标签胶囊的右端，见 `RootView` 的 TabView），
-///   点击展开顶栏搜索框（`.searchable(isPresented:)`）。刻意不用顶栏里的搜索按钮：
-///   系统会因此**再**挂一颗独立放大镜，和头像挤在一起（实测），也不是要的形态。
-/// - 头像点击弹出 App Store 式的居中账户卡片（`AccountCardOverlay`，见参考图：
-///   标题栏 + 关闭按钮 + 分组行），卡片里附「软件设置」快捷入口——设置页已并入
-///   系统「设置」（`iOSResources/Settings.bundle`）。
+/// - 搜索不在这里：它由标签栏里的放大镜标签承担（App Store / Apple Music 同款——
+///   图标长在「首页/分区/动态/我的」这排标签里，见 `RootView` 的 TabView），
+///   点击切到自带输入框的搜索页。刻意不用 `.searchable`：它会给顶栏再挂一颗
+///   系统独立放大镜（实测）。
+/// - 头像点击弹出账户卡：**原生 `.sheet` + detents**——系统自带的「从底部丝滑滑入、
+///   可下拉拖走（带橡皮筋与指示条）」那一套（`AccountCardSheet`），不自绘浮层：
+///   自绘版位置、动画、拖拽反馈都和 App Store 对不上。
 ///
 /// 只挂在导航栈的**根页面**上（见 `TabNavStack`）：推入详情页后顶栏动作自然收起。
 /// macOS 走侧边栏搜索框与侧边栏底部账户卡，这里整体为空实现。
 struct RootTopBar: ViewModifier {
     @EnvironmentObject private var session: SessionStore
     @State private var showAccount = LaunchArgs.accountPreview
-    @State private var showLogin = false
 
     func body(content: Content) -> some View {
         #if os(iOS)
@@ -26,22 +25,28 @@ struct RootTopBar: ViewModifier {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        withAnimation(.snappy(duration: 0.3, extraBounce: 0.04)) {
-                            showAccount = true
-                        }
+                        showAccount = true
                     } label: {
                         avatar
                     }
                     .accessibilityLabel("账户")
                 }
             }
-            .overlay {
-                if showAccount {
-                    AccountCardOverlay(isShown: $showAccount, showLogin: $showLogin)
-                }
-            }
-            .sheet(isPresented: $showLogin) {
-                LoginView()
+            .sheet(isPresented: $showAccount) {
+                AccountCardSheet()
+                    // 强制 **page sheet**：iPad 默认给的是 form sheet——尺寸被系统封在
+                    // ~620pt 半屏（detent 写 fraction/large/height 都试过，全被天花板压住）。
+                    // page sheet 才是底部贴边、占大半屏、从底部滑入、可下拉拖走的形态，
+                    // 也就是 App Store 账户卡用的那一种。
+                    // 高度由内容的 minHeight 撑到约 85% 屏高、宽度由内容的 cardWidth
+                    // 定为屏宽 52%（见 AccountCardSheet），配 fitted 让系统按内容定尺。
+                    // 居中带侧边距的高卡片，和参考图一致。
+                    .presentationSizing(.fitted.fitted(horizontal: false, vertical: true))
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(28)
+                    .presentationBackground(Color(uiColor: .systemGroupedBackground))
+                    .presentationContentInteraction(.scrolls)
+                    .environmentObject(session)
             }
         #else
         content
@@ -72,72 +77,77 @@ extension View {
     }
 }
 
+
 #if os(iOS)
-/// 点头像弹出的账户卡片（照 App Store「Apple 账户」卡的形态）：
-/// 模态居中大卡 —— 标题栏（图标 + 标题 + 右上角圆形关闭按钮）+ 分组行卡，
-/// 背景压暗、点背景或 X 关闭；卡片带缩放淡入的转场。
-///
-/// 不用 `popover`（箭头指向头像、位置随锚点漂）也不用 `sheet`（iPhone 从底部起、
-/// iPad 居中但带系统 chrome），全自绘才能钉住参考图那个位置与观感。
-struct AccountCardOverlay: View {
-    @Binding var isShown: Bool
-    @Binding var showLogin: Bool
+/// 点头像弹出的账户卡（**原生 sheet**，形态对齐 App Store「Apple 账户」卡）：
+/// 标题栏（图标 + 标题 + 右上角 X）+ 分组行卡；从屏幕底部滑入、可下拉拖走，
+/// 动画与拖拽反馈全部由系统 sheet 提供（`.presentationDetents` 那一套）。
+struct AccountCardSheet: View {
     @EnvironmentObject private var session: SessionStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var showLogin = false
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.32)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.snappy(duration: 0.26)) { isShown = false }
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
 
-            card
-                .transition(.scale(scale: 0.94, anchor: .top).combined(with: .opacity))
-        }
-    }
-
-    private var card: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
-
-            // 账户 + 软件设置（一组分组行，App Store 卡片同款的 inset 行卡）
-            VStack(spacing: 0) {
-                accountRow
-                Divider()
-                    .padding(.leading, session.loggedIn ? 76 : 16)
-                settingsRow
-            }
-            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
-
-            // 退出登录单独一组，与上面的信息行区分开（未登录时没有这组）
-            if session.loggedIn {
+                // 账户 + 软件设置（一组分组行，App Store 卡片同款的 inset 行卡）
                 VStack(spacing: 0) {
-                    Button {
-                        withAnimation(.snappy(duration: 0.26)) { isShown = false }
-                        session.logout()
-                    } label: {
-                        rowLabel(icon: "rectangle.portrait.and.arrow.right",
-                                 title: "退出登录",
-                                 tint: .red)
-                    }
-                    .buttonStyle(.plain)
+                    accountRow
+                    Divider()
+                        .padding(.leading, session.loggedIn ? 76 : 16)
+                    settingsRow
                 }
                 .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
+
+                // 退出登录单独一组，与信息行区分开（未登录时没有这组）
+                if session.loggedIn {
+                    VStack(spacing: 0) {
+                        Button {
+                            session.logout()
+                        } label: {
+                            rowLabel(icon: "rectangle.portrait.and.arrow.right",
+                                     title: "退出登录",
+                                     tint: .red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
+                }
             }
+            .padding(16)
+            // 定宽：屏宽的 52%（参考图里 Apple 账户卡约占屏宽一半、左右各留约 10% 边距），
+            // 两端至少留 64pt；高度由 minHeight 撑到约 85% 屏高。宽高都由内容给出，
+            // 配合 `.presentationSizing(.fitted...)` 才不会被 form-sheet 的半屏天花板压住。
+            .frame(width: Self.cardWidth, alignment: .leading)
+            .frame(minHeight: Self.screenHeight * 0.85)
         }
-        .padding(16)
-        .frame(maxWidth: 500, alignment: .leading)
-        .background(Color(uiColor: .systemGroupedBackground),
-                    in: RoundedRectangle(cornerRadius: 28))
-        .overlay {
-            RoundedRectangle(cornerRadius: 28)
-                .strokeBorder(.primary.opacity(0.08), lineWidth: 1)
+        .scrollIndicators(.hidden)
+        .sheet(isPresented: $showLogin) {
+            LoginView()
         }
-        .padding(.horizontal, 32)
     }
 
-    /// 标题栏：图标 + 「账户」+ 右上角圆形关闭按钮（参考图的 Apple 账户标题栏）。
+    /// 卡宽：屏宽 52%（与参考图比例一致），两端至少留 64pt。
+    private static var cardWidth: CGFloat {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
+        let w = window?.bounds.width ?? 800
+        return min(w * 0.52, w - 64)
+    }
+
+    /// 屏高：取当前 key window 的高度（sheet 与页面同窗，不会拿错）。
+    private static var screenHeight: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?.bounds.height ?? 1000
+    }
+
+    /// 标题栏：图标 + 「账户」+ 右上角 X（参考图的 Apple 账户标题栏）。
     private var header: some View {
         HStack(spacing: 10) {
             if session.loggedIn, let user = session.user {
@@ -153,7 +163,7 @@ struct AccountCardOverlay: View {
                 .font(.headline)
             Spacer()
             Button {
-                withAnimation(.snappy(duration: 0.26)) { isShown = false }
+                dismiss()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .semibold))
@@ -164,6 +174,7 @@ struct AccountCardOverlay: View {
             .buttonStyle(.plain)
             .accessibilityLabel("关闭")
         }
+        .padding(.top, 4)
     }
 
     /// 账户行：登录态展示个人信息；未登录态是去登录的入口。
@@ -189,7 +200,6 @@ struct AccountCardOverlay: View {
             .padding(.vertical, 12)
         } else {
             Button {
-                withAnimation(.snappy(duration: 0.26)) { isShown = false }
                 showLogin = true
             } label: {
                 rowLabel(icon: "qrcode", title: "扫码登录", showChevron: true)
@@ -210,7 +220,7 @@ struct AccountCardOverlay: View {
         .buttonStyle(.plain)
     }
 
-    /// 分组行的统一排版：图标 + 标题 + 右侧内容/箭头。
+    /// 分组行的统一排版：图标 + 标题 + 右侧箭头。
     private func rowLabel(icon: String, title: String, tint: Color? = nil,
                           showChevron: Bool = false) -> some View {
         HStack(spacing: 14) {

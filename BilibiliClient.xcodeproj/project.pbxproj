@@ -20,7 +20,7 @@
 		6B4838F70C57CA600C3C2C0B /* BuildInfo.generated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildInfo.generated.swift; sourceTree = "<group>"; };
 		B8208803DD786236B3154DD3 /* BilibiliClient */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BilibiliClient; path = .; sourceTree = SOURCE_ROOT; };
 		CD43EB14102F7216AD1C7EC7 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Settings.bundle; path = iOSResources/Settings.bundle; sourceTree = SOURCE_ROOT; };
-		E338B4AA2D7436F2532BE6E1 /* BilibiliClientIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BilibiliClientIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E338B4AA2D7436F2532BE6E1 /* BilibiliClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BilibiliClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,7 +55,7 @@
 		5D93443B05B6C01B5DB75FEA /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				E338B4AA2D7436F2532BE6E1 /* BilibiliClientIOS.app */,
+				E338B4AA2D7436F2532BE6E1 /* BilibiliClient.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -139,7 +139,7 @@
 				20B8A82986D4E3CF0E270571 /* BilibiliClientCore */,
 			);
 			productName = BilibiliClientIOS;
-			productReference = E338B4AA2D7436F2532BE6E1 /* BilibiliClientIOS.app */;
+			productReference = E338B4AA2D7436F2532BE6E1 /* BilibiliClient.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -152,7 +152,6 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					3A879B83C604DC1E3D024B9F = {
-						DevelopmentTeam = WTANQ3L4S3;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -274,7 +273,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 189;
-				DEVELOPMENT_TEAM = WTANQ3L4S3;
+				DEVELOPMENT_TEAM = W8XC874X4A;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Xcode/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -300,7 +299,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 189;
-				DEVELOPMENT_TEAM = WTANQ3L4S3;
+				DEVELOPMENT_TEAM = W8XC874X4A;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Xcode/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
