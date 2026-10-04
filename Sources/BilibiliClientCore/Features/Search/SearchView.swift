@@ -37,6 +37,8 @@ struct SearchView: View {
     @State private var lastSearched: String?
     /// 被限流时的自动重试时间：界面倒计时到点后自己补一次搜索。
     @State private var autoRetryAt: Date?
+    /// 最近搜索（空词进入本页时呈现，见 `recentArea`）：每次增删后回读 `RecentSearchStore`。
+    @State private var recent = RecentSearchStore.all
 
     enum SearchOrder: String, CaseIterable, Identifiable {
         case totalrank = "综合排序"
@@ -96,7 +98,10 @@ struct SearchView: View {
             }
         }
         #endif
+        #if os(macOS)
+        // iOS 左上角不放页面标题（去掉「搜索」这类页面名，直接呈现内容）
         .navigationTitle("搜索")
+        #endif
         .task(id: submitted) {
             guard !submitted.isEmpty else { return }
             // 页面重新出现（标签切回、被盖住再回来）时 task 会重跑：同一词已有
@@ -104,6 +109,9 @@ struct SearchView: View {
             // 照常再试一次，换词则由 id 变化触发、不受影响。
             if lastSearched == submitted, !results.isEmpty { return }
             lastSearched = submitted
+            // 记进最近搜索（去重 + 置顶）；只在真正发起搜索时记一次
+            RecentSearchStore.add(submitted)
+            recent = RecentSearchStore.all
             await search(reset: true)
         }
         .onChange(of: query) { _, newValue in
@@ -130,6 +138,10 @@ struct SearchView: View {
             if !input.isEmpty {
                 Button {
                     input = ""
+                    // 清空输入词就退回「最近搜索」：结果页只在有词时驻留，
+                    // 否则搜过一次后再也回不到最近搜索列表（App Store 同款行为）。
+                    submitted = ""
+                    lastSearched = nil
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
@@ -156,6 +168,90 @@ struct SearchView: View {
         inputFocused = false
     }
     #endif
+
+    /// 最近搜索列表（空词进入本页时呈现）：
+    /// - 点一条直接以该词搜索；
+    /// - 行尾 X 删掉这一条（删除选项）；
+    /// - 标题行右侧「清空」一次全删。
+    /// 一条记录都没有时，退回原先那句空态提示。
+    private var recentArea: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if recent.isEmpty {
+                    EmptyStateView(title: emptyHint,
+                                   systemImage: "magnifyingglass")
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                } else {
+                    HStack(spacing: 12) {
+                        Text("最近搜索")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                        Button("清空") {
+                            RecentSearchStore.clear()
+                            withAnimation(.snappy(duration: 0.2)) { recent = [] }
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+
+                    ForEach(recent, id: \.self) { term in
+                        HStack(spacing: 12) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 15))
+                                .foregroundStyle(.secondary)
+                            Button {
+                                searchRecent(term)
+                            } label: {
+                                Text(term)
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                    // 整行（除 X 外）都是命中区，点哪儿都能搜
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Button {
+                                removeRecent(term)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("删除 \(term)")
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(height: 44)
+                        .contentShape(Rectangle())
+                        Divider()
+                            .padding(.leading, 43) // 对齐文字左缘（16 + 图标 15 + 间距 12）
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    /// 点一条最近搜索：填进输入框并直接搜（`submitted` 变化触发 `.task(id:)`）。
+    private func searchRecent(_ term: String) {
+        input = term
+        submitted = term
+        #if os(iOS)
+        inputFocused = false
+        #endif
+    }
+
+    /// 删掉一条最近搜索。
+    private func removeRecent(_ term: String) {
+        RecentSearchStore.remove(term)
+        withAnimation(.snappy(duration: 0.2)) { recent = RecentSearchStore.all }
+    }
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -206,10 +302,8 @@ struct SearchView: View {
     @ViewBuilder
     private var resultArea: some View {
         if submitted.isEmpty {
-            // 多包一层 VStack 只为固定最小高度，EmptyStateView 自己就能撑开
-            EmptyStateView(title: emptyHint,
-                           systemImage: "magnifyingglass")
-                .frame(maxWidth: .infinity, minHeight: 240)
+            // 空词 → 最近搜索列表（没有记录时退回原先的空态提示）
+            recentArea
         } else if isLoading && results.isEmpty {
             // 先用与结果区同宽同列的空白占位，避免「搜索中」白屏
             ScrollView {

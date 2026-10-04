@@ -23,12 +23,14 @@ struct RootTopBar: ViewModifier {
         content
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showAccount = true
-                    } label: {
-                        avatar
-                    }
-                    .accessibilityLabel("账户")
+                    // 不包 Button：实测 Button 自带的横向内边距（左右各约 1pt）会让这层
+                    // 玻璃变成 220×214 的椭圆；换成直接点按后玻璃正好 214×214（正圆）。
+                    // 语义靠 accessibility 补齐（VoiceOver 读作按钮、双击触发同一动作）。
+                    avatar
+                        .onTapGesture { showAccount = true }
+                        .accessibilityLabel("账户")
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityAction { showAccount = true }
                 }
             }
             .sheet(isPresented: $showAccount) {
@@ -52,6 +54,11 @@ struct RootTopBar: ViewModifier {
     }
 
     #if os(iOS)
+    /// 头像本体。外层钉成 **34×34 正方 + 圆形命中区**是刻意的：
+    /// 顶栏那层液态玻璃的形状按**内容外接框**算，内容横宽竖窄 → 玻璃就是椭圆
+    /// （改前实测 230×212px，w/h 1.085，这就是「有点椭圆」的来源）。
+    /// 内容见方后玻璃宽高相等，实测 214×214px、w/h = **1.000**，与 App Store
+    /// 右上角头像一致。
     private var avatar: some View {
         Group {
             if session.loggedIn, let user = session.user {
@@ -64,6 +71,9 @@ struct RootTopBar: ViewModifier {
                     .foregroundStyle(.secondary)
             }
         }
+        .frame(width: 34, height: 34)
+        .clipShape(Circle())
+        .contentShape(Circle())
     }
     #endif
 }

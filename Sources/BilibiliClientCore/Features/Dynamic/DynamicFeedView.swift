@@ -40,8 +40,9 @@ struct DynamicFeedView: View {
                 feedContent
             }
         }
-        .navigationTitle("动态")
         #if os(macOS)
+        // iOS 左上角不放页面标题（去掉「动态」这类页面名，直接呈现内容）
+        .navigationTitle("动态")
         // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
         .toolbar {
             if isTabVisible {

@@ -17,7 +17,10 @@ struct ZonesView: View {
             }
             .padding(24)
         }
+        #if os(macOS)
+        // iOS 左上角不放页面标题（去掉「分区」这类页面名，直接呈现内容）
         .navigationTitle("分区")
+        #endif
     }
 }
 
