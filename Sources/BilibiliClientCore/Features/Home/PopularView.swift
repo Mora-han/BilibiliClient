@@ -41,6 +41,7 @@ struct PopularView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .videoHeroSource(video.bvid ?? "")
                         }
                     } rowContent: {
                         ForEach(usableVideos.indices, id: \.self) { index in
@@ -55,6 +56,7 @@ struct PopularView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .videoHeroSource(video.bvid ?? "")
                         }
                     }
 

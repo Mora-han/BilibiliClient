@@ -183,6 +183,7 @@ struct SearchView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .videoHeroSource(bvid)
                             }
                         }
                     } rowContent: {
@@ -192,6 +193,7 @@ struct SearchView: View {
                                     row(video)
                                 }
                                 .buttonStyle(.plain)
+                                .videoHeroSource(bvid)
                             }
                         }
                     }

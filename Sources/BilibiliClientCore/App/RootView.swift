@@ -493,10 +493,15 @@ extension View {
     /// `vis`（本栈的可见性信号）必须**显式传参**再逐目的地 `environmentObject` 注入：
     /// 实测把注入写在链外或链尾，push 出来的详情页都拿不到（缺 EnvironmentObject 直接崩溃；
     /// 自定义环境值则静默失效、onChange 永不触发）。
-    func biliNavDestinations(vis: TabVisibility) -> some View {
+    ///
+    /// `ns` 是本栈的 hero 命名空间：视频详情页用它接上卡片 zoom 转场（App Store 式
+    /// 放大进入、退出缩回），同样显式传参——理由同上，环境值在目的地上不可靠。
+    func biliNavDestinations(vis: TabVisibility, ns: Namespace.ID) -> some View {
         self
             .navigationDestination(for: String.self) { bvid in
-                VideoDetailView(bvid: bvid).environmentObject(vis)
+                VideoDetailView(bvid: bvid)
+                    .environmentObject(vis)
+                    .videoHeroDestination(bvid, in: ns)
             }
             .navigationDestination(for: UpRoute.self) { route in
                 UpProfileView(mid: route.mid)
@@ -617,12 +622,17 @@ private struct TabNavStack: View {
     @EnvironmentObject private var router: AppRouter
     @State private var path = NavigationPath()
     @StateObject private var tabVisibility = TabVisibility()
+    /// 本栈专属的卡片 zoom 命名空间（见 `VideoHeroTransition.swift`）：
+    /// keep-alive 下多栈并存，同名视频会同时出现在多个标签里，必须每栈一份。
+    @Namespace private var heroNS
 
     var body: some View {
         return NavigationStack(path: $path) {
             RootView.rootPage(for: item, query: query)
-                .biliNavDestinations(vis: tabVisibility)
+                .biliNavDestinations(vis: tabVisibility, ns: heroNS)
         }
+        // 卡片源端（列表里的 NavigationLink）从这里拿命名空间；目的端按上文显式传参。
+        .environment(\.videoHeroNS, heroNS)
         // 详情页靠这个判断"我所在的标签还可见吗"，避免隐藏标签被全局 path 计数唤醒
         .environment(\.isTabVisible, isSelected)
         .onAppear {

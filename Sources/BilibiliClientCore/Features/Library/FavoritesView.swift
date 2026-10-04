@@ -103,6 +103,7 @@ struct FavoritesView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .videoHeroSource(media.bvid ?? "")
                                 .contextMenu {
                                     Button("从收藏夹移除", role: .destructive) {
                                         remove(media)
@@ -125,6 +126,7 @@ struct FavoritesView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .videoHeroSource(media.bvid ?? "")
                                 .contextMenu {
                                     Button("从收藏夹移除", role: .destructive) {
                                         remove(media)

@@ -37,6 +37,7 @@ struct RecommendView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .videoHeroSource(item.bvid)
                             .contextMenu {
                                 Button("加入稍后再看") {
                                     Task { try? await LibraryService().addToWatchLater(aid: item.id, bvid: item.bvid) }
@@ -55,6 +56,7 @@ struct RecommendView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .videoHeroSource(item.bvid)
                             .contextMenu {
                                 Button("加入稍后再看") {
                                     Task { try? await LibraryService().addToWatchLater(aid: item.id, bvid: item.bvid) }

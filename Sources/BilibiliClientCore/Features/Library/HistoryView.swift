@@ -97,6 +97,7 @@ struct HistoryView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .videoHeroSource(item.history?.bvid ?? "")
                                 .contextMenu {
                                     Button("删除历史记录", role: .destructive) {
                                         remove(item)
@@ -113,6 +114,7 @@ struct HistoryView: View {
                                     row(item)
                                 }
                                 .buttonStyle(.plain)
+                                .videoHeroSource(item.history?.bvid ?? "")
                                 .contextMenu {
                                     Button("删除历史记录", role: .destructive) {
                                         remove(item)

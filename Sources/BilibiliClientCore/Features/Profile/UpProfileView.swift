@@ -155,6 +155,7 @@ struct UpProfileView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .videoHeroSource(video.bvid ?? "")
                     }
                 } rowContent: {
                     ForEach(usableVideos) { video in
@@ -168,6 +169,7 @@ struct UpProfileView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .videoHeroSource(video.bvid ?? "")
                     }
                 }
 

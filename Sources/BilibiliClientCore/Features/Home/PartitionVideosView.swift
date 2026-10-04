@@ -47,6 +47,7 @@ struct PartitionVideosView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .videoHeroSource(video.bvid ?? "")
                         }
                     } rowContent: {
                         ForEach(usableVideos.indices, id: \.self) { index in
@@ -61,6 +62,7 @@ struct PartitionVideosView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .videoHeroSource(video.bvid ?? "")
                         }
                     }
                 }

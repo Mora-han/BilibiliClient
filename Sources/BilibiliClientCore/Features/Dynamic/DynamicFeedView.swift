@@ -483,6 +483,7 @@ struct DynamicArchiveRow: View {
                 rowContent
             }
             .buttonStyle(.plain)
+            .videoHeroSource(bvid)
         } else {
             rowContent
         }

@@ -93,6 +93,7 @@ struct WatchLaterView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .videoHeroSource(item.bvid ?? "")
                                 .contextMenu {
                                     Button("移出稍后再看", role: .destructive) {
                                         remove(item)
@@ -109,6 +110,7 @@ struct WatchLaterView: View {
                                     row(item)
                                 }
                                 .buttonStyle(.plain)
+                                .videoHeroSource(item.bvid ?? "")
                                 .contextMenu {
                                     Button("移出稍后再看", role: .destructive) {
                                         remove(item)
