@@ -5,13 +5,12 @@ import UIKit
 
 /// iOS 根页面的统一顶栏动作：**右上角只有头像**。
 ///
-/// - 搜索不在这里：它由标签栏里的放大镜标签承担（App Store / Apple Music 同款——
-///   图标长在「首页/分区/动态/我的」这排标签里，见 `RootView` 的 TabView），
+/// - 搜索不在这里：它由标签栏里的放大镜标签承担（App Store / Apple Music 同款），
 ///   点击切到自带输入框的搜索页。刻意不用 `.searchable`：它会给顶栏再挂一颗
 ///   系统独立放大镜（实测）。
-/// - 头像点击弹出账户卡：**原生 `.sheet` + detents**——系统自带的「从底部丝滑滑入、
-///   可下拉拖走（带橡皮筋与指示条）」那一套（`AccountCardSheet`），不自绘浮层：
-///   自绘版位置、动画、拖拽反馈都和 App Store 对不上。
+/// - 头像点击弹出账户卡：**原生 `.sheet` + `.presentationSizing(.fitted)`**——
+///   与 App Store 账户卡同一个控件（iPad 的内容定尺 form sheet），从底部滑入、
+///   可下拉拖走，动画与手感全由系统提供（见 `AccountCardSheet`）。
 ///
 /// 只挂在导航栈的**根页面**上（见 `TabNavStack`）：推入详情页后顶栏动作自然收起。
 /// macOS 走侧边栏搜索框与侧边栏底部账户卡，这里整体为空实现。
@@ -34,18 +33,17 @@ struct RootTopBar: ViewModifier {
             }
             .sheet(isPresented: $showAccount) {
                 AccountCardSheet()
-                    // 强制 **page sheet**：iPad 默认给的是 form sheet——尺寸被系统封在
-                    // ~620pt 半屏（detent 写 fraction/large/height 都试过，全被天花板压住）。
-                    // page sheet 才是底部贴边、占大半屏、从底部滑入、可下拉拖走的形态，
-                    // 也就是 App Store 账户卡用的那一种。
-                    // 高度由内容的 minHeight 撑到约 85% 屏高、宽度由内容的 cardWidth
-                    // 定为屏宽 52%（见 AccountCardSheet），配 fitted 让系统按内容定尺。
-                    // 居中带侧边距的高卡片，和参考图一致。
-                    .presentationSizing(.fitted.fitted(horizontal: false, vertical: true))
-                    .presentationDragIndicator(.visible)
-                    .presentationCornerRadius(28)
+                    // 内容定尺（fitted）：App Store 账户卡就是这个形态——宽度=内容宽、
+                    // 高度=内容高，系统据此给卡片定尺寸。
+                    .presentationSizing(.fitted)
+                    .presentationCornerRadius(30)
                     .presentationBackground(Color(uiColor: .systemGroupedBackground))
-                    .presentationContentInteraction(.scrolls)
+                    // **iOS 27 的居中浮动卡片**：App Store 那张账户卡用的就是这个
+                    // （`UISheetPresentationController.preferredPlacement = .center`，
+                    //  SwiftUI 侧叫 `.presentationPlacement(.center)`）。它会以一张卡
+                    // 的形式居中悬浮、上下拖拽都带系统弹性反馈。iOS 26 上该 API 不存在，
+                    // 降级为系统默认的居中 form sheet（观感接近，只是少了新的浮动拖拽）。
+                    .biliPresentationCenteredIfAvailable()
                     .environmentObject(session)
             }
         #else
@@ -75,109 +73,116 @@ extension View {
     func biliRootTopBar() -> some View {
         modifier(RootTopBar())
     }
+
+    #if os(iOS)
+    /// iOS 27：把 sheet 变成**居中浮动的卡片**（`preferredPlacement = .center`）——
+    /// App Store 账户卡、Apple Music 的一些卡都是这个形态：居中出现、上下拖拽带
+    /// 系统弹性反馈。iOS 26 上没有这个 API，原样返回（走系统默认的居中 form sheet）。
+    @ViewBuilder
+    func biliPresentationCenteredIfAvailable() -> some View {
+        if #available(iOS 27.0, *) {
+            presentationPlacement(.center)
+        } else {
+            self
+        }
+    }
+    #endif
 }
 
-
 #if os(iOS)
-/// 点头像弹出的账户卡（**原生 sheet**，形态对齐 App Store「Apple 账户」卡）：
-/// 标题栏（图标 + 标题 + 右上角 X）+ 分组行卡；从屏幕底部滑入、可下拉拖走，
-/// 动画与拖拽反馈全部由系统 sheet 提供（`.presentationDetents` 那一套）。
+/// 点头像弹出的账户卡，**按 App Store「Apple 账户」卡逐项对齐量出来的参数**构建：
+///
+/// 参考图（iPad 11 吋横屏，屏 1210×834pt）量得的几何：
+/// - 卡片 498×567pt，白底分组灰、圆角约 30pt、居中、**无抓手条**；
+/// - 行卡左右各内缩 14pt（行卡宽 470.5pt）、圆角约 12pt；
+/// - 第一组两行各 62pt（带 44pt 头像），第二组每行 51pt；
+/// - 组内文字距行卡左边 16pt、分隔线同样从 16pt 处起；组间距 31pt；
+/// - 标题行在卡片顶部（图标 + 标题 + 右上角 X），标题区高约 85pt。
+///
+/// 尺寸由内容给出（宽度固定 498），配合 `.presentationSizing(.fitted)` 让系统
+/// 按内容定尺——这正是 App Store 那张卡的做法。
 struct AccountCardSheet: View {
     @EnvironmentObject private var session: SessionStore
     @Environment(\.dismiss) private var dismiss
     @State private var showLogin = false
+    @State private var cacheCleared = false
+
+    // 参考图量得的几何参数
+    private static let cardWidth: CGFloat = 498
+    private static let rowInset: CGFloat = 14
+    private static let rowRadius: CGFloat = 12
+    private static let textInset: CGFloat = 16
+    private static let plainRowHeight: CGFloat = 51
+    private static let avatarRowHeight: CGFloat = 62
+    private static let groupGap: CGFloat = 31
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
+        VStack(alignment: .leading, spacing: 0) {
+            header
+                .padding(.top, 16)
+                .padding(.bottom, 34)
 
-                // 账户 + 软件设置（一组分组行，App Store 卡片同款的 inset 行卡）
-                VStack(spacing: 0) {
-                    accountRow
-                    Divider()
-                        .padding(.leading, session.loggedIn ? 76 : 16)
-                    settingsRow
-                }
-                .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
-
-                // 退出登录单独一组，与信息行区分开（未登录时没有这组）
-                if session.loggedIn {
-                    VStack(spacing: 0) {
-                        Button {
-                            session.logout()
-                        } label: {
-                            rowLabel(icon: "rectangle.portrait.and.arrow.right",
-                                     title: "退出登录",
-                                     tint: .red)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
-                }
+            group {
+                accountRow
+                separator
+                settingsRow
             }
-            .padding(16)
-            // 定宽：屏宽的 52%（参考图里 Apple 账户卡约占屏宽一半、左右各留约 10% 边距），
-            // 两端至少留 64pt；高度由 minHeight 撑到约 85% 屏高。宽高都由内容给出，
-            // 配合 `.presentationSizing(.fitted...)` 才不会被 form-sheet 的半屏天花板压住。
-            .frame(width: Self.cardWidth, alignment: .leading)
-            .frame(minHeight: Self.screenHeight * 0.85)
+
+            spacer(Self.groupGap)
+
+            group {
+                versionRow
+                separator
+                githubRow
+                separator
+                cacheRow
+            }
+
+            if session.loggedIn {
+                spacer(Self.groupGap)
+                group { signOutRow }
+            }
+
+            Color.clear.frame(height: 19)
         }
-        .scrollIndicators(.hidden)
-        .sheet(isPresented: $showLogin) {
-            LoginView()
-        }
+        .frame(width: Self.cardWidth, alignment: .leading)
     }
 
-    /// 卡宽：屏宽 52%（与参考图比例一致），两端至少留 64pt。
-    private static var cardWidth: CGFloat {
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }
-        let w = window?.bounds.width ?? 800
-        return min(w * 0.52, w - 64)
-    }
+    // MARK: - 标题栏
 
-    /// 屏高：取当前 key window 的高度（sheet 与页面同窗，不会拿错）。
-    private static var screenHeight: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?.bounds.height ?? 1000
-    }
-
-    /// 标题栏：图标 + 「账户」+ 右上角 X（参考图的 Apple 账户标题栏）。
+    /// 标题行：图标 + 「账户」+ 右上角圆形 X（参考图的 Apple 账户标题栏）。
     private var header: some View {
         HStack(spacing: 10) {
             if session.loggedIn, let user = session.user {
                 RemoteImage(url: Formatters.https(user.face), variant: .avatar)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 28, height: 28)
                     .clipShape(Circle())
             } else {
                 Image(systemName: "person.crop.circle")
-                    .font(.system(size: 22))
+                    .font(.system(size: 24))
                     .foregroundStyle(.secondary)
             }
             Text("账户")
                 .font(.headline)
-            Spacer()
+            Spacer(minLength: 0)
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 30, height: 30)
                     .background(Color(uiColor: .quaternarySystemFill), in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("关闭")
         }
-        .padding(.top, 4)
+        .padding(.horizontal, Self.rowInset)
     }
 
-    /// 账户行：登录态展示个人信息；未登录态是去登录的入口。
+    // MARK: - 行
+
+    /// 账户行：登录态是头像 + 昵称 + 副标题；未登录态是去登录的入口。
     @ViewBuilder
     private var accountRow: some View {
         if session.loggedIn, let user = session.user {
@@ -189,58 +194,131 @@ struct AccountCardSheet: View {
                     Text(user.name)
                         .font(.body.weight(.semibold))
                         .lineLimit(1)
-                    Text("Lv.\(user.level) · 关注 \(Formatters.count(user.following)) · 粉丝 \(Formatters.count(user.follower)) · 硬币 \(Formatters.decimal(user.coin))")
+                    Text("Lv.\(user.level) · 关注 \(Formatters.count(user.following)) · 粉丝 \(Formatters.count(user.follower))")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Self.textInset)
+            .frame(height: Self.avatarRowHeight)
         } else {
             Button {
                 showLogin = true
             } label: {
-                rowLabel(icon: "qrcode", title: "扫码登录", showChevron: true)
+                row(icon: "qrcode", title: "扫码登录", height: Self.avatarRowHeight, chevron: true)
             }
             .buttonStyle(.plain)
         }
     }
 
-    /// 「软件设置」行：跳系统「设置」里本 App 的面板（设置页已并入系统设置）。
+    /// 「软件设置」：跳系统「设置」里本 App 的面板（设置页已并入系统设置）。
     private var settingsRow: some View {
         Button {
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(url)
             }
         } label: {
-            rowLabel(icon: "gearshape", title: "软件设置", showChevron: true)
+            row(title: "软件设置", chevron: true)
         }
         .buttonStyle(.plain)
     }
 
-    /// 分组行的统一排版：图标 + 标题 + 右侧箭头。
-    private func rowLabel(icon: String, title: String, tint: Color? = nil,
-                          showChevron: Bool = false) -> some View {
+    private var versionRow: some View {
+        row(title: "版本", value: "\(BuildInfo.version)（\(BuildInfo.build)）")
+    }
+
+    private var githubRow: some View {
+        Button {
+            if let url = URL(string: "https://github.com/Mora-han/BilibiliClient") {
+                UIApplication.shared.open(url)
+            }
+        } label: {
+            row(title: "GitHub 项目主页", chevron: true)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var cacheRow: some View {
+        Button {
+            URLCache.shared.removeAllCachedResponses()
+            BiliImages.clearCaches()
+            cacheCleared = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.4))
+                cacheCleared = false
+            }
+        } label: {
+            row(title: "清除图片缓存", value: cacheCleared ? "已清除" : nil)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var signOutRow: some View {
+        Button {
+            session.logout()
+        } label: {
+            Text("退出登录")
+                .font(.body)
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.plainRowHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 零件
+
+    /// 一行：可选前导图标 + 标题 + 右侧值/箭头。行高默认 51pt（参考图量得）。
+    private func row(icon: String? = nil, title: String, value: String? = nil,
+                     height: CGFloat = plainRowHeight, chevron: Bool = false) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 17))
-                .frame(width: 24)
-                .foregroundStyle(tint ?? Color.secondary)
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 17))
+                    .frame(width: 24)
+                    .foregroundStyle(.secondary)
+            }
             Text(title)
                 .font(.body)
-                .foregroundStyle(tint ?? Color.primary)
+                .foregroundStyle(.primary)
             Spacer(minLength: 0)
-            if showChevron {
+            if let value {
+                Text(value)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            if chevron {
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 50)
+        .padding(.horizontal, Self.textInset)
+        .frame(height: height)
         .contentShape(Rectangle())
+    }
+
+    /// 行卡：白底 + 12pt 圆角（参考图里一组行共用一张卡）。
+    private func group<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0, content: content)
+            .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: Self.rowRadius))
+            .padding(.horizontal, Self.rowInset)
+    }
+
+    /// 组内分隔线：从文字左缘（行内 16pt）起，不到行卡左边缘——与参考图一致。
+    private var separator: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.12))
+            .frame(height: 0.5)
+            .padding(.leading, Self.textInset)
+    }
+
+    private func spacer(_ height: CGFloat) -> some View {
+        Color.clear.frame(height: height)
     }
 }
 #endif
