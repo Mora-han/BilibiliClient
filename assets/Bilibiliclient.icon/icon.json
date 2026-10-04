@@ -1,46 +1,121 @@
 {
   "fill" : {
-    "solid" : "extended-gray:1.00000,1.00000"
+    "linear-gradient" : [
+      "display-p3:0.92613,0.45814,0.60972,1.00000",
+      "display-p3:0.89242,0.30386,0.46551,1.00000"
+    ]
   },
   "groups" : [
     {
-      "hidden" : false,
       "layers" : [
         {
-          "blend-mode-specializations" : [
-            {
-              "value" : "normal"
-            },
-            {
-              "appearance" : "dark",
-              "value" : "normal"
-            }
-          ],
+          "blend-mode" : "normal",
           "fill-specializations" : [
             {
               "value" : {
                 "linear-gradient" : [
-                  "display-p3:1.00000,0.48662,0.72363,1.00000",
-                  "display-p3:0.82635,0.40212,0.59797,1.00000"
-                ]
+                  "display-p3:1.00000,0.98393,0.99598,0.80000",
+                  "extended-gray:1.00000,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.5,
+                    "y" : 1
+                  },
+                  "stop" : {
+                    "x" : 0.5,
+                    "y" : 0
+                  }
+                }
               }
             },
             {
               "appearance" : "dark",
               "value" : {
                 "linear-gradient" : [
-                  "display-p3:0.92561,0.45042,0.66980,1.00000",
-                  "display-p3:0.78306,0.38105,0.56664,1.00000"
-                ]
+                  "display-p3:0.88087,0.33325,0.49848,0.80000",
+                  "display-p3:1.00000,0.37831,0.56590,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.5,
+                    "y" : 1
+                  },
+                  "stop" : {
+                    "x" : 0.5,
+                    "y" : 0
+                  }
+                }
               }
             }
           ],
           "glass" : true,
           "hidden" : false,
-          "image-name" : "未命名2 2.png",
-          "name" : "未命名2 2",
+          "image-name" : "bilibili.png",
+          "name" : "bilibili",
           "position" : {
-            "scale" : 0.9,
+            "scale" : 4.3,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "blend-mode" : "normal",
+          "fill-specializations" : [
+            {
+              "value" : {
+                "linear-gradient" : [
+                  "extended-gray:1.00000,0.20000",
+                  "display-p3:0.95000,0.95000,0.95000,0.45000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.5,
+                    "y" : 1
+                  },
+                  "stop" : {
+                    "x" : 0.5,
+                    "y" : 0
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.89994,0.34069,0.50354,0.20000",
+                  "display-p3:0.89994,0.34069,0.50354,0.45000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.5,
+                    "y" : 1
+                  },
+                  "stop" : {
+                    "x" : 0.5,
+                    "y" : 0
+                  }
+                }
+              }
+            }
+          ],
+          "glass-specializations" : [
+            {
+              "value" : true
+            },
+            {
+              "appearance" : "tinted",
+              "value" : false
+            }
+          ],
+          "hidden" : false,
+          "image-name" : "zzz 2.png",
+          "name" : "zzz 2",
+          "position" : {
+            "scale" : 0.35,
             "translation-in-points" : [
               0,
               0
@@ -48,7 +123,6 @@
           }
         }
       ],
-      "name" : "Group",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
@@ -60,6 +134,9 @@
     }
   ],
   "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
     "squares" : "shared"
   }
 }

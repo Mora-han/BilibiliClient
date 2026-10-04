@@ -36,13 +36,17 @@ struct HistoryView: View {
         #endif
         .toolbar {
             if isTabVisible {
+                #if os(macOS)
+                // 「编辑」与刷新都只留 macOS。三个 keep-alive 页（收藏/历史/稍后再看）
+                // 在 iOS 上共用同一个顶栏，工具栏条目会**合并**——此前只有收藏页把
+                // 「编辑」包进了 #if，历史与稍后再看漏在外面，于是 iOS 顶栏右上角
+                // 一次冒出两个「编辑」。iOS 上移除记录走长按菜单（见下面 rowContent）。
                 ToolbarItem(placement: .primaryAction) {
                     Button(isEditing ? "完成" : "编辑") {
                         withAnimation { isEditing.toggle() }
                     }
                     .disabled(usableItems.isEmpty)
                 }
-                #if os(macOS)
                 // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
                 ToolbarItem {
                     Button {

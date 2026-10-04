@@ -655,33 +655,9 @@ struct VideoDetailView: View {
                         .presentationCompactAdaptation(.popover)
                 }
 
-                #if os(iOS)
-                // iOS 的画面用系统 AVPlayerViewController 控制栏，里面**没有**倍速入口
-                // （macOS 自绘控制栏有）。这里在页内这一行补一个，两端能力对齐。
-                Menu {
-                    ForEach(PlayerController.speedOptions, id: \.self) { option in
-                        Button {
-                            player.setSpeed(option)
-                        } label: {
-                            if abs(player.speed - option) < 0.01 {
-                                Label(PlayerController.speedText(option), systemImage: "checkmark")
-                            } else {
-                                Text(PlayerController.speedText(option))
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "gauge.with.needle")
-                        Text(PlayerController.speedText(player.speed))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                .fixedSize()
-                .menuStyle(.borderlessButton)
-                .help("播放倍速")
-                #endif
+                // iOS 上这里原本还挂着一个倍速 Menu（因为系统 AVPlayerViewController
+                // 控制栏没有倍速入口）。产品要求删掉：它和弹幕设置并排、又多占一行，
+                // 倍速改从画面控制栏走。macOS 自绘控制栏里的倍速保留。
 
                 #if os(macOS)
                 Button {

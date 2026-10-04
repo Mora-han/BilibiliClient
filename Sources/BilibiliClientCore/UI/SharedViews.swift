@@ -90,10 +90,16 @@ struct VideoFeedLayout<CardContent: View, RowContent: View>: View {
     var body: some View {
         switch effectiveMode {
         case .card:
+            // 网格必须显式占满可用宽度：`GridItem(.adaptive)` 是按**提议宽度**算列数的，
+            // 父容器若只给出「子视图自己想要的宽度」（比如 `VStack(alignment: .leading)`
+            // 里放了横向 chips 的收藏页），列数就会比首页少一列——同一套卡片网格在
+            // 「我的」比首页每行少几个，就是这么来的。首页的容器是 `VStack(spacing: 0)`
+            // 能把全宽传下来，收藏/历史/稍后再看传不下来。
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
                       spacing: 16) {
                 cardContent
             }
+            .frame(maxWidth: .infinity)
         case .list:
             LazyVStack(spacing: 12) {
                 rowContent

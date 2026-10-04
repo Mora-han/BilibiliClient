@@ -32,13 +32,16 @@ struct WatchLaterView: View {
         #endif
         .toolbar {
             if isTabVisible {
+                #if os(macOS)
+                // 「编辑」与刷新都只留 macOS。三个 keep-alive 页在 iOS 上共用同一个
+                // 顶栏、工具栏条目会合并，此前这里漏在 #if 外面导致 iOS 顶栏多出一个
+                // 「编辑」（见 HistoryView 同处说明）。iOS 上移除走长按菜单。
                 ToolbarItem(placement: .primaryAction) {
                     Button(isEditing ? "完成" : "编辑") {
                         withAnimation { isEditing.toggle() }
                     }
                     .disabled(usableItems.isEmpty)
                 }
-                #if os(macOS)
                 // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
                 ToolbarItem {
                     Button {

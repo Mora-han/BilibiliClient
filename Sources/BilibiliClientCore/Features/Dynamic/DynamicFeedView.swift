@@ -77,10 +77,20 @@ struct DynamicFeedView: View {
     }
 
     /// 是否竖排 UP 栏。iPhone 紧凑宽度下强制回到上侧横向栏：
-    /// 固定 170pt 的侧栏会把 393pt 宽的屏挤到信息流只剩 ~180pt，
+    /// 固定侧栏会把 393pt 宽的屏挤到信息流只剩 ~180pt，
     /// 卡片里的固定 128pt 封面直接把标题压没。
     private var showsLeftBar: Bool {
         upBarPosition == UpBarPosition.left.rawValue && horizontalSizeClass != .compact
+    }
+
+    /// 左侧 UP 栏宽度：平板/桌面够宽给 220，窄一点的（分屏、iPad 竖屏）
+    /// 给 180。原先固定 170pt，博主 ID 只能截断显示。
+    private var leftBarWidth: CGFloat {
+        #if os(macOS)
+        return 220
+        #else
+        return horizontalSizeClass == .regular ? 200 : 176
+        #endif
     }
 
     private var displayItems: [DynamicItem] {
@@ -116,14 +126,14 @@ struct DynamicFeedView: View {
                     selectUP(nil)
                 }
                 ForEach(followedUPs) { up in
-                    chip(title: up.uname ?? "UP", isSelected: selectedUP == up.mid, avatar: up.face ?? "") {
+                    chip(title: up.uname ?? "UP", isSelected: selectedUP == up.mid, avatar: up.face ?? "", subtitle: "UID \(up.mid)") {
                         selectUP(up.mid)
                     }
                 }
             }
             .padding(10)
         }
-        .frame(width: 170)
+        .frame(width: leftBarWidth)
     }
 
     /// 动态内容列表（含下拉刷新与滚动自动加载）
@@ -165,7 +175,7 @@ struct DynamicFeedView: View {
         .autoLoadMore { await loadMore() }
     }
 
-    private func chip(title: String, isSelected: Bool, avatar: String? = nil, action: @escaping () -> Void) -> some View {
+    private func chip(title: String, isSelected: Bool, avatar: String? = nil, subtitle: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let avatar, !avatar.isEmpty {
@@ -173,9 +183,18 @@ struct DynamicFeedView: View {
                         .frame(width: 20, height: 20)
                         .clipShape(Circle())
                 }
-                Text(title)
-                    .font(.callout)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.callout)
+                        .lineLimit(1)
+                    // 博主 ID（mid）：左侧竖栏有富余宽度时一并显示，方便直接抄号
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)

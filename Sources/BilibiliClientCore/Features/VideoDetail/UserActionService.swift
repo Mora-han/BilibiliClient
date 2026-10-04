@@ -12,6 +12,11 @@ struct UserActionService {
             "csrf": csrf(),
         ]
         if let bvid, !bvid.isEmpty { form["bvid"] = bvid }
+        // 网页端点赞必带 `dm_img_list` / `dm_img_str`（= "[]" / ""），B 站网关
+        // 缺这两个字段就判定为非网页来源，直接回 -403 请求过于频繁。
+        // 这两个值在网页上是**恒定的空值**（点了没表情就是空列表），不是动态内容。
+        form["dm_img_list"] = "[]"
+        form["dm_img_str"] = ""
         try await APIClient.shared.postForm(path: "/x/web-interface/archive/like", form: form)
     }
 
@@ -24,13 +29,22 @@ struct UserActionService {
             "csrf": csrf(),
         ]
         if let bvid, !bvid.isEmpty { form["bvid"] = bvid }
+        // 投币同样要带这两个字段，否则回 -401。网页端它们也是恒定空值。
+        form["dm_img_list"] = "[]"
+        form["dm_img_str"] = ""
         try await APIClient.shared.postForm(path: "/x/web-interface/coin/add", form: form)
     }
 
     /// 一键三连：同时点赞、投币 1 枚并收藏到默认收藏夹。
     func triple(aid: Int, bvid: String? = nil) async throws {
         await APIClient.shared.ensureBuvid()
-        var form: [String: String] = ["aid": "\(aid)", "csrf": csrf()]
+        var form: [String: String] = [
+            "aid": "\(aid)",
+            "csrf": csrf(),
+            // 三连走的是点赞+投币的组合校验，同样要带这两个字段
+            "dm_img_list": "[]",
+            "dm_img_str": "",
+        ]
         if let bvid, !bvid.isEmpty { form["bvid"] = bvid }
         try await APIClient.shared.postForm(path: "/x/web-interface/archive/like/triple", form: form)
     }
