@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		00789899A4BB5FC854F4B154 /* BuildInfo.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B4838F70C57CA600C3C2C0B /* BuildInfo.generated.swift */; };
 		2E8805C815D39F0118F7C984 /* BilibiliClientCore in Frameworks */ = {isa = PBXBuildFile; productRef = 20B8A82986D4E3CF0E270571 /* BilibiliClientCore */; };
+		607554CFCDB7F5C49C0A304C /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = CD43EB14102F7216AD1C7EC7 /* Settings.bundle */; };
 		8493D7EA87FF73C61A14C42B /* Bilibiliclient.icon in Resources */ = {isa = PBXBuildFile; fileRef = 3FE99A0985E031C293BCE2B8 /* Bilibiliclient.icon */; };
 		E3EDD1B2A8F9946AB1170B40 /* BilibiliClientiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1777E85443A0453F8EA7ABC5 /* BilibiliClientiOSApp.swift */; };
 /* End PBXBuildFile section */
@@ -18,6 +19,7 @@
 		3FE99A0985E031C293BCE2B8 /* Bilibiliclient.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = Bilibiliclient.icon; sourceTree = "<group>"; };
 		6B4838F70C57CA600C3C2C0B /* BuildInfo.generated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuildInfo.generated.swift; sourceTree = "<group>"; };
 		B8208803DD786236B3154DD3 /* BilibiliClient */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BilibiliClient; path = .; sourceTree = SOURCE_ROOT; };
+		CD43EB14102F7216AD1C7EC7 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Settings.bundle; path = iOSResources/Settings.bundle; sourceTree = SOURCE_ROOT; };
 		E338B4AA2D7436F2532BE6E1 /* BilibiliClientIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BilibiliClientIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -33,6 +35,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0A98927B2506C36B52FB980E /* iOSResources */ = {
+			isa = PBXGroup;
+			children = (
+				CD43EB14102F7216AD1C7EC7 /* Settings.bundle */,
+			);
+			path = iOSResources;
+			sourceTree = "<group>";
+		};
 		0EB5730B7FD45B918A033270 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -78,6 +88,7 @@
 			isa = PBXGroup;
 			children = (
 				CA215DC934842823A1559D39 /* assets */,
+				0A98927B2506C36B52FB980E /* iOSResources */,
 				66120F14F1957607CD515555 /* Packages */,
 				0EB5730B7FD45B918A033270 /* Sources */,
 				5D93443B05B6C01B5DB75FEA /* Products */,
@@ -174,6 +185,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8493D7EA87FF73C61A14C42B /* Bilibiliclient.icon in Resources */,
+				607554CFCDB7F5C49C0A304C /* Settings.bundle in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -261,7 +273,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = Bilibiliclient;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 159;
+				CURRENT_PROJECT_VERSION = 189;
 				DEVELOPMENT_TEAM = WTANQ3L4S3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Xcode/Info.plist;
@@ -270,7 +282,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.9;
+				MARKETING_VERSION = 1.10.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.mora.BilibiliClient;
 				PRODUCT_NAME = BilibiliClient;
 				SDKROOT = iphoneos;
@@ -287,7 +299,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = Bilibiliclient;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 159;
+				CURRENT_PROJECT_VERSION = 189;
 				DEVELOPMENT_TEAM = WTANQ3L4S3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Xcode/Info.plist;
@@ -296,7 +308,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.9;
+				MARKETING_VERSION = 1.10.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.mora.BilibiliClient;
 				PRODUCT_NAME = BilibiliClient;
 				SDKROOT = iphoneos;

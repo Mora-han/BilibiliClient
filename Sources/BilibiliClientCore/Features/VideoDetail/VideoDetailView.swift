@@ -394,8 +394,10 @@ struct VideoDetailView: View {
     #if os(iOS)
     /// iPad 宽屏两栏：左「画面 + 视频信息」，右「评论」，各自独立滚动。
     private func wideContent(_ view: VideoDetailData.VideoView, width: CGFloat) -> some View {
-        // 评论栏给固定宽度（随页面宽微调，但有上下限），剩下的全给画面与视频信息
-        let commentWidth = min(max(width * 0.38, 320), 460)
+        // 评论栏宽度 = 分隔线位置：越宽分隔线越靠左、左栏画面越小。
+        // 0.38/460 那版画面几乎占到 2/3 屏、和评论栏比例失衡；放宽到 0.44（上限 560）
+        // 后 1408pt 横屏下画面 848pt、评论 560pt，两侧更接近、看起来更和谐。
+        let commentWidth = min(max(width * 0.44, 340), 560)
         return HStack(alignment: .top, spacing: 0) {
             // 左栏：画面固定在顶部（通栏、无内缩，尽可能大），下面的视频信息自己滚动
             VStack(spacing: 0) {

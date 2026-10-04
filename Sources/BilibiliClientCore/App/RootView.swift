@@ -145,6 +145,18 @@ public struct RootView: View {
             Tab("分区", systemImage: SidebarItem.zones.icon, value: SidebarItem.zones) { tabStack(.zones) }
             Tab("动态", systemImage: SidebarItem.dynamics.icon, value: SidebarItem.dynamics) { tabStack(.dynamics) }
             Tab("我的", systemImage: SidebarItem.mine.icon, value: SidebarItem.mine) { tabStack(.mine) }
+            // 搜索做成标签栏里的一颗放大镜（App Store / Apple Music 同款：图标长在
+            // 「首页…我的」这排标签里，而不是和右上角头像挤在一起）。点它直接切到
+            // 自带输入框的搜索页（rootPage(.search) → SearchView），页内提交原地出结果。
+            // 刻意不用 `.searchable`：它会给顶栏再挂一颗系统放大镜（实测）。
+            // label 只给图标：顶栏胶囊里搜索显示成放大镜而不是「搜索」两个字
+            //（系统默认 label 在胶囊里只画标题文字，实测过）。
+            Tab(value: SidebarItem.search) {
+                tabStack(.search)
+            } label: {
+                Image(systemName: SidebarItem.search.icon)
+                    .accessibilityLabel(SidebarItem.search.rawValue)
+            }
         }
         .tabViewStyle(.sidebarAdaptable)
         .preferredColorScheme(colorScheme)
@@ -549,6 +561,11 @@ enum LaunchArgs {
         guard !searchConsumed else { return false }
         searchConsumed = true
         return ProcessInfo.processInfo.arguments.contains("-openSearch")
+    }
+
+    /// `-account`：启动即展开右上角账户卡片（截图验证用）。
+    static var accountPreview: Bool {
+        ProcessInfo.processInfo.arguments.contains("-account")
     }
 }
 
