@@ -614,9 +614,22 @@ private struct MineView: View {
 }
 #endif
 
+/// 启动参数（视觉回归用）。`-openVideo <bvid>` 让应用起来就落在视频详情页，
+/// 免去模拟器无 GUI 时「点不进目标页面」的麻烦；正常启动不带参数，零影响。
+enum LaunchArgs {
+    private static var consumed = false
+
+    static func takeOpenVideoBvid() -> String? {
+        guard !consumed else { return nil }
+        consumed = true
+        let args = ProcessInfo.processInfo.arguments
+        guard let idx = args.firstIndex(of: "-openVideo"), idx + 1 < args.count else { return nil }
+        return args[idx + 1]
+    }
+}
+
 /// 单个标签页自己的导航栈。动机见 `RootView.tabStack(_:)` 的说明。
-private struct TabNavStack: View {
-    let item: RootView.SidebarItem
+private struct TabNavStack: View {    let item: RootView.SidebarItem
     let query: String
     let isSelected: Bool
     @EnvironmentObject private var router: AppRouter
@@ -643,6 +656,12 @@ private struct TabNavStack: View {
         // 切回时的 path 计数恢复（`newCount == navBaseCount`）全靠这个不变量。
         // （用 .task 而不是 .onAppear：实测后者的镜像没跑到。）
         .task {
+            // 视觉回归用：`-openVideo <bvid>` 启动时直接把本栈落到视频详情页。
+            // 模拟器没有 GUI、点不了屏，排版改动靠它直达目标页面截前后对比图。
+            // 正常启动不带该参数，且只被第一个标签栈消费一次，行为零影响。
+            if isSelected, let bvid = LaunchArgs.takeOpenVideoBvid(), path.isEmpty {
+                path = NavigationPath([bvid])
+            }
             if isSelected, path != router.path {
                 router.path = path
             }

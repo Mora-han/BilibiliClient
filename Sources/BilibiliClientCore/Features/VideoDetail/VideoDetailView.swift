@@ -97,7 +97,14 @@ struct VideoDetailView: View {
                 content(view)
             }
         }
+        #if os(macOS)
+        // 顶部大标题在 iOS 上删掉：标题只保留视频下方那一行（`videoInfoSection` 里的
+        // Text），同一行标题重复出现两遍只是白占一整行高度。iOS 这里**完全不设**
+        // navigationTitle——设成空串时 iOS 26 会在页面顶部画一个空的玻璃胶囊框，
+        // 比有标题还难看；不设才是真正的「没有标题」。返回键与侧滑不受影响。
+        // macOS 走工具栏/窗口标题，保留原样。
         .navigationTitle(detail?.view.title ?? "视频详情")
+        #endif
         .task {
             await load()
         }
@@ -276,6 +283,15 @@ struct VideoDetailView: View {
     private func stackedContent(_ view: VideoDetailData.VideoView) -> some View {
         // 紧凑宽度下 24pt 的左右留白对 390pt 的屏来说太多，画面会明显窄一圈
         let horizontalPadding: CGFloat = horizontalSizeClass == .compact ? 16 : 24
+        // 画面单独一组内缩，与下方信息区脱钩：iOS 通栏（顶到内容区左右边缘），
+        // 画面拿到该宽度下能有的最大尺寸；macOS 仍保留左右留白，避免贴到窗口边。
+        #if os(iOS)
+        let playerHorizontalPadding: CGFloat = 0
+        let playerTopPadding: CGFloat = 16
+        #else
+        let playerHorizontalPadding: CGFloat = horizontalPadding
+        let playerTopPadding: CGFloat = 24
+        #endif
         return Group {
             if isCompactHeight {
                 ScrollView {
@@ -298,8 +314,8 @@ struct VideoDetailView: View {
                     // 视频固定在页面顶部：滚动时保持原位完整可见，下方内容独立滑动
                     playerSection
                         .contentWidth()
-                        .padding(.horizontal, horizontalPadding)
-                        .padding(.top, 24)
+                        .padding(.horizontal, playerHorizontalPadding)
+                        .padding(.top, playerTopPadding)
 
                     // 固定空隙：不属于滚动内容，滚动时始终保留在视频与内容之间
                     Color.clear
@@ -366,11 +382,10 @@ struct VideoDetailView: View {
         // 评论栏给固定宽度（随页面宽微调，但有上下限），剩下的全给画面与视频信息
         let commentWidth = min(max(width * 0.38, 320), 460)
         return HStack(alignment: .top, spacing: 0) {
-            // 左栏：画面照旧固定在顶部，下面的视频信息自己滚动
+            // 左栏：画面固定在顶部（通栏、无内缩，尽可能大），下面的视频信息自己滚动
             VStack(spacing: 0) {
                 playerSection
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
+                    .padding(.top, 16)
 
                 Color.clear
                     .frame(height: 16)
@@ -395,11 +410,16 @@ struct VideoDetailView: View {
     }
 
     /// 右栏：评论区独立一列。标题固定，评论自己滚动，与左栏互不影响。
+    ///
+    /// 背景与整页一致（不再铺 `cardSolidBackground`）：原先那块底色从屏幕最顶端一直铺到
+    /// 「评论」标题下面，左栏是页面底色、右栏是另一块颜色，拼在一起既有一大片空白色块，
+    /// 又和黑色画面区形成突兀的分界。统一后两栏只剩一条分隔线。
+    /// 顶部内缩与左栏画面的 16pt 对齐，标题与画面顶边齐平。
     private func commentColumn(_ view: VideoDetailData.VideoView) -> some View {
         VStack(spacing: 0) {
             commentHeader
                 .padding(.horizontal, 20)
-                .padding(.top, 20)
+                .padding(.top, 16)
                 .padding(.bottom, 12)
 
             Divider()
@@ -411,7 +431,6 @@ struct VideoDetailView: View {
                     .padding(.vertical, 12)
             }
         }
-        .background(Color.cardSolidBackground)
     }
     #endif
 
