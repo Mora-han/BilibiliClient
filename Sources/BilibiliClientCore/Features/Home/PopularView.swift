@@ -69,9 +69,14 @@ struct PopularView: View {
             }
             .padding(20)
         }
+        #if os(macOS)
+        // iOS 上嵌在「首页」分段容器里，标题由容器统一给（见 RecommendView 说明）
         .navigationTitle("热门")
+        #endif
         .autoLoadMore { await loadMore() }
         .feedRefreshable { await load() }
+        #if os(macOS)
+        // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
         .toolbar {
             if isTabVisible {
                 ToolbarItem {
@@ -84,6 +89,7 @@ struct PopularView: View {
                 }
             }
         }
+        #endif
         .overlay {
             if !isLoading, let errorMessage, videos.isEmpty {
                 LoadErrorView(message: errorMessage) {

@@ -59,6 +59,8 @@ struct UpProfileView: View {
             .contentWidth()
             .padding(24)
         }
+        #if os(macOS)
+        // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
         .toolbar {
             if isTabVisible {
                 ToolbarItem {
@@ -71,6 +73,7 @@ struct UpProfileView: View {
                 }
             }
         }
+        #endif
         .navigationTitle(card?.name ?? "UP主页")
         .autoLoadMore { await loadMore() }
         .feedRefreshable { await load() }

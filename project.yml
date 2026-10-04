@@ -34,6 +34,11 @@ targets:
       # 避免把 macOS target / 共享层源码重复编进 App。
       - path: Sources/BilibiliClientiOS
       - path: Sources/BilibiliClientCore/Generated
+      # 系统「设置」里的本 App 面板（iOS 已无应用内设置页）。必须以文件夹引用
+      # 整包拷进 .app：Settings.bundle 是个目录，把里面的 plist 散拷进根目录会被系统无视。
+      - path: iOSResources/Settings.bundle
+        buildPhase: resources
+        type: folder
       - path: assets/Bilibiliclient.icon
         buildPhase: resources
     dependencies:

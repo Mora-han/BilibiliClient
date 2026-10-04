@@ -76,9 +76,17 @@ struct RecommendView: View {
             }
             .padding(20)
         }
+        #if os(macOS)
+        // iOS 上本页嵌在「首页」分段容器里（SegmentedPages），标题由容器统一给——
+        // SwiftUI 里子页自带的 navigationTitle 会盖过外层；macOS 单独成页时仍归自己。
         .navigationTitle("推荐")
+        #endif
         .autoLoadMore { await loadMore() }
         .feedRefreshable { await load() }
+        .feedRefreshable { await load() }
+        #if os(macOS)
+        // 独立刷新按钮只留 macOS（没有下拉手势）；iOS 用下拉刷新（feedRefreshable），
+        // 右上角让位给统一的搜索/头像（见 RootTopBar）。
         .toolbar {
             if isTabVisible {
                 ToolbarItem {
@@ -91,6 +99,7 @@ struct RecommendView: View {
                 }
             }
         }
+        #endif
         .overlay {
             if !isLoading, let errorMessage, items.isEmpty {
                 LoadErrorView(message: errorMessage) {

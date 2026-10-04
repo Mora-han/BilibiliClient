@@ -56,7 +56,7 @@ public struct RootView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var router: AppRouter
     @AppStorage("appearance") private var appearance = AppearanceMode.system.rawValue
-    @State private var selection: SidebarItem? = .home
+    @State private var selection: SidebarItem? = LaunchArgs.initialTab() ?? .home
     @State private var showLogin = false
     @State private var showAccountPanel = false
     @State private var searchText = ""
@@ -75,7 +75,6 @@ public struct RootView: View {
     /// 实测过），由键盘监视器直接调用它兜底，行为与点菜单完全一致。
     @Environment(\.openSettings) private var openSettings
     #endif
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     enum SidebarItem: String, CaseIterable, Identifiable {
         case home = "推荐"
@@ -87,15 +86,12 @@ public struct RootView: View {
         case history = "历史"
         case watchLater = "稍后再看"
         case settings = "设置"
-        // 仅 iPhone 紧凑宽度：把分区/收藏/历史/稍后再看/设置收进去的聚合页
+        // 「我的」聚合页：iOS 上用顶部分段胶囊切收藏/历史/稍后再看（见 MineView）
         case mine = "我的"
         // 搜索仅由顶部搜索框进入，不出现在侧边栏
         case search = "搜索"
 
         var id: String { rawValue }
-
-        /// 紧凑宽度下「我的」页里列出的入口（顺序即展示顺序）。
-        static let mineEntries: [SidebarItem] = [.zones, .favorites, .history, .watchLater, .settings]
 
         var icon: String {
             switch self {
@@ -136,51 +132,22 @@ public struct RootView: View {
         }
         .onAppear(perform: bindMainWindow)
         #else
-        // iPhone 底部标签栏 / iPad 顶部标签栏，iPad 上可一键切到侧边栏（Apple Music 式）。
-        // 分组用 SwiftUI 的 `TabSection`（嵌套 `Tab` 不被 SwiftUI 支持：Tab 只 conform
-        // TabContent，不 conform View）。侧边栏里的「浏览 / 我的」分组与 macOS 侧边栏一致。
-        //
-        // 紧凑宽度（iPhone / 窄 iPad）下必须收窄到 5 个 tab：系统只保证 5 个位置，
-        // 多出来的会被塞进「更多」列表，而 `TabSection` 的分组标题在紧凑宽度下本来
-        // 就不显示，9 个 tab 只会变成一团。「我的」做成一个真正的页面（`MineView`），
-        // 把分区 / 收藏 / 历史 / 稍后再看 / 设置收进去。
-        Group {
-            if horizontalSizeClass == .compact {
-                TabView(selection: $selection) {
-                    Tab("推荐", systemImage: SidebarItem.home.icon, value: SidebarItem.home) { tabStack(.home) }
-                    Tab("热门", systemImage: SidebarItem.popular.icon, value: SidebarItem.popular) { tabStack(.popular) }
-                    Tab("直播", systemImage: SidebarItem.live.icon, value: SidebarItem.live) { tabStack(.live) }
-                    Tab("动态", systemImage: SidebarItem.dynamics.icon, value: SidebarItem.dynamics) { tabStack(.dynamics) }
-                    Tab("我的", systemImage: SidebarItem.mine.icon, value: SidebarItem.mine) { tabStack(.mine) }
-                }
-            } else {
-                TabView(selection: $selection) {
-                    TabSection("浏览") {
-                        Tab("推荐", systemImage: SidebarItem.home.icon, value: SidebarItem.home) { tabStack(.home) }
-                        Tab("分区", systemImage: SidebarItem.zones.icon, value: SidebarItem.zones) { tabStack(.zones) }
-                        Tab("热门", systemImage: SidebarItem.popular.icon, value: SidebarItem.popular) { tabStack(.popular) }
-                        Tab("直播", systemImage: SidebarItem.live.icon, value: SidebarItem.live) { tabStack(.live) }
-                        Tab("动态", systemImage: SidebarItem.dynamics.icon, value: SidebarItem.dynamics) { tabStack(.dynamics) }
-                    }
-                    TabSection("我的") {
-                        Tab("收藏", systemImage: SidebarItem.favorites.icon, value: SidebarItem.favorites) { tabStack(.favorites) }
-                        Tab("历史", systemImage: SidebarItem.history.icon, value: SidebarItem.history) { tabStack(.history) }
-                        Tab("稍后再看", systemImage: SidebarItem.watchLater.icon, value: SidebarItem.watchLater) { tabStack(.watchLater) }
-                    }
-                    Tab("设置", systemImage: SidebarItem.settings.icon, value: SidebarItem.settings) { tabStack(.settings) }
-                }
-            }
+        // iOS 统一 4 个顶层标签：首页 / 分区 / 动态 / 我的（iPhone 底栏、iPad 顶栏，
+        // iPad 上 `sidebarAdaptable` 可一键切成侧边栏）。
+        // - 首页与「我的」各自再用顶部分段胶囊切二级板块（见 `SegmentedPages`），
+        //   「推荐/热门/直播」「收藏/历史/稍后再看」不再占顶层标签；
+        // - 设置页整体移出 App、并入系统「设置」（见 iOSResources/Settings.bundle），
+        //   标签栏里的「设置」随之删除；
+        // - 账户入口（原侧边栏底部头像）与搜索都收进右上角（见 `RootTopBar`），
+        //   `tabViewSidebarFooter` 与常驻搜索框不再使用。
+        TabView(selection: $selection) {
+            Tab("首页", systemImage: SidebarItem.home.icon, value: SidebarItem.home) { tabStack(.home) }
+            Tab("分区", systemImage: SidebarItem.zones.icon, value: SidebarItem.zones) { tabStack(.zones) }
+            Tab("动态", systemImage: SidebarItem.dynamics.icon, value: SidebarItem.dynamics) { tabStack(.dynamics) }
+            Tab("我的", systemImage: SidebarItem.mine.icon, value: SidebarItem.mine) { tabStack(.mine) }
         }
         .tabViewStyle(.sidebarAdaptable)
-        .tabViewSidebarFooter {
-            accountBar
-        }
-        .searchable(text: $searchText, prompt: "搜索视频 / UP 主")
-        .onSubmit(of: .search) { submitSearch() }
         .preferredColorScheme(colorScheme)
-        .sheet(isPresented: $showLogin) {
-            LoginView()
-        }
         #endif
     }
 
@@ -455,7 +422,11 @@ extension RootView {
     static func rootPage(for item: SidebarItem?, query: String) -> some View {
         switch item {
         case .home:
+            #if os(iOS)
+            HomeView()
+            #else
             RecommendView()
+            #endif
         case .zones:
             ZonesView()
         case .popular:
@@ -473,7 +444,13 @@ extension RootView {
         case .watchLater:
             WatchLaterView()
         case .settings:
+            #if os(iOS)
+            // iOS 没有应用内设置页：设置整体并入系统「设置」（Settings.bundle），
+            // 这里留空实现只为让 switch 两端都能编译（iOS 已无任何入口能路由到它）。
+            EmptyView()
+            #else
             SettingsView()
+            #endif
         case .mine:
             MineView()
         case nil:
@@ -482,11 +459,7 @@ extension RootView {
     }
 }
 
-/// 「我的」入口的路由值：紧凑宽度下 `MineView` 用它推进分区/收藏/历史/稍后再看/设置。
-struct SidebarRoute: Hashable {
-    let item: RootView.SidebarItem
-}
-
+/// 「我的」页改用分段胶囊后不再需要子页路由（旧 `SidebarRoute` 已随之删除）。
 extension View {
     /// 全部导航目的地。两端、以及 iOS 的每个标签栈都挂同一套路由。
     ///
@@ -518,92 +491,21 @@ extension View {
             .navigationDestination(for: LiveRoute.self) { route in
                 LiveDetailView(route: route).environmentObject(vis)
             }
-            .navigationDestination(for: SidebarRoute.self) { route in
-                RootView.rootPage(for: route.item, query: "")
-            }
     }
 }
 
 #if os(iOS)
-/// 紧凑宽度下的「我的」聚合页：账户信息 + 分区/收藏/历史/稍后再看/设置入口。
+/// 「我的」：顶部分段胶囊切 收藏 / 历史 / 稍后再看。
 ///
-/// iPhone 的标签栏只放得下 5 个 tab，而 `tabViewSidebarFooter` 里的账户卡片在
-/// 标签栏形态下整块不可见（苹果只在显示侧边栏时展示它）。于是把账户入口和其余
-/// 次级入口一起收进这一页，登录/退出登录也终于有地方可点。
+/// 账户信息不在这一页：入口移到右上角头像（`RootTopBar`），形态对齐 App Store；
+/// 分区也升级成了顶层标签，于是这一页只剩三个列表板块。
 private struct MineView: View {
-    @EnvironmentObject private var session: SessionStore
+    @State private var selection = LaunchArgs.initialSegment() ?? 0
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                accountCard
-
-                VStack(spacing: 0) {
-                    ForEach(RootView.SidebarItem.mineEntries) { item in
-                        NavigationLink(value: SidebarRoute(item: item)) {
-                            HStack(spacing: 12) {
-                                Label(item.rawValue, systemImage: item.icon)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .frame(minHeight: 46)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        if item != RootView.SidebarItem.mineEntries.last {
-                            Divider().padding(.leading, 4)
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .contentCard(cornerRadius: 14)
-            }
-            .padding(16)
-            .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity)
-        }
-        .navigationTitle("我的")
-    }
-
-    @ViewBuilder
-    private var accountCard: some View {
-        if session.loggedIn, let user = session.user {
-            HStack(spacing: 14) {
-                RemoteImage(url: Formatters.https(user.face), variant: .avatar)
-                    .frame(width: 56, height: 56)
-                    .clipShape(Circle())
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(user.name)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text("Lv.\(user.level) · 关注 \(Formatters.count(user.following)) · 粉丝 \(Formatters.count(user.follower))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(14)
-            .contentCard(cornerRadius: 14)
-        } else {
-            HStack(spacing: 14) {
-                Image(systemName: "person.crop.circle.badge.questionmark")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("未登录").font(.headline)
-                    Text("登录后可同步收藏夹、观看历史与稍后再看")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(14)
-            .contentCard(cornerRadius: 14)
-        }
+        SegmentedPages(titles: ["收藏", "历史", "稍后再看"],
+                       selection: $selection,
+                       pages: [AnyView(FavoritesView()), AnyView(HistoryView()), AnyView(WatchLaterView())])
     }
 }
 #else
@@ -626,10 +528,33 @@ enum LaunchArgs {
         guard let idx = args.firstIndex(of: "-openVideo"), idx + 1 < args.count else { return nil }
         return args[idx + 1]
     }
+
+    /// `-tab <rawValue>`：启动后直接选中该标签（截图验证用，如 `-tab 我的`）。
+    static func initialTab() -> RootView.SidebarItem? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let idx = args.firstIndex(of: "-tab"), idx + 1 < args.count else { return nil }
+        return RootView.SidebarItem(rawValue: args[idx + 1])
+    }
+
+    /// `-segment <n>`：启动后首页/「我的」直接落在第 n 个分段（截图验证用，从 0 计）。
+    static func initialSegment() -> Int? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let idx = args.firstIndex(of: "-segment"), idx + 1 < args.count else { return nil }
+        return Int(args[idx + 1])
+    }
+
+    /// `-openSearch`：起来就推进空词搜索页（截图验证用；只被第一个标签栈消费一次）。
+    private static var searchConsumed = false
+    static func takeOpenSearch() -> Bool {
+        guard !searchConsumed else { return false }
+        searchConsumed = true
+        return ProcessInfo.processInfo.arguments.contains("-openSearch")
+    }
 }
 
 /// 单个标签页自己的导航栈。动机见 `RootView.tabStack(_:)` 的说明。
-private struct TabNavStack: View {    let item: RootView.SidebarItem
+private struct TabNavStack: View {
+    let item: RootView.SidebarItem
     let query: String
     let isSelected: Bool
     @EnvironmentObject private var router: AppRouter
@@ -643,6 +568,8 @@ private struct TabNavStack: View {    let item: RootView.SidebarItem
         return NavigationStack(path: $path) {
             RootView.rootPage(for: item, query: query)
                 .biliNavDestinations(vis: tabVisibility, ns: heroNS)
+                // 右上角搜索按钮 + 头像卡片只挂在根页：推入详情后自然收起（App Store 同款）
+                .biliRootTopBar()
         }
         // 卡片源端（列表里的 NavigationLink）从这里拿命名空间；目的端按上文显式传参。
         .environment(\.videoHeroNS, heroNS)
@@ -661,6 +588,10 @@ private struct TabNavStack: View {    let item: RootView.SidebarItem
             // 正常启动不带该参数，且只被第一个标签栈消费一次，行为零影响。
             if isSelected, let bvid = LaunchArgs.takeOpenVideoBvid(), path.isEmpty {
                 path = NavigationPath([bvid])
+            }
+            // `-openSearch`：直达空词搜索页（截图验证用）
+            if isSelected, LaunchArgs.takeOpenSearch(), path.isEmpty {
+                path = NavigationPath([SearchRoute(query: "")])
             }
             if isSelected, path != router.path {
                 router.path = path

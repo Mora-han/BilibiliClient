@@ -69,6 +69,8 @@ struct PartitionVideosView: View {
             }
             .padding(20)
         }
+        #if os(macOS)
+        // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
         .toolbar {
             if isTabVisible {
                 ToolbarItem {
@@ -81,6 +83,7 @@ struct PartitionVideosView: View {
                 }
             }
         }
+        #endif
         .navigationTitle("\(zone.name) 排行榜")
         .feedRefreshable { await load() }
         .task {

@@ -1,7 +1,22 @@
 import SwiftUI
 
 struct SearchView: View {
+    /// 路由带来的初始搜索词（标签跳转、macOS 侧边栏搜索提交都会带词进来）。
     let query: String
+    /// 已提交的搜索词：iOS 的页内输入框改的就是它；macOS 没有页内输入框，
+    /// 初始值等于路由词，行为与改动前一致。
+    @State private var submitted: String
+    /// 页内输入框的当前文字（仅 iOS 展示，见 `searchField`）。
+    @State private var input: String
+    #if os(iOS)
+    @FocusState private var inputFocused: Bool
+    #endif
+
+    init(query: String) {
+        self.query = query
+        _submitted = State(initialValue: query)
+        _input = State(initialValue: query)
+    }
 
     /// 所在标签是否可见（见 `\.isTabVisible`）：隐藏页不声明工具栏条目，
     /// 否则 keep-alive 下会合并进当前窗口（多出刷新按钮）。
@@ -18,7 +33,7 @@ struct SearchView: View {
     @State private var loadMoreFailed = false
     @State private var errorMessage: String?
     @State private var order: SearchOrder = .totalrank
-    /// 上一次真正搜过的词：同词重入不重搜（见 `.task(id: query)` 的守卫）。
+    /// 上一次真正搜过的词：同词重入不重搜（见 `.task(id: submitted)` 的守卫）。
     @State private var lastSearched: String?
     /// 被限流时的自动重试时间：界面倒计时到点后自己补一次搜索。
     @State private var autoRetryAt: Date?
@@ -47,7 +62,14 @@ struct SearchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !query.isEmpty {
+            #if os(iOS)
+            // 页内搜索输入栏（App Store 搜索页形态）：顶栏胶囊里的放大镜按钮推进本页，
+            // 输入框就在这里、空词进入自动聚焦。刻意不用系统 `.searchable`——它会给
+            // 顶栏另挂一颗自己的放大镜，和头像那组并排出现两颗（实测）。
+            searchField
+            Divider()
+            #endif
+            if !submitted.isEmpty {
                 header
                 Divider()
             }
@@ -59,6 +81,8 @@ struct SearchView: View {
                     await search(reset: true)
                 }
         }
+        #if os(macOS)
+        // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
         .toolbar {
             if isTabVisible {
                 ToolbarItem {
@@ -71,21 +95,71 @@ struct SearchView: View {
                 }
             }
         }
+        #endif
         .navigationTitle("搜索")
-        .task(id: query) {
-            guard !query.isEmpty else { return }
+        .task(id: submitted) {
+            guard !submitted.isEmpty else { return }
             // 页面重新出现（标签切回、被盖住再回来）时 task 会重跑：同一词已有
             // 结果就不再重搜，没手动刷新前保留现有结果；失败后（结果为空）重进
             // 照常再试一次，换词则由 id 变化触发、不受影响。
-            if lastSearched == query, !results.isEmpty { return }
-            lastSearched = query
+            if lastSearched == submitted, !results.isEmpty { return }
+            lastSearched = submitted
             await search(reset: true)
+        }
+        .onChange(of: query) { _, newValue in
+            // 路由带新词进来（如标签点击、再次带词推入同一页）：同步页内状态，
+            // 上面的 task(id:) 接着搜。同一目的地复用 @State 时 init 不会重跑，
+            // 这条 onChange 是唯一的同步点。
+            guard newValue != submitted else { return }
+            submitted = newValue
+            input = newValue
         }
     }
 
+    #if os(iOS)
+    /// 页内搜索输入栏：胶囊输入框，回车即搜（App Store 搜索页同款形态）。
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("搜索视频 / UP 主", text: $input)
+                .textFieldStyle(.plain)
+                .submitLabel(.search)
+                .focused($inputFocused)
+                .onSubmit { submitInput() }
+            if !input.isEmpty {
+                Button {
+                    input = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.quaternary.opacity(0.55), in: Capsule())
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .onAppear {
+            // 顶栏放大镜空词进入：自动聚焦、键盘直接可用；标签带词跳转进来不打扰
+            if submitted.isEmpty { inputFocused = true }
+        }
+    }
+
+    /// 提交输入框：空词不动；与当前词相同不重复搜；不同则替换 submitted 触发 task(id:)。
+    private func submitInput() {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != submitted else { return }
+        submitted = trimmed
+        inputFocused = false
+    }
+    #endif
+
     private var header: some View {
         HStack(spacing: 12) {
-            Text(query)
+            Text(submitted)
                 .font(.headline)
                 .lineLimit(1)
             if let numResults {
@@ -131,9 +205,9 @@ struct SearchView: View {
 
     @ViewBuilder
     private var resultArea: some View {
-        if query.isEmpty {
+        if submitted.isEmpty {
             // 多包一层 VStack 只为固定最小高度，EmptyStateView 自己就能撑开
-            EmptyStateView(title: "在左上角搜索框输入关键词",
+            EmptyStateView(title: emptyHint,
                            systemImage: "magnifyingglass")
                 .frame(maxWidth: .infinity, minHeight: 240)
         } else if isLoading && results.isEmpty {
@@ -228,8 +302,17 @@ struct SearchView: View {
         )
     }
 
+    /// 空词提示：iOS 输入框就在本页顶部，macOS 靠侧边栏搜索框。
+    private var emptyHint: String {
+        #if os(iOS)
+        return "在上方输入关键词搜索视频"
+        #else
+        return "在左上角搜索框输入关键词"
+        #endif
+    }
+
     private func search(reset: Bool) async {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if reset {
             guard !isLoading else { return }
@@ -278,7 +361,7 @@ struct SearchView: View {
         isLoadingMore = false
         // 打字期间上一轮还在跑时，新词的那次调用会被上面的 isLoading 守卫跳过：
         // 等这轮结束对比一下当前词，不是同一个就补搜最新词，保证「最新输入必达」。
-        if reset, query.trimmingCharacters(in: .whitespacesAndNewlines) != trimmed {
+        if reset, submitted.trimmingCharacters(in: .whitespacesAndNewlines) != trimmed {
             await search(reset: true)
         }
     }

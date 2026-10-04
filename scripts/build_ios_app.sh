@@ -161,6 +161,15 @@ with open(out_path, "wb") as f:
 print("Wrote", out_path)
 PY
 
+# ---- 系统设置面板：Settings.bundle ----
+# iOS 已无应用内设置页（RootView 的 iOS 分支删掉了「设置」标签），设置项整体交给
+# 系统「设置」里的本 App 面板（iOSResources/Settings.bundle），键名与 App 内
+# @AppStorage 一一对应——键对上，改完切回 App 就生效。
+if [ -d "iOSResources/Settings.bundle" ]; then
+  cp -R "iOSResources/Settings.bundle" "$APP_DIR/"
+  echo "Embedded: Settings.bundle"
+fi
+
 # ---- 签名 ----
 # 模拟器包必须 ad-hoc 签名才能装；真机 IPA 保持未签名，交给自签工具处理
 # （与 MeloX 的 build_ios_unsigned.sh 一致）。

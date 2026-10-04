@@ -41,6 +41,8 @@ struct DynamicFeedView: View {
             }
         }
         .navigationTitle("动态")
+        #if os(macOS)
+        // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
         .toolbar {
             if isTabVisible {
                 ToolbarItem {
@@ -53,6 +55,7 @@ struct DynamicFeedView: View {
                 }
             }
         }
+        #endif
         .overlay {
             if !isLoading, let errorMessage, items.isEmpty {
                 LoadErrorView(message: errorMessage) {

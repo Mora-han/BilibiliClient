@@ -32,7 +32,10 @@ struct FavoritesView: View {
                 content
             }
         }
+        #if os(macOS)
+        // iOS 上嵌在「我的」分段容器里，标题由容器统一给（见 RecommendView 说明）
         .navigationTitle("收藏")
+        #endif
         .toolbar {
             if isTabVisible {
                 ToolbarItem(placement: .primaryAction) {
@@ -41,6 +44,8 @@ struct FavoritesView: View {
                     }
                     .disabled(usableMedias.isEmpty)
                 }
+                #if os(macOS)
+                // 独立刷新按钮只留 macOS；iOS 用下拉刷新（见 RecommendView 同处说明）
                 ToolbarItem {
                     Button {
                         Task { await load() }
@@ -49,6 +54,7 @@ struct FavoritesView: View {
                     }
                     .help("刷新")
                 }
+                #endif
             }
         }
         .sheet(isPresented: $showLogin) { LoginView() }
