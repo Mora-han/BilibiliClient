@@ -20,6 +20,11 @@ enum PlayerDebugArgs {
     static var legacyAPI: Bool {
         ProcessInfo.processInfo.arguments.contains("-legacyApi")
     }
+
+    /// `-landscape`：强制横屏（模拟器没有旋转 UI，复现 iPad 横屏排版靠它）。
+    static var forceLandscape: Bool {
+        ProcessInfo.processInfo.arguments.contains("-landscape")
+    }
 }
 
 #if os(iOS)
@@ -29,10 +34,27 @@ enum PlayerDebugArgs {
 ///   `Documents/player_debug.log`（模拟器无 GUI、点不了屏，先用它摸清按钮长什么样）。
 /// - `-playerDebug fullscreen` 8 秒后自动点一下系统「全屏」按钮，用来复现
 ///   「点全屏就闪退」——闪退报告会落在模拟器的 CrashReporter 里。
+/// - `-landscape` 进播放页后强制横屏（模拟器没有旋转 UI，复现 iPad 横屏排版用）。
 enum PlayerDebugHooks {
     private static let logName = "player_debug.log"
 
     static var mode: String? { PlayerDebugArgs.mode }
+
+    /// `-landscape`：把窗口转到横屏。模拟器没有旋转按钮，横屏排版只能这么触发。
+    /// 三件套一起上：先把「设备朝向」spoof 成横屏，再让接口对齐它，最后发几何更新——
+    /// 只发 `requestGeometryUpdate` 在模拟器上会被无视，只调 `attemptRotation...`
+    /// 又会按真实设备朝向转回竖屏。
+    static func armOrientationIfNeeded() {
+        guard PlayerDebugArgs.forceLandscape else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+            UIViewController.attemptRotationToDeviceOrientation()
+            for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+            }
+            log("requested landscape")
+        }
+    }
 
     static func arm(controller: AVPlayerViewController) {
         guard let mode else { return }

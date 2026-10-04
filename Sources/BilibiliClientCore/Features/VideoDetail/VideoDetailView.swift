@@ -112,6 +112,10 @@ struct VideoDetailView: View {
             navBaseCount = router.path.count
             bindPlaybackMenu()
             player.attachView()
+            #if os(iOS)
+            // 调试参数 `-landscape`：模拟器没有旋转 UI，横屏排版靠它触发
+            PlayerDebugHooks.armOrientationIfNeeded()
+            #endif
         }
         .onChange(of: danmakuEnabled) { _, newValue in
             PlaybackMenuState.shared.setDanmakuEnabled(newValue)
@@ -312,10 +316,21 @@ struct VideoDetailView: View {
             } else {
                 VStack(spacing: 0) {
                     // 视频固定在页面顶部：滚动时保持原位完整可见，下方内容独立滑动
+                    #if os(iOS)
                     playerSection
                         .contentWidth()
                         .padding(.horizontal, playerHorizontalPadding)
                         .padding(.top, playerTopPadding)
+                        // 同 wideContent：高度只由宽度推导，竖向预算不足时也不缩不小图居中
+                        // （矮窗口/分屏多任务下会走到这里）。macOS 窗口可任意拉矮，
+                        // 保持旧行为让画面随窗口收缩，避免内容溢出窗口底。
+                        .fixedSize(horizontal: false, vertical: true)
+                    #else
+                    playerSection
+                        .contentWidth()
+                        .padding(.horizontal, playerHorizontalPadding)
+                        .padding(.top, playerTopPadding)
+                    #endif
 
                     // 固定空隙：不属于滚动内容，滚动时始终保留在视频与内容之间
                     Color.clear
@@ -385,6 +400,12 @@ struct VideoDetailView: View {
             // 左栏：画面固定在顶部（通栏、无内缩，尽可能大），下面的视频信息自己滚动
             VStack(spacing: 0) {
                 playerSection
+                    // 高度只由宽度推导（16:9），**不接受竖向压缩**：横屏两栏下左栏非常宽
+                    // （1408pt 屏减去 460pt 评论栏 = 947pt），竖向预算不够时 `.fit` 会把
+                    // 画面缩小并按 VStack 默认对齐**居中**——实测用户横屏截图里画面只剩
+                    // 721×406、左右各 112pt 白边。fixedSize 之后压缩只由下面的滚动区
+                    // 承担（它本来就可压缩），画面永远铺满左栏、紧贴评论分隔线。
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 16)
 
                 Color.clear
