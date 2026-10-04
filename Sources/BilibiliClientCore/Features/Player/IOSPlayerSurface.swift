@@ -53,19 +53,29 @@ struct IOSPlayerSurface: UIViewControllerRepresentable {
         // 空降提示卡片也挂在 contentOverlayView 上：只有这样它才会跟着播放器
         // 一起进系统全屏（页面里的 SwiftUI 浮层在系统全屏时会被留在原地）。
         // 宿主视图按内容自适应尺寸并钉在右上角，因此卡片之外的区域不受影响。
+        //
+        // **只挂视图、不 addChild**：从前这里是 `controller.addChild(host)`，
+        // 点系统全屏必然闪退——进全屏时 AVKit 把画面内容搬进一个新的
+        // `AVFullScreenViewController`，宿主视图跟着搬过去，但它对应的
+        // UIHostingController 的 parent 仍是 `AVPlayerViewController`，UIKit 直接抛
+        // `UIViewControllerHierarchyInconsistency`
+        // （"child view controller:<UIHostingController> should have parent view
+        // controller:<AVFullScreenViewController> but actual parent is:<AVPlayerViewController>"）
+        // 把进程 abort 掉。不 addChild 就没有这条父子关系，层级检查自然不成立地失败不了；
+        // 提示卡的展示与 SwiftUI 更新只依赖视图在覆盖层里 + coordinator 持有 host，均不受影响。
         if let overlay = controller.contentOverlayView {
             let host = UIHostingController(rootView: AnyView(Self.emptyNotice))
             host.view.backgroundColor = .clear
             host.view.translatesAutoresizingMaskIntoConstraints = false
-            controller.addChild(host)
             overlay.addSubview(host.view)
             NSLayoutConstraint.activate([
                 host.view.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -14),
                 host.view.topAnchor.constraint(equalTo: overlay.topAnchor, constant: 14),
             ])
-            host.didMove(toParent: controller)
             context.coordinator.noticeHost = host
         }
+        // 调试钩子：`-playerDebug dump|fullscreen`（见 `PlayerDebugHooks`），正常启动无此参数
+        PlayerDebugHooks.arm(controller: controller)
         return controller
     }
 
@@ -102,9 +112,12 @@ struct IOSPlayerSurface: UIViewControllerRepresentable {
                                           coordinator: Coordinator) {
         coordinator.danmaku?.removeFromSuperview()
         coordinator.danmaku = nil
-        coordinator.noticeHost?.willMove(toParent: nil)
+        // 只有真的 addChild 过（parent 非空）才走解挂流程，`-noticeMode view` 下不addChild
+        if coordinator.noticeHost?.parent != nil {
+            coordinator.noticeHost?.willMove(toParent: nil)
+            coordinator.noticeHost?.removeFromParent()
+        }
         coordinator.noticeHost?.view.removeFromSuperview()
-        coordinator.noticeHost?.removeFromParent()
         coordinator.noticeHost = nil
     }
 

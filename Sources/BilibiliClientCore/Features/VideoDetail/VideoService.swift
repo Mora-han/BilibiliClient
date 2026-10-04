@@ -2,17 +2,28 @@ import Foundation
 
 struct VideoService {
     func detail(bvid: String) async throws -> VideoDetailData {
-        try await APIClient.shared.get(
-            "/x/web-interface/wbi/view/detail",
-            query: ["bvid": bvid],
-            wbi: true
-        )
+        do {
+            return try await APIClient.shared.get(
+                "/x/web-interface/wbi/view/detail",
+                query: ["bvid": bvid],
+                wbi: true
+            )
+        } catch {
+            // wbi 接口被风控时（返回 -352，解码时表现为 `data` 里没有 `View`），
+            // 调试参数 `-legacyApi` 下退回老接口（老接口的 `data` 就是 view 字段本身）。
+            guard PlayerDebugArgs.legacyAPI else { throw error }
+            let legacy: LegacyData = try await APIClient.shared.get(
+                "/x/web-interface/view",
+                query: ["bvid": bvid]
+            )
+            return VideoDetailData(view: legacy.view, related: legacy.related)
+        }
     }
 
     /// html5 平台：MP4 直链、无 Referer 防盗链限制。
     func playURLMP4(bvid: String, cid: Int, qn: Int = 64) async throws -> PlayURLData {
         try await APIClient.shared.get(
-            "/x/player/wbi/playurl",
+            PlayerDebugArgs.legacyAPI ? "/x/player/playurl" : "/x/player/wbi/playurl",
             query: [
                 "bvid": bvid,
                 "cid": "\(cid)",
@@ -22,14 +33,14 @@ struct VideoService {
                 "high_quality": "1",
                 "platform": "html5",
             ],
-            wbi: true
+            wbi: !PlayerDebugArgs.legacyAPI
         )
     }
 
     /// DASH 流（需要本地代理补 Referer/Cookie），返回清晰度列表。
     func playURLDASH(bvid: String, cid: Int, qn: Int = 80) async throws -> PlayURLData {
         try await APIClient.shared.get(
-            "/x/player/wbi/playurl",
+            PlayerDebugArgs.legacyAPI ? "/x/player/playurl" : "/x/player/wbi/playurl",
             query: [
                 "bvid": bvid,
                 "cid": "\(cid)",
@@ -38,7 +49,7 @@ struct VideoService {
                 "fourk": "1",
                 "platform": "pc",
             ],
-            wbi: true
+            wbi: !PlayerDebugArgs.legacyAPI
         )
     }
 
@@ -80,4 +91,24 @@ struct VideoTagData: Decodable, Hashable, Identifiable {
     let tagName: String
 
     var id: Int { tagId }
+}
+
+/// 老接口 `x/web-interface/view` 的 `data`（仅 `-legacyApi` 调试兜底用）：
+/// view 的字段平铺在 data 上，`Related` 挂在同层（APIClient 已经把外层信封剥掉，
+/// 这里解的就是 `data` 本身）。
+private struct LegacyData: Decodable {
+    let view: VideoDetailData.VideoView
+    let related: [VideoDetailData.RelatedVideo]?
+
+    private enum CodingKeys: String, CodingKey {
+        case related = "Related"
+    }
+
+    init(from decoder: Decoder) throws {
+        // 老接口把 view 的字段平铺在 data 上，直接用同一份 container 解 VideoView
+        view = try VideoDetailData.VideoView(from: decoder)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        related = (try? container.decode([Lossy<VideoDetailData.RelatedVideo>].self, forKey: .related))?
+            .compactMap { $0.value }
+    }
 }

@@ -97,6 +97,12 @@ struct VideoDetailData: Decodable {
             .compactMap { $0.value }
     }
 
+    /// 直接装配（老接口 `x/web-interface/view` 的兜底解码用，见 `VideoService.detail`）。
+    init(view: VideoView, related: [RelatedVideo]?) {
+        self.view = view
+        self.related = related
+    }
+
     struct VideoView: Decodable {
         let bvid: String
         let aid: Int
