@@ -3,13 +3,25 @@
     <channel>
         <title>BilibiliClient</title>
         <item>
+            <title>1.10.8</title>
+            <pubDate>Mon, 05 Oct 2026 13:56:50 +0800</pubDate>
+            <sparkle:version>197</sparkle:version>
+            <sparkle:shortVersionString>1.10.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/Mora-han/BilibiliClient/releases/download/v1.10.8/BilibiliClient-1.10.8.zip" length="6561970" type="application/octet-stream" sparkle:edSignature="Xl5enbAQEXU1pPBG0cGtrx9H5rDRZc61vQhdrCqnvQnViIoTXwgG6Y0HgO5A1sSK7m6Wdbfv85CgOMvPR25rDw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/Mora-han/BilibiliClient/releases/download/v1.10.8/BilibiliClient197-152.delta" sparkle:deltaFrom="152" length="2384278" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="SKhtvLWo6eQjdMnU+TLlHMSBQBrDeVQJnGTkjd8HY5e+VCMabVUdfPweFFDPsVDnPL03IQwN8TRm0VGN8OPVAg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.9.4</title>
             <pubDate>Wed, 30 Sep 2026 22:26:57 +0800</pubDate>
             <sparkle:version>152</sparkle:version>
             <sparkle:shortVersionString>1.9.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/Mora-han/BilibiliClient/releases/download/v1.9.4/BilibiliClient-1.9.4.zip" length="5725207" type="application/octet-stream" sparkle:edSignature="rqF37yLAGn1XCATv6BaeBEbcgsNozXN4v7FUqP8fb7Fyjv1yZnDl3Tly7P0ayfFTZAsK7Nr//yOulG54p0lNBA=="/>
+            <enclosure url="https://github.com/Mora-han/BilibiliClient/releases/download/v1.10.8/BilibiliClient-1.9.4.zip" length="5725207" type="application/octet-stream" sparkle:edSignature="rqF37yLAGn1XCATv6BaeBEbcgsNozXN4v7FUqP8fb7Fyjv1yZnDl3Tly7P0ayfFTZAsK7Nr//yOulG54p0lNBA=="/>
         </item>
     </channel>
 </rss>
