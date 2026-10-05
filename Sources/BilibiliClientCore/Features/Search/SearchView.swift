@@ -39,6 +39,9 @@ struct SearchView: View {
     @State private var autoRetryAt: Date?
     /// 最近搜索（空词进入本页时呈现，见 `recentArea`）：每次增删后回读 `RecentSearchStore`。
     @State private var recent = RecentSearchStore.all
+    /// 删除态（右上角「删除」进入）：每条胶囊尾部显示 x、旁边弹出「全部清空」，
+    /// 与「我的」页编辑态同款交互。列表清空后自动退出。
+    @State private var isDeleting = false
 
     enum SearchOrder: String, CaseIterable, Identifiable {
         case totalrank = "综合排序"
@@ -169,10 +172,11 @@ struct SearchView: View {
     }
     #endif
 
-    /// 最近搜索列表（空词进入本页时呈现）：
-    /// - 点一条直接以该词搜索；
-    /// - 行尾 X 删掉这一条（删除选项）；
-    /// - 标题行右侧「清空」一次全删。
+    /// 最近搜索（空词进入本页时呈现）：
+    /// - 换行胶囊流，不再是一行一条的列表；
+    /// - 常态胶囊没有删除按钮；右上角「删除」进入删除态后每条胶囊尾部出现 x，
+    ///   同时旁边弹出「全部清空」一次清掉全部（与「我的」页编辑态同款交互）；
+    /// - 非删除态点一条直接以该词搜索，删除态下点 x 删这一条、点词无操作。
     /// 一条记录都没有时，退回原先那句空态提示。
     private var recentArea: some View {
         ScrollView {
@@ -187,55 +191,79 @@ struct SearchView: View {
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 0)
-                        Button("清空") {
-                            RecentSearchStore.clear()
-                            withAnimation(.snappy(duration: 0.2)) { recent = [] }
+                        // 删除态下「全部清空」挨着按钮弹出
+                        if isDeleting {
+                            Button("全部清空") {
+                                RecentSearchStore.clear()
+                                withAnimation(.snappy(duration: 0.2)) {
+                                    recent = []
+                                    isDeleting = false
+                                }
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                        }
+                        // 「我的」编辑态同款：进入删除态后按钮变「完成」供退出
+                        Button(isDeleting ? "完成" : "删除") {
+                            withAnimation(.snappy(duration: 0.2)) { isDeleting.toggle() }
                         }
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isDeleting ? Color.accentColor : Color.secondary)
                     }
                     .padding(.horizontal, 16)
                     .frame(height: 44)
-                    .contentShape(Rectangle())
 
-                    ForEach(recent, id: \.self) { term in
-                        HStack(spacing: 12) {
-                            Image(systemName: "clock.arrow.circlepath")
-                                .font(.system(size: 15))
-                                .foregroundStyle(.secondary)
-                            Button {
-                                searchRecent(term)
-                            } label: {
-                                Text(term)
-                                    .font(.body)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                    // 整行（除 X 外）都是命中区，点哪儿都能搜
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            Button {
-                                removeRecent(term)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("删除 \(term)")
+                    FlowLayout(spacing: 8) {
+                        ForEach(recent, id: \.self) { term in
+                            recentChip(term)
                         }
-                        .padding(.horizontal, 16)
-                        .frame(height: 44)
-                        .contentShape(Rectangle())
-                        Divider()
-                            .padding(.leading, 43) // 对齐文字左缘（16 + 图标 15 + 间距 12）
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 16)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    /// 一条最近搜索的胶囊：常态纯文字；删除态尾部加 x。
+    private func recentChip(_ term: String) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                // 删除态下不触发搜索（与「我的」编辑态禁用行内容一致）
+                guard !isDeleting else { return }
+                searchRecent(term)
+            } label: {
+                Text(term)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .disabled(isDeleting)
+
+            if isDeleting {
+                Button {
+                    removeRecent(term)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.gray)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.gray.opacity(0.3)))
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity)
+                .accessibilityLabel("删除 \(term)")
+            }
+        }
+        .padding(.horizontal, isDeleting ? 8 : 12)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(Color.gray.opacity(0.12)))
+        .contentShape(Capsule())
     }
 
     /// 点一条最近搜索：填进输入框并直接搜（`submitted` 变化触发 `.task(id:)`）。
@@ -247,10 +275,13 @@ struct SearchView: View {
         #endif
     }
 
-    /// 删掉一条最近搜索。
+    /// 删掉一条最近搜索。删到一条不剩时自动退出删除态（标题行都要没了）。
     private func removeRecent(_ term: String) {
         RecentSearchStore.remove(term)
-        withAnimation(.snappy(duration: 0.2)) { recent = RecentSearchStore.all }
+        withAnimation(.snappy(duration: 0.2)) {
+            recent = RecentSearchStore.all
+            if recent.isEmpty { isDeleting = false }
+        }
     }
 
     private var header: some View {

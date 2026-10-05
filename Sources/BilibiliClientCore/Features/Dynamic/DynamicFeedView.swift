@@ -83,13 +83,14 @@ struct DynamicFeedView: View {
         upBarPosition == UpBarPosition.left.rawValue && horizontalSizeClass != .compact
     }
 
-    /// 左侧 UP 栏宽度：平板/桌面够宽给 220，窄一点的（分屏、iPad 竖屏）
-    /// 给 180。原先固定 170pt，博主 ID 只能截断显示。
+    /// 左侧 UP 栏宽度：进一步加宽，让博主名字尽量完整显示（产品要求）。
+    /// 桌面 240；iPad regular 240、分屏窄一点的 regular 给 200。
+    /// iPhone 紧凑宽度根本不显示侧栏（见 `showsLeftBar`），这个值不影响它。
     private var leftBarWidth: CGFloat {
         #if os(macOS)
-        return 220
+        return 240
         #else
-        return horizontalSizeClass == .regular ? 200 : 176
+        return horizontalSizeClass == .regular ? 240 : 200
         #endif
     }
 
@@ -126,7 +127,7 @@ struct DynamicFeedView: View {
                     selectUP(nil)
                 }
                 ForEach(followedUPs) { up in
-                    chip(title: up.uname ?? "UP", isSelected: selectedUP == up.mid, avatar: up.face ?? "", subtitle: "UID \(up.mid)") {
+                    chip(title: up.uname ?? "UP", isSelected: selectedUP == up.mid, avatar: up.face ?? "") {
                         selectUP(up.mid)
                     }
                 }
@@ -175,7 +176,7 @@ struct DynamicFeedView: View {
         .autoLoadMore { await loadMore() }
     }
 
-    private func chip(title: String, isSelected: Bool, avatar: String? = nil, subtitle: String? = nil, action: @escaping () -> Void) -> some View {
+    private func chip(title: String, isSelected: Bool, avatar: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let avatar, !avatar.isEmpty {
@@ -183,18 +184,10 @@ struct DynamicFeedView: View {
                         .frame(width: 20, height: 20)
                         .clipShape(Circle())
                 }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.callout)
-                        .lineLimit(1)
-                    // 博主 ID（mid）：左侧竖栏有富余宽度时一并显示，方便直接抄号
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
+                // 只显示博主名（UID 副行按产品要求移除），名字可以占满剩余宽度
+                Text(title)
+                    .font(.callout)
+                    .lineLimit(1)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -514,8 +507,10 @@ struct DynamicArchiveRow: View {
 
     private var rowContent: some View {
         HStack(spacing: 10) {
+            // 封面放大突出内容（产品要求）：160×90 仍是 16:9，iPhone 上卡片内容区
+            // 334pt，封面 + 10 间距后文字列还剩 164pt，两行标题不拥挤。
             RemoteImage(url: Formatters.https(archive.cover ?? ""), variant: .card)
-                .frame(width: 128, height: 76)
+                .frame(width: 160, height: 90)
                 .cornerRadius(8, style: .circular)
 
             VStack(alignment: .leading, spacing: 4) {

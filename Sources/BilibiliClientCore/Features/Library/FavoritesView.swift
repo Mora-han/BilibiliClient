@@ -32,6 +32,17 @@ struct FavoritesView: View {
                 content
             }
         }
+        #if os(iOS)
+        // 编辑按钮放回页面内右上角（产品要求：不进顶栏、不和头像并排）。
+        // 挂在 body 最外层：登录与否都显示——原工具栏按钮就是这个行为
+        // （未登录时列表为空、按钮禁用）。点击效果与原先完全一致：
+        // withAnimation 切 isEditing。macOS 仍走工具栏（见下面 .toolbar）。
+        .overlay(alignment: .topTrailing) {
+            pageEditButton
+                .padding(.top, 8)
+                .padding(.trailing, 14)
+        }
+        #endif
         #if os(macOS)
         // iOS 上嵌在「我的」分段容器里，标题由容器统一给（见 RecommendView 说明）
         .navigationTitle("收藏")
@@ -69,6 +80,23 @@ struct FavoritesView: View {
             await loadIfNeeded()
         }
     }
+
+    /// 页面内右上角的「编辑 / 完成」按钮（仅 iOS）。行为与原工具栏按钮一致。
+    #if os(iOS)
+    private var pageEditButton: some View {
+        Button(isEditing ? "完成" : "编辑") {
+            withAnimation { isEditing.toggle() }
+        }
+        .font(.subheadline.weight(.medium))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .foregroundStyle(isEditing ? Color.accentColor : Color.primary)
+        .disabled(usableMedias.isEmpty)
+        .opacity(usableMedias.isEmpty ? 0.4 : 1)
+        .accessibilityLabel(isEditing ? "完成编辑" : "编辑")
+    }
+    #endif
 
     private var loginPrompt: some View {
         LoginRequiredView(title: "登录后查看收藏",
@@ -149,7 +177,8 @@ struct FavoritesView: View {
                     }
                 }
             }
-            .contentWidth()
+            // 不再 .contentWidth()：它把内容封顶 980pt，首页没有这层封顶，
+            // 宽屏上「我的」列数就比首页少、右边还空一块（产品要求与首页统一）。
             .padding(20)
         }
         .feedRefreshable { await load() }

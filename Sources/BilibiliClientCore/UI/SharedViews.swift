@@ -95,7 +95,11 @@ struct VideoFeedLayout<CardContent: View, RowContent: View>: View {
             // 里放了横向 chips 的收藏页），列数就会比首页少一列——同一套卡片网格在
             // 「我的」比首页每行少几个，就是这么来的。首页的容器是 `VStack(spacing: 0)`
             // 能把全宽传下来，收藏/历史/稍后再看传不下来。
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 320), spacing: 16)],
+            // 另外原先 `maximum: 320` 把单列压到 320pt：iPhone 可用宽 362pt 时
+            // 一行放不下两列（2×230+16 > 362），单列又被 320 封顶，于是右边空 42pt、
+            // 一行「没铺满」。去掉上限后单列直接铺满整行；多列时列数仍由
+            // `minimum: 230` 决定，宽度不受影响。
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 16)],
                       spacing: 16) {
                 cardContent
             }
